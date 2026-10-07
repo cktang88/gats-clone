@@ -5,7 +5,6 @@ export const INK = '#1c1f26';
 
 export const PALETTE = {
   outside: '#c3c6cc',
-  letterbox: '#16181d',
   grid: 'rgba(70, 74, 90, 0.1)',
   contact: 'rgba(20, 24, 32, 0.3)',
   tracerGlow: '#ffc65a',

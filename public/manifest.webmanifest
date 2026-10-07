@@ -1,0 +1,10 @@
+{
+  "name": "Skirmish",
+  "short_name": "Skirmish",
+  "start_url": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#d9dade",
+  "theme_color": "#d9dade"
+}

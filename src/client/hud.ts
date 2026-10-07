@@ -1,4 +1,4 @@
-import { STICK_RADIUS, stickVector, type Sticks } from './touch.ts';
+import { stickRadius, stickVector, type Sticks } from './touch.ts';
 import { ABILITY_COOLDOWN_MS, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
 import type { PlayerView, Snapshot } from '../shared/protocol.ts';
@@ -28,6 +28,9 @@ const ON_WORLD = {
 } as const;
 type OnWorld = (typeof ON_WORLD)[keyof typeof ON_WORLD];
 const EDGE = 16;
+/** Notch and home-indicator insets in HUD units; every corner panel sits inside them. */
+let inset = { l: 0, t: 0, r: 0, b: 0 };
+export const setHudInsets = (i: { l: number; t: number; r: number; b: number }): void => { inset = i; };
 const FEED_ROW = 24;
 const FEED_MS = 6000;
 const TAU = Math.PI * 2;
@@ -47,11 +50,11 @@ export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks) {
     ctx.globalAlpha = 0.35;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(st.ox, st.oy, STICK_RADIUS, 0, Math.PI * 2);
+    ctx.arc(st.ox, st.oy, stickRadius(), 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 0.8;
     ctx.beginPath();
-    ctx.arc(st.ox + v.x * STICK_RADIUS, st.oy + v.y * STICK_RADIUS, STICK_RADIUS * 0.42, 0, Math.PI * 2);
+    ctx.arc(st.ox + v.x * stickRadius(), st.oy + v.y * stickRadius(), stickRadius() * 0.42, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -72,8 +75,11 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, cam: Camera,
   drawHurtVignette(hud);
   drawHurtArcs(hud);
   const boardBottom = drawLeaderboard(hud, compact, fullBoard);
-  drawKillFeed(hud, boardBottom + SPACE.sm, compact ? 3 : 5);
-  drawMinimap(hud, compact ? 96 : 160);
+  const mapSize = compact ? 96 : 160;
+  // On a short screen the feed must stop above the minimap instead of running underneath it.
+  const feedRoom = h - EDGE - inset.b - mapSize - 16 - SPACE.sm - (boardBottom + SPACE.sm);
+  drawKillFeed(hud, boardBottom + SPACE.sm, Math.max(0, Math.min(compact ? 3 : 5, Math.floor(feedRoom / FEED_ROW))));
+  drawMinimap(hud, mapSize);
   const below = drawPill(hud, compact);
   ctx.globalAlpha = 1;
   const siegeTop = drawObjectiveLine(hud, below, fullBoard);
@@ -357,8 +363,9 @@ const LIFE_LINE = { downed: PALETTE.hunted, revived: PALETTE.hpGood, bledOut: PA
 
 function drawKillFeed(hud: Hud, top: number, rows: number) {
   const { ctx, w, s, now } = hud;
+  if (rows <= 0) return;
   const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-rows);
-  const right = w - EDGE;
+  const right = w - EDGE - inset.r;
   lines.forEach((f, i) => {
     const y = top + i * FEED_ROW + 10;
     ctx.globalAlpha = Math.min(1, (FEED_MS - (now - f.at)) / 600) * 0.95;
@@ -430,7 +437,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
   const rows = boardRows(snap.leaderboard, s.myId, full ? (compact || h < 760 ? 6 : 12) : null);
   const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM';
   const pw = compact ? BOARD.compactW : BOARD.w;
-  const x = w - pw - EDGE, top = EDGE;
+  const x = w - pw - EDGE - inset.r, top = EDGE + inset.t;
   const split = rows.length > 1 && rows.at(-1)!.place - rows.at(-2)!.place > 1;
   const head = full ? 22 : 0;
   const ph = BOARD.pad * 2 + rows.length * BOARD.row + head + (split ? 5 : 0);
@@ -503,7 +510,7 @@ function drawMinimap(hud: Hud, size: number) {
   const { ctx, w, h, snap, s, me } = hud;
   const k = size / s.worldSize;
   const pad = 8;
-  const x0 = w - EDGE - size - pad * 2, y0 = h - EDGE - size - pad * 2;
+  const x0 = w - EDGE - inset.r - size - pad * 2, y0 = h - EDGE - inset.b - size - pad * 2;
   const base = fadePanel(hud, 'minimap', x0, y0, size + pad * 2, size + pad * 2);
   panel(ctx, x0, y0, size + pad * 2, size + pad * 2, PANEL_RADIUS, MINIMAP.bg);
   const x = x0 + pad, y = y0 + pad;
@@ -583,7 +590,7 @@ function drawMinimap(hud: Hud, size: number) {
 
 function drawPill(hud: Hud, compact: boolean): number {
   const { ctx, w, snap, me, s, now } = hud;
-  const ph = compact ? 24 : 28, y = EDGE;
+  const ph = compact ? 24 : 28, y = EDGE + inset.t;
   const side = compact ? 40 : 48, mid = compact ? 56 : 66;
   const big = compact ? 14 : 16;
   const left = timeLeft(hud);
@@ -683,7 +690,7 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
   }
   if (!me?.alive) return;
   const use = useHint(hud.snap, s.lastSelf);
-  const row = h - (compact ? 150 : 30);
+  const row = h - inset.b - (compact && w < h ? 150 : 30);
   if (use) outlined(ctx, use, w / 2, h * 0.64, TYPE.body + 1, PALETTE.gold, 750);
   if (s.building) {
     hintBar(ctx, s, BUILD_HINTS.filter((p) => p.pick), w / 2, row - 32, null);
@@ -735,7 +742,7 @@ function drawCoreAlert({ ctx, w, h, now, cam, selfAt }: Hud, core: { x: number; 
   strokeIcon(ctx, UI_ICONS.core, clear.x - Math.cos(at.angle) * 24, clear.y - Math.sin(at.angle) * 24, 15, PALETTE.hunted, 2.4);
 }
 
-const VITALS = { bar: 200, compactBar: 140, barH: 9, row: 30 } as const;
+const VITALS = { bar: 200, compactBar: 110, barH: 9, row: 30 } as const;
 
 function drawAmmoGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, color: string) {
   ctx.fillStyle = color;
@@ -755,10 +762,10 @@ function drawAmmoGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, colo
 function drawVitals({ ctx, snap, me, w, on }: Hud, compact: boolean) {
   if (!me) return;
   const self = snap.self;
-  const x = EDGE + 4;
-  let y = EDGE + 10;
+  const x = EDGE + 4 + inset.l;
+  let y = EDGE + 10 + inset.t;
   const bw = compact ? VITALS.compactBar : Math.min(VITALS.bar, w * 0.22);
-  panels.push({ x: EDGE, y: EDGE, w: bw + 150, h: 4 * VITALS.row });
+  panels.push({ x: EDGE + inset.l, y: EDGE + inset.t, w: bw + 150, h: 4 * VITALS.row });
   const hpFrac = me.hp / me.maxHp;
   const fill = ctx.createLinearGradient(x, 0, x + bw, 0);
   fill.addColorStop(0, HP_FILL[0]);

@@ -24,6 +24,11 @@
   --s3: 12px;
   --s4: 16px;
   --s5: 24px;
+  --ui: 1;
+  --sl: env(safe-area-inset-left, 0px);
+  --sr: env(safe-area-inset-right, 0px);
+  --st: env(safe-area-inset-top, 0px);
+  --sb: env(safe-area-inset-bottom, 0px);
   --edge: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --lift: 0 8px 24px -12px rgba(30, 32, 38, 0.45);
   color-scheme: dark;
@@ -37,7 +42,13 @@
 html, body {
   margin: 0;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
   background: var(--bg);
   color: var(--ink);
 }
@@ -48,7 +59,10 @@ html, body {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   display: block;
+  -webkit-user-select: none;
+  user-select: none;
   cursor: crosshair;
 }
 #game.aiming { cursor: none; }
@@ -132,7 +146,7 @@ kbd {
   position: fixed;
   inset: 0;
   overflow-y: auto;
-  padding: 24px 16px;
+  padding: calc(24px + var(--st)) calc(16px + var(--sr)) calc(24px + var(--sb)) calc(16px + var(--sl));
   background: radial-gradient(ellipse at 50% 10%, rgba(229, 228, 230, 0.1), rgba(60, 64, 72, 0.45) 75%);
 }
 .menu-card { max-width: 980px; margin: 0 auto; }
@@ -308,8 +322,8 @@ a.wordmark { text-decoration: none; }
 
 .chat {
   position: absolute;
-  left: 16px;
-  bottom: 16px;
+  left: calc(16px + var(--sl));
+  bottom: calc(16px + var(--sb));
   width: min(380px, calc(100vw - 24px));
   pointer-events: none;
 }
@@ -474,7 +488,7 @@ a.wordmark { text-decoration: none; }
 
 .touch-buttons { display: none; }
 @media (pointer: coarse) {
-  .touch-buttons { display: flex; position: fixed; right: 18px; bottom: 150px; gap: 14px; flex-direction: column; }
+  .touch-buttons { display: flex; position: fixed; right: calc(18px + var(--sr)); bottom: calc(150px + var(--sb)); gap: 14px; flex-direction: column; }
   .touch-buttons button {
     width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5);
     background: rgba(96,101,112,.7); color: #fff; font: 700 22px system-ui, sans-serif; touch-action: none;
@@ -483,5 +497,72 @@ a.wordmark { text-decoration: none; }
 }
 /* Clear of the full-size minimap in the bottom right corner once the screen is tall enough to draw it. */
 @media (pointer: coarse) and (min-height: 520px) and (min-width: 640px) {
-  .touch-buttons { bottom: 216px; }
+  .touch-buttons { bottom: calc(216px + var(--sb)); }
 }
+
+/* Phones in landscape: a compact HUD in the corners, a clear play centre, 44px+ targets. --ui is the canvas HUD's scale. */
+.phone { --t-micro: 12px; --t-label: 13px; --t-body: 15px; }
+.phone .chat { width: min(300px, 38vw); bottom: calc(14px * var(--ui) + var(--sb)); left: calc(14px * var(--ui) + var(--sl)); }
+.phone .chat-log { font-size: 13px; }
+.phone .touch-buttons {
+  flex-direction: row-reverse;
+  gap: 12px;
+  right: calc(var(--sr) + 128px * var(--ui) + 12px);
+  bottom: calc(var(--sb) + 16px * var(--ui) + 4px);
+}
+.phone .touch-buttons button { width: 52px; height: 52px; font-size: 22px; }
+.phone .perk-panel, .phone .perk-panel.siege {
+  left: calc(var(--sl) + 40vw);
+  right: calc(var(--sr) + 128px * var(--ui) + 140px);
+  bottom: calc(var(--sb) + 8px);
+  max-width: none;
+  width: auto;
+}
+.phone .objective { top: calc(var(--st) + 66px * var(--ui)); }
+.phone .objective.siege { top: calc(var(--st) + 80px * var(--ui)); }
+.phone .banner { top: 34%; }
+.phone .menu { padding-top: calc(10px + var(--st)); }
+.phone .brand { margin-bottom: var(--s3); }
+.phone button, .phone input, .phone .tile, .phone .swatch { min-height: 44px; }
+
+/* Held upright, a phone can show only a thin strip of the world, so it asks for a turn instead. */
+.rotate {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  place-items: center;
+  background: rgba(34, 37, 44, 0.96);
+  color: var(--ink);
+  text-align: center;
+  padding: calc(16px + var(--st)) calc(16px + var(--sr)) calc(16px + var(--sb)) calc(16px + var(--sl));
+}
+.portrait-phone .rotate { display: grid; }
+.rotate-card { display: grid; gap: var(--s2); justify-items: center; }
+.rotate-card svg { width: 72px; height: 72px; color: var(--accent); animation: turn 2.4s ease-in-out infinite; }
+.rotate-card h2 { font-size: var(--t-title); text-transform: none; letter-spacing: 0; }
+.rotate-card p { color: var(--muted); }
+@keyframes turn { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+
+.hint {
+  margin: var(--s4) auto 0;
+  max-width: 560px;
+  padding: var(--s3);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: var(--t-label);
+  text-align: center;
+}
+.hint button { margin-left: var(--s2); min-height: 44px; padding: 0 var(--s4); }
+.fullscreen-btn { display: block; margin: var(--s3) auto 0; min-height: 44px; padding: 0 var(--s5); }
+
+/* The respawn card on a landscape phone: a scrollable, wider card with the loadout in dense columns instead of a tall column. */
+.phone .death { align-items: flex-start; overflow-y: auto; padding: calc(8px + var(--st)) calc(8px + var(--sr)) calc(8px + var(--sb)) calc(8px + var(--sl)); }
+.phone .death-card { width: min(100%, 720px); max-height: none; }
+.phone .death-card .weapons { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.phone .death-card .armors { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.phone .death-card .tile small { display: none; }
+.phone .death-card .gun-art { max-width: 64px; }
+.phone .death-card .swatch { width: 44px; height: 44px; }
+.phone .objective { max-width: 52vw; }

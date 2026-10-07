@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Skirmish">
+  <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#d9dade">
   <title>Skirmish</title>
   <link rel="stylesheet" href="style.css">
@@ -50,6 +55,8 @@
           </section>
         </aside>
       </div>
+      <p id="a2hs" class="hint" hidden>Tip: tap Share, then Add to Home Screen, to play Skirmish fullscreen without Safari's bars. <button id="a2hs-close" type="button" aria-label="Dismiss tip">Got it</button></p>
+      <button id="fullscreen" type="button" class="fullscreen-btn" hidden>Go fullscreen</button>
       <footer class="menu-footer"><a href="privacy.html">Privacy</a></footer>
     </div>
   </main>
@@ -63,6 +70,13 @@
     <div class="touch-buttons">
       <button id="touch-reload" type="button" aria-label="Reload">R</button>
       <button id="touch-ability" type="button" aria-label="Ability">&#9733;</button>
+    </div>
+    <div id="rotate" class="rotate" role="alert">
+      <div class="rotate-card">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><rect x="22" y="8" width="20" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="3"/><path d="M12 50a22 22 0 0 0 40 0M52 50l-2-8m2 8-8-1" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        <h2>Rotate your phone</h2>
+        <p>Skirmish plays in landscape.</p>
+      </div>
     </div>
     <div id="squad-chip" class="squad-chip" hidden></div>
     <div id="banner" class="banner" hidden></div>

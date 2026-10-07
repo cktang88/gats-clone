@@ -5,9 +5,16 @@ export type Point = { x: number; y: number };
 
 export const viewAspect = (w: number, h: number): number => clampAspect(w / h);
 
+/**
+ * Scale that makes the allowed view COVER the screen: the screen is filled edge to edge with no bars, and when its shape is outside the
+ * allowed aspect clamp the overflow on the long axis is cropped. Since scale >= the fitting scale, nothing beyond the allowed view is ever
+ * drawn, so a phone or ultrawide never sees more world than the server's aspect clamp grants.
+ */
+export const coverScale = (w: number, h: number, halfW: number, halfH: number): number => Math.max(w / (2 * halfW), h / (2 * halfH));
+
 export function makeCamera(center: Point, w: number, h: number, viewRadius: number): Camera {
   const { halfW: viewHalfW, halfH: viewHalfH } = viewExtents(viewRadius, viewAspect(w, h));
-  return { x: center.x, y: center.y, w, h, viewHalfW, viewHalfH, scale: Math.min(w / (2 * viewHalfW), h / (2 * viewHalfH)) };
+  return { x: center.x, y: center.y, w, h, viewHalfW, viewHalfH, scale: coverScale(w, h, viewHalfW, viewHalfH) };
 }
 
 export const worldToScreen = (c: Camera, p: Point): Point => ({

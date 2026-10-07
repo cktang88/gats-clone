@@ -1,5 +1,5 @@
 import { BUILDING_KINDS, BUILDINGS, GUNS, WORLD, ZOM, type BuildingKind } from '../../shared/defs.ts';
-import { VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type PlayerView, type RunView, type Snapshot } from '../../shared/protocol.ts';
+import { DEFAULT_VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type PlayerView, type RunView, type Snapshot } from '../../shared/protocol.ts';
 import { cellOf, cellRect, coreRectAt } from '../../shared/sim/build.ts';
 import { circleHitsRect, segmentEntersRectAt } from '../../shared/sim/movement.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
@@ -107,7 +107,7 @@ function swingTo(prev: Engagement | null, zombie: NonNullable<Watch['zombie']>, 
 
 export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: BotArena, mem: BotMemory, rand: () => number): Omit<BotDecision, 'pick'> {
   const walls = arena.walls;
-  const sight = viewExtents(snap.self.viewRadius, VIEW_ASPECT.max);
+  const sight = viewExtents(snap.self.viewRadius, DEFAULT_VIEW_ASPECT);
   const zombies = (snap.zombies ?? [])
     .map(([id, , x, y]) => ({ id, x, y, d: Math.hypot(x - me.x, y - me.y) }))
     .filter((z) => Math.abs(z.x - me.x) <= sight.halfW && Math.abs(z.y - me.y) <= sight.halfH

@@ -1,5 +1,5 @@
 import { GUNS, type GunId, type WeaponId } from '../../shared/defs.ts';
-import { VIEW_ASPECT, viewExtents, type PlayerView, type SelfView, type Snapshot, type Team, type ZoneView } from '../../shared/protocol.ts';
+import { DEFAULT_VIEW_ASPECT, viewExtents, type PlayerView, type SelfView, type Snapshot, type Team, type ZoneView } from '../../shared/protocol.ts';
 import type { Rect } from '../../shared/sim/movement.ts';
 import { SHARPNESS, TICK_MS } from './aim.ts';
 import type { BotArena } from './arena.ts';
@@ -55,7 +55,7 @@ export function focus(v: Perception, target: number): Threat | undefined {
 export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: Awareness): { awareness: Awareness; view: Perception } {
   const tick = snap.tick;
   const solids: Rect[] = [...arena.walls, ...snap.crates.map(crateRect)];
-  const sight = viewExtents(snap.self.viewRadius, VIEW_ASPECT.max);
+  const sight = viewExtents(snap.self.viewRadius, DEFAULT_VIEW_ASPECT);
   const enemy = (p: PlayerView) => p.id !== me.id && (me.team === null || p.team !== me.team);
   const threats = snap.players
     .filter((p) => enemy(p) && p.alive && !p.downed && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH && clearShot(solids, me, p))

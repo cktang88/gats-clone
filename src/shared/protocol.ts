@@ -23,7 +23,14 @@ export type InputState = {
 /** How far behind the newest snapshot a client draws the world; the server allows for it when judging a lagged shot. */
 export const INTERP_DELAY_MS = (3 * 1000) / WORLD.tickHz;
 
-export const VIEW_ASPECT = { min: 1, max: 16 / 9 } as const;
+/**
+ * Screen shapes the view honours. The width of the view is fixed, so a wider screen only ever sees LESS height: widening `max` past 16:9
+ * can never reveal more world, it just stops modern phones (iPhone 15 Pro landscape is 2.17:1) and ultrawides losing the sides of their
+ * screen to a crop. Beyond the clamp the client scales the clamped view to cover the screen (see camera.ts), never showing more.
+ */
+export const VIEW_ASPECT = { min: 1, max: 2.4 } as const;
+/** What a client that sent no (or a garbled) aspect is assumed to have, and what bots see by. */
+export const DEFAULT_VIEW_ASPECT = 16 / 9;
 export const VIEW_PRELOAD_MARGIN = 64;
 export const clampAspect = (aspect: number): number => Math.min(VIEW_ASPECT.max, Math.max(VIEW_ASPECT.min, aspect));
 /** The world a player can see: the view radius across, and as much height as the screen's shape allows. Camera, server culling and bot sight all use it, so nobody is hit from off screen. */
@@ -196,7 +203,7 @@ export function cleanName(v: unknown): string {
 const MAX_SIEGE_GRID = Math.max(...MAP_IDS.filter((m) => MAPS[m].siege).map((m) => MAPS[m].size)) / ZOM.cell;
 const gridCell = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < MAX_SIEGE_GRID ? v : null);
 
-const parseAspect = (v: unknown): number => num(v, VIEW_ASPECT.min, VIEW_ASPECT.max) ?? VIEW_ASPECT.max;
+const parseAspect = (v: unknown): number => num(v, VIEW_ASPECT.min, VIEW_ASPECT.max) ?? DEFAULT_VIEW_ASPECT;
 
 function parseInput(v: unknown): InputState | null {
   if (!isObj(v)) return null;

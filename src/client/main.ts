@@ -10,9 +10,10 @@ import { walks } from '../shared/sim/movement.ts';
 import { isSteady, spreadFor } from '../shared/sim/stats.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addMoments, NO_MOMENTS } from './moments.ts';
-import { buildChipAt, drawHud, drawSticks } from './hud.ts';
+import { buildChipAt, drawHud, drawSticks, setHudInsets } from './hud.ts';
 import { actionForKey, assembleInput, perkSlotForKey, type Action } from './input.ts';
-import { NO_STICKS, dragStick, pressStick, releaseStick, touchAim, touchMoves, type Sticks } from './touch.ts';
+import { NO_STICKS, dragStick, pressStick, releaseStick, setStickScale, touchAim, touchMoves, type Sticks } from './touch.ts';
+import { NO_INSETS, dismissHomeScreenHint, fullscreenSupported, goFullscreen, installTouchGuards, measureLayout, shouldShowHomeScreenHint, type Layout } from './viewport.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
@@ -66,7 +67,7 @@ let selectedRoom: string | null = null;
 let squad: string | null = null;
 let squadBusy = false;
 let revealSquad = false;
-let view = { w: 0, h: 0, dpr: 1 };
+let view: Layout = { w: 0, h: 0, dpr: 1, ui: 1, safe: NO_INSETS, phone: false, portraitPhone: false };
 let aimCamera: Camera | null = null;
 let viewTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -349,7 +350,7 @@ function pickBuildKind(s: Session, kind: BuildingKind) {
 }
 
 function buildClick(s: Session, e: MouseEvent) {
-  const chip = e.button === 0 ? buildChipAt(e.clientX, e.clientY) : null;
+  const chip = e.button === 0 ? buildChipAt(e.clientX / view.ui, e.clientY / view.ui) : null;
   if (chip) return pickBuildKind(s, chip);
   if (!ghost) return;
   if (e.button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: ghost.kind, cx: ghost.cx, cy: ghost.cy });
@@ -363,10 +364,20 @@ function respawn() {
 }
 
 function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-  view = { w: window.innerWidth, h: window.innerHeight, dpr };
+  view = measureLayout();
+  const { dpr, ui, safe } = view;
   canvas.width = Math.round(view.w * dpr);
   canvas.height = Math.round(view.h * dpr);
+  canvas.style.width = `${view.w}px`;
+  canvas.style.height = `${view.h}px`;
+  setHudInsets({ l: safe.l / ui, t: safe.t / ui, r: safe.r / ui, b: safe.b / ui });
+  setStickScale(ui);
+  const root = document.documentElement;
+  root.style.setProperty('--ui', String(ui));
+  root.style.setProperty('--vw', `${view.w}px`);
+  root.style.setProperty('--vh', `${view.h}px`);
+  root.classList.toggle('phone', view.phone);
+  root.classList.toggle('portrait-phone', view.portraitPhone);
   clearTimeout(viewTimer);
   viewTimer = setTimeout(() => {
     const s = sessionOf(state);
@@ -427,7 +438,12 @@ function drawFrame(now: number) {
   ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize);
   drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, selfAngle, killerId, ghost });
   const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), nextSprayShot(s.firing)) : null;
-  drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
+  // The HUD is laid out in "UI units" (screen px / ui), so one ui factor grows every panel on a phone; the camera it uses is the same
+  // transform with its screen shrunk by ui, so world-anchored HUD (edge arrows, popups, fade-out tests) stays exact.
+  const { ui } = view;
+  const hudCamera = { ...shakenCamera, w: view.w / ui, h: view.h / ui, scale: shakenCamera.scale / ui };
+  drawHud(ctx, view.dpr * ui, hudCamera, snap, s, now, { x: mouse.x / ui, y: mouse.y / ui }, spread, fullBoard);
+  ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
   if (state.phase === 'playing') drawSticks(ctx, sticks);
   overlays.update(state, s, latest, now, muted);
 }
@@ -530,6 +546,9 @@ canvas.addEventListener('mousedown', (e) => {
 window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => { resize(); setTimeout(resize, 250); });
+window.visualViewport?.addEventListener('resize', resize);
+installTouchGuards(canvas);
 
 async function pollServers() {
   if (state.phase !== 'menu') return;
@@ -602,8 +621,16 @@ const pickers = [
 const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; });
 nameInput.value = loadName() || account.current()?.name || '';
 renderControls($('controls'));
+const a2hs = $('a2hs');
+a2hs.hidden = !shouldShowHomeScreenHint();
+$('a2hs-close').addEventListener('click', () => { dismissHomeScreenHint(); a2hs.hidden = true; });
+const fsButton = $('fullscreen');
+fsButton.hidden = !fullscreenSupported() || !window.matchMedia('(pointer: coarse)').matches;
+fsButton.addEventListener('click', () => void goFullscreen());
 $('play-form').addEventListener('submit', (e) => {
   e.preventDefault();
+  // Playing is a user gesture, the only moment a browser lets a page take the whole screen.
+  if (window.matchMedia('(pointer: coarse)').matches) void goFullscreen();
   if (selectedRoom !== null && !(state.phase === 'menu' && state.status.kind === 'connecting')) play(selectedRoom);
 });
 window.addEventListener('pagehide', leave);

@@ -4,7 +4,11 @@ type Stick = { id: number; ox: number; oy: number; x: number; y: number };
 export type Sticks = { move: Stick | null; aim: Stick | null };
 
 export const NO_STICKS: Sticks = { move: null, aim: null };
-export const STICK_RADIUS = 56;
+const STICK_BASE = 56;
+let radius = STICK_BASE;
+/** Sticks grow with the phone HUD scale so a thumb's full throw stays comfortable (and >= 44 px wide at the knob). */
+export const setStickScale = (ui: number): void => { radius = Math.round(STICK_BASE * ui); };
+export const stickRadius = (): number => radius;
 const DEADZONE = 0.2;
 const AXIS_THRESHOLD = 0.38;
 const AIM_RANGE = 700;
@@ -31,7 +35,7 @@ export function stickVector(st: Stick): { x: number; y: number; mag: number } {
   const dx = st.x - st.ox;
   const dy = st.y - st.oy;
   const len = Math.hypot(dx, dy);
-  const mag = Math.min(1, len / STICK_RADIUS);
+  const mag = Math.min(1, len / radius);
   return len === 0 ? { x: 0, y: 0, mag: 0 } : { x: (dx / len) * mag, y: (dy / len) * mag, mag };
 }
 

@@ -56,8 +56,16 @@ test('the camera shows the view radius across and only the height the screen sha
   };
   assert.deepEqual(shown(1280, 800), { screen: [R, 563], world: [R, 563] }, '16:10 fills the screen with no bars at the original zoom');
   assert.deepEqual(shown(1920, 1080), { screen: [R, 506], world: [R, 506] }, '16:9 fills the screen with no bars');
-  assert.deepEqual(shown(2560, 1080), { screen: [1200, 506], world: [R, 506] }, 'ultrawide is letterboxed to 16:9 at the sides');
-  assert.deepEqual(shown(800, 1280), { screen: [R, 1440], world: [R, R] }, 'portrait fits the width and letterboxes top and bottom');
+  assert.deepEqual(shown(852, 393), { screen: [R, 415], world: [R, 415] }, 'an iPhone 15 Pro in landscape (2.17:1) fits the allowed shape exactly, no crop');
+  assert.deepEqual(shown(3440, 1080), { screen: [R, 283], world: [R, 375] }, 'a super-ultrawide fills the screen and crops the height instead of barring the sides');
+  assert.deepEqual(shown(800, 1280), { screen: [563, R], world: [R, R] }, 'portrait fills the screen and crops the width instead of barring top and bottom');
+  for (const [w, h] of [[852, 393], [393, 852], [667, 375], [1024, 768], [2560, 1080], [3440, 1080], [600, 600]] as const) {
+    const cam = makeCamera({ x: 0, y: 0 }, w, h, R);
+    const tl = screenToWorld(cam, { x: 0, y: 0 }), br = screenToWorld(cam, { x: w, y: h });
+    assert.ok(br.x - tl.x <= 2 * cam.viewHalfW + 1e-6 && br.y - tl.y <= 2 * cam.viewHalfH + 1e-6, `${w}x${h} never shows more than the allowed view`);
+    assert.ok(Math.abs(br.x - tl.x) / w - Math.abs(br.y - tl.y) / h < 1e-9, `${w}x${h} keeps square pixels`);
+    assert.ok(br.x - tl.x >= 2 * cam.viewHalfW - 1e-6 || br.y - tl.y >= 2 * cam.viewHalfH - 1e-6, `${w}x${h} covers the allowed view on one axis, so no bars`);
+  }
 });
 
 test('level progress tracks thresholds and caps at max level', () => {
