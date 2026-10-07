@@ -497,7 +497,7 @@ a.wordmark { text-decoration: none; }
 }
 /* Clear of the full-size minimap in the bottom right corner once the screen is tall enough to draw it. */
 @media (pointer: coarse) and (min-height: 520px) and (min-width: 640px) {
-  .touch-buttons { bottom: calc(216px + var(--sb)); }
+  .touch-buttons { bottom: calc(206px * var(--ui) + var(--sb)); }
 }
 
 /* Phones in landscape: a compact HUD in the corners, a clear play centre, 44px+ targets. --ui is the canvas HUD's scale. */
