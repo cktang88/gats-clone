@@ -250,14 +250,15 @@ function plants(v: Perception, c: IntentCtx, d: number, fromCover: boolean): boo
 }
 
 /**
- * Burst-tapping: an assault-class gun's bloom starts after its first few rounds, so its bot lets go after that many and takes the gun back to
- * rest before it fires again, instead of holding a spray that drifts off the target (from `TAP_FROM_PX` out; closer, the cone swallows any bloom). A rusher or a machine gun hoses.
+ * Burst-tapping: a gun whose bloom starts after its first few rounds (an assault rifle, a sniper, an SMG or auto pistol that holds a lane) has
+ * its bot let go after that many and take the gun back to rest before it fires again, instead of holding a spray that drifts off the target
+ * (from `TAP_FROM_PX` out; closer, the cone swallows any bloom). A rusher hoses, and so does a machine gun: its job is to pin, and a stream pins.
  */
 export const TAP_FROM_PX = 280;
 export function tapRhythm(gun: GunId, rushes: boolean): { windowMs: number; pauseMs: number } | null {
   const def = GUNS[gun];
   const { bloom } = rulesOf(def);
-  if (!bloom || bloom.free > 4 || rushes) return null;
+  if (!bloom || bloom.free > 4 || rushes || def.base === 'lmg') return null;
   const perRound = def.burst ? ((def.burst.count - 1) * def.burst.gapMs + def.fireMs) / def.burst.count : def.fireMs;
   return { windowMs: bloom.free * perRound - 1, pauseMs: bloom.settleMs + (0.5 * bloom.recoverMs) / BOT_BLOOM_DECAY_MUL };
 }

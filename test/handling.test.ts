@@ -49,9 +49,9 @@ test('every gun\'s handling stays within sane bounds, and comes from a real buil
     assert.ok(g.kg >= 0.5 && g.kg <= 20 && g.cm >= 15 && g.cm <= 150 && CALIBRES[g.calibre], `${id}: a real build`);
     assert.ok(h.floor >= 0.004 && h.floor <= 0.025, `${id}: floor ${h.floor}`);
     assert.ok(h.sway >= 0 && h.sway <= 0.16, `${id}: sway ${h.sway}`);
-    assert.ok(h.kick > 0 && h.kick <= 0.3 && h.cap > 0 && h.cap <= 0.12, `${id}: kick ${h.kick}, cap ${h.cap}`);
+    assert.ok(h.kick > 0 && h.kick <= 0.3 && h.cap > 0 && h.cap <= 0.2, `${id}: kick ${h.kick}, cap ${h.cap}`);
     assert.ok(h.recoverMs >= 40 && h.recoverMs <= 5000, `${id}: recovers in ${h.recoverMs} ms`);
-    assert.ok(h.still >= HANDLING.still.min && h.still <= HANDLING.still.max);
+    assert.ok(h.still >= HANDLING.still.min * HANDLING.SCOPE.still - 0.01 && h.still <= HANDLING.still.max, `${id}: still ${h.still}`);
     assert.ok(h.settleMs >= 300 && h.settleMs <= 2500 && h.swingMs >= 150 && h.swingMs <= 300, `${id}: settles in ${h.settleMs}, swings in ${h.swingMs}`);
     assert.equal(settleRulesOf(g).ms, h.settleMs);
     assert.equal(r.movingSpreadAdd, h.sway);

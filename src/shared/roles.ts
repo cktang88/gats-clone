@@ -58,7 +58,7 @@ export const GUN_ROLES: Record<GunId, Role> = {
   skirmisher: { role: 'Flanker: fastest feet, fastest to fire', traits: ['fast', 'quickdraw', 'close'] },
   heavySmg: { role: 'Brawler: tighter, harder, stands and trades', traits: ['plant', 'close'] },
   phantom: { role: 'Silent assassin: unheard, in from behind', traits: ['quiet', 'fast', 'close'] },
-  hornet: { role: 'Point-blank shredder: empties in a second', traits: ['auto', 'close', 'spray'] },
+  hornet: { role: 'Point-blank shredder: empties in under two seconds', traits: ['auto', 'close', 'spray'] },
   ripper: { role: 'Lane breaker: rounds go through a body', traits: ['pierce', 'plant', 'slow'] },
   bulldog: { role: 'Drum gun: outlasts a whole squad', traits: ['deep', 'pin', 'slow'] },
 
@@ -87,7 +87,7 @@ export const GUN_ROLES: Record<GunId, Role> = {
   ghost: { role: 'Silent marksman: plants in a heartbeat', traits: ['quiet', 'plant', 'reach'] },
 
   lmg: { role: 'Suppressor: rev up and hose a lane', traits: ['rev', 'pin', 'deep'] },
-  heavyLmg: { role: 'Bipod: stand half a second and every round lands', traits: ['deploy', 'pin', 'slow'] },
+  heavyLmg: { role: 'Bipod: stand half a second and it locks in', traits: ['deploy', 'pin', 'slow'] },
   lightMg: { role: 'Hip-fire MG: no rev-up, shoots on the walk', traits: ['auto', 'deep'] },
   minigun: { role: 'Torrent: long rev-up, huge damage, no sprint', traits: ['rev', 'auto', 'slow'] },
   juggernaut: { role: 'Fortress: no rev-up, plant, biggest rounds', traits: ['deploy', 'heavy', 'pin'] },
