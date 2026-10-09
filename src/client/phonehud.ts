@@ -1,4 +1,5 @@
 import { setChatterCompact } from './chatter.ts';
+import { deathBox } from './deathflow.ts';
 import { isPhoneLandscape, phoneLayout, type Box } from './phonelayout.ts';
 import type { Insets } from './viewport.ts';
 
@@ -14,7 +15,6 @@ const PLACED: [selector: string, slot: 'ability' | 'reload' | 'emote' | 'cog' | 
   ['.touch-emote', 'emote', 'box'],
   ['.pause-cog', 'cog', 'box'],
   ['.touch-radio', 'context', null],
-  ['.touch-use', 'context', null],
   ['.chat', 'chat', 'width'],
 ];
 const PROPS = ['left', 'top', 'right', 'bottom', 'width', 'height', 'transform'] as const;
@@ -36,8 +36,16 @@ export function applyPhoneHud(root: HTMLElement, w: number, h: number, safe: Ins
   for (const [sel, slot, size] of PLACED) {
     const el = root.querySelector<HTMLElement>(sel) ?? document.querySelector<HTMLElement>(sel);
     if (!el) continue;
-    // The context button (use, radio) is a pill as wide as its word: it centres on its box.
+    // The context button (the radio) is a pill as wide as its word: it centres on its box.
     place(el, L && L[slot], size, slot === 'context');
+  }
+  // The death card takes the visible screen inside the insets, clear of the cog (deathflow.ts), and scrolls inside itself.
+  const death = root.querySelector<HTMLElement>('#death');
+  if (death) {
+    // The HUD is zoomed by --ui (a UI scale option above 100%), so the box is given in its zoomed px.
+    const z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui')) || 1;
+    const b = on ? deathBox(w, h, safe, k) : null;
+    place(death, b && { x: b.x / z, y: b.y / z, w: b.w / z, h: b.h / z }, 'box');
   }
   const chat = root.querySelector<HTMLElement>('.chat');
   if (chat) chat.dataset.lines = L ? String(Math.round(L.chat.h / (18 * (k / 0.9)))) : '';

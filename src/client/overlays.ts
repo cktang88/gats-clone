@@ -1,5 +1,6 @@
 import { GUN_IDS, GUNS, isPerkId, PERK_INFO, pickOptions, STREAK, type GunId, type PendingPick, type PerkId } from '../shared/defs.ts';
-import type { Snapshot } from '../shared/protocol.ts';
+import type { ClientMsg, Loadout, Snapshot } from '../shared/protocol.ts';
+import { deathAct, deathGist, deathView, firstStep, quickRespawn, type DeathAct, type DeathButton, type DeathCtx, type DeathStep } from './deathflow.ts';
 import { selfOf } from './derive.ts';
 import { chatEntries, type ChatEntry, type MutedNames } from './chatmute.ts';
 import { clock, deathScreenArmed, deathText, nextObjectiveSeen, NO_OBJECTIVE_SEEN, OBJECTIVE_MS, objectiveFor, objectiveVisible, roundPodium, roundTimeLeft, seconds } from './derive.ts';
@@ -30,7 +31,8 @@ const CHAT_LINES = 8;
 const PERK_DESC_HINT = 'Hover a choice to read what it does.';
 const PODIUM_SIZE = 3;
 
-export function createOverlays(onPick: (slot: number) => void, onRespawn: () => void, onToggleMute: (name: string) => void) {
+/** `onDeathSend` takes the death card's respawn (with the loadout picked); `loadout` reads the current pick. */
+export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg: ClientMsg) => void, onToggleMute: (name: string) => void, loadout: () => Loadout) {
   const perkPanel = $('perk-panel');
   const chatLog = $('chat-log');
   const chatInput = $<HTMLInputElement>('chat-input');
@@ -42,11 +44,37 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
   const deathCause = $('death-cause');
   const deathLost = $('death-lost');
   const deathRecap = $('death-recap');
+  const deathGistEl = $('death-gist');
+  const deathMore = $('death-more');
+  const moreToggle = $<HTMLButtonElement>('death-more-toggle');
+  const deathBack = $<HTMLButtonElement>('death-back');
   let recapShown: Recap | null = null;
+  let recapCompact = false;
   const respawn = $<HTMLButtonElement>('respawn');
   const report = $('report');
   const deathLoadout = $('loadout-death');
-  respawn.onclick = onRespawn;
+  // The death card's flow (deathflow.ts): its step, whether More is open, and what the buttons do now.
+  let compact = false;
+  let step: DeathStep = 'all';
+  let moreOpen = false;
+  let wasDead = false;
+  let ctx: DeathCtx = { compact: false, run: false, wait: 0 };
+  const buttonActs = new Map<HTMLButtonElement, DeathAct>();
+  const press = (act: DeathAct) => {
+    const next = deathAct(step, act, ctx, loadout(), moreOpen);
+    step = next.step;
+    moreOpen = next.moreOpen;
+    keys.death = '';
+    if (next.send) onDeathSend(next.send);
+  };
+  for (const b of [respawn, deathBack, moreToggle]) b.onclick = () => { const act = buttonActs.get(b); if (act && !b.disabled) press(act); };
+  const showButton = (b: HTMLButtonElement, spec: DeathButton | null) => {
+    b.hidden = !spec;
+    if (!spec) { buttonActs.delete(b); return; }
+    buttonActs.set(b, spec.act);
+    b.textContent = spec.label;
+    b.disabled = spec.disabled;
+  };
   const keys = { perk: '', chat: '', banner: '', death: '', objective: '', report: '' };
   // On a touch screen the dock opens collapsed to a pill, so a level-up never covers the fight until the player taps it open.
   const touchScreen = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
@@ -285,40 +313,54 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
 
   const renderDeath = (state: ClientState, snap: Snapshot, now: number) => {
     const dead = state.phase === 'dead';
-    if (dead && death.hidden) deathAt = now;
+    if (dead && !wasDead) { deathAt = now; step = firstStep(compact); moreOpen = false; }
+    wasDead = dead;
     const inert = dead && !deathScreenArmed(deathAt, now);
     if (death.inert !== inert) death.inert = inert;
     const wait = seconds(snap.self.respawnIn);
     const run = snap.run;
-    const key = dead ? `${state.kill?.killer}|${state.kill?.weapon}|${wait}|${run?.phase}|${run?.waveLeft}` : '';
+    ctx = { compact, run: !!run, wait };
+    const view = deathView(step, ctx, moreOpen);
+    const key = dead ? `${state.kill?.killer}|${state.kill?.weapon}|${wait}|${run?.phase}|${run?.waveLeft}|${view.step}|${moreOpen}|${compact}` : '';
     if (key === keys.death) return;
     keys.death = key;
     death.hidden = !dead || !!snap.royale;
     if (!dead || snap.royale) return;
-    respawn.hidden = deathLoadout.hidden = !!run;
+    death.dataset.step = view.step;
+    death.classList.toggle('compact', compact);
+    deathTitle.hidden = !view.title;
+    deathLoadout.hidden = !view.loadout;
+    deathMore.hidden = !view.recap;
+    deathSub.hidden = !view.sub;
+    showButton(respawn, view.primary);
+    showButton(deathBack, view.secondary);
+    showButton(moreToggle, view.more ? { label: moreOpen ? 'Less' : 'More', act: 'more', disabled: false } : null);
+    moreToggle.setAttribute('aria-expanded', String(moreOpen));
     if (run) {
       // Dawn gets everyone up, so a death this run can only be tonight's bleed-out; a night joiner has none.
       const text = outTillDawnText(run, snap.self.deaths > 0, snap.self.respawnIn);
       deathTitle.textContent = text.title;
       deathSub.textContent = text.sub;
-      deathCause.hidden = deathLost.hidden = deathRecap.hidden = true;
+      deathCause.hidden = deathLost.hidden = deathRecap.hidden = deathGistEl.hidden = true;
       return;
     }
-    if (state.recap !== recapShown) {
+    if (state.recap !== recapShown || compact !== recapCompact) {
       recapShown = state.recap;
+      recapCompact = compact;
       const killer = state.kill?.killerId !== null && state.kill?.killerId !== state.s.myId ? state.kill?.killer ?? null : null;
       const human = snap.players.find((p) => p.id === state.kill?.killerId)?.kind === 'human';
-      renderRecap(deathRecap, state.recap, killer, human);
+      renderRecap(deathRecap, state.recap, killer, human, compact);
     }
     const text = deathText(state.kill, state.loss);
     deathTitle.textContent = text.title;
     deathCause.textContent = text.cause;
-    deathCause.hidden = !text.cause;
+    deathCause.hidden = !text.cause || !view.title;
     deathLost.textContent = text.lost;
     deathLost.hidden = !text.lost;
-    deathSub.textContent = wait > 0 ? `Respawn in ${wait}s. Change your loadout below.` : 'Ready. Change your loadout or jump back in.';
-    respawn.disabled = wait > 0;
-    respawn.textContent = wait > 0 ? `Respawn (${wait})` : 'Respawn';
+    const gist = deathGist(state.recap);
+    deathGistEl.textContent = gist;
+    deathGistEl.hidden = !view.gist || !gist;
+    deathSub.textContent = wait > 0 ? `Respawn in ${wait}s. Change your loadout below.` : 'Ready. Change your loadout or press Space to jump back in.';
   };
 
   return {
@@ -335,6 +377,21 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
       chatInput.blur();
       return text;
     },
+    /** A phone on its side gets the stepped death card (deathflow.ts); set from the page's size. */
+    setCompact(on: boolean) {
+      if (on === compact) return;
+      compact = on;
+      keys.death = '';
+    },
+    /** Space on an open, armed death card: respawn with the same loadout. False when it is not the card's to take. */
+    quickRespawn(now: number): boolean {
+      // Not while the killcam holds the card back or settles (its own key handler takes that press to skip).
+      const held = ['dl-hold', 'dl-play', 'dl-settle'].some((c) => document.body.classList.contains(c));
+      if (death.hidden || death.inert || held || !deathScreenArmed(deathAt, now)) return false;
+      const msg = quickRespawn(ctx, loadout());
+      if (msg) onDeathSend(msg);
+      return true;
+    },
     update(state: ClientState, s: Session, snap: Snapshot, now: number, muted: MutedNames) {
       const pending = snap.self.pending;
       const gun = selfOf(snap)?.gun;
@@ -350,6 +407,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
     },
     reset() {
       keys.perk = keys.chat = keys.banner = keys.death = keys.objective = keys.report = '';
+      wasDead = false;
       objectiveSeen = NO_OBJECTIVE_SEEN;
       perkPanel.hidden = banner.hidden = death.hidden = objective.hidden = report.hidden = true;
       chatLog.replaceChildren();
@@ -359,7 +417,7 @@ export function createOverlays(onPick: (slot: number) => void, onRespawn: () => 
 }
 
 /** The life just lost as a row of stat tiles, each stamped when it set a record, then the records and who to take revenge on. */
-function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | null, nemesisHuman: boolean) {
+function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | null, nemesisHuman: boolean, compact: boolean) {
   el.hidden = !recap;
   if (!recap) return;
   const tiles = recap.stats.map((s, i) => {
@@ -381,7 +439,8 @@ function renderRecap(el: HTMLElement, recap: Recap | null, nemesis: string | nul
   });
   const lines: HTMLElement[] = [row, best];
   if (nemesis) {
-    const line = Object.assign(document.createElement('p'), { className: 'recap-nemesis', textContent: `${nemesis} is your nemesis now. Kill them for +${STREAK.revengeScore}. ` });
+    // On a phone the line is as short as it can be: who, and what revenge pays.
+    const line = Object.assign(document.createElement('p'), { className: 'recap-nemesis', textContent: compact ? `Nemesis ${nemesis} · +${STREAK.revengeScore} revenge ` : `${nemesis} is your nemesis now. Kill them for +${STREAK.revengeScore}. ` });
     // A human killer has a service record worth a look; bots keep none.
     if (nemesisHuman) line.append(Object.assign(document.createElement('a'), { href: `profile.html?name=${encodeURIComponent(nemesis)}`, target: '_blank', rel: 'noopener', textContent: 'Their record ›' }));
     lines.push(line);

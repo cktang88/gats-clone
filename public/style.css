@@ -483,7 +483,7 @@ a.wordmark { text-decoration: none; }
   --cut: 14px;
 }
 .banner h2 { margin: 0 0 6px; font: italic 900 var(--t-display)/1 var(--display); color: var(--ink); text-transform: uppercase; letter-spacing: 0.04em; justify-content: center; }
-.banner h2::before, .death-card > h2:first-child::before { display: none; }
+.banner h2::before, .death-body > h2:first-child::before { display: none; }
 .podium { margin: 12px 0 12px; padding: 0; list-style: none; counter-reset: podium; min-width: 240px; }
 .podium li { display: flex; gap: 16px; align-items: baseline; padding: 5px 0; font: 600 18px var(--display); letter-spacing: 0.04em; counter-increment: podium; border-top: 1px solid var(--line); }
 .podium li::before { content: counter(podium); color: var(--accent); min-width: 1.2em; text-align: left; font-weight: 800; }
@@ -545,28 +545,41 @@ a.wordmark { text-decoration: none; }
   display: flex;
   align-items: flex-start;
   padding: 16px;
-  overflow-y: auto;
   pointer-events: none;
   background: linear-gradient(90deg, rgba(12, 13, 16, 0.5), transparent 560px);
 }
+/*
+ * The card is a column no taller than the screen: its body scrolls inside the card (which takes touches, so iOS scrolls it;
+ * a scroller with pointer-events: none does not) and the button row under it never scrolls away.
+ */
 .death-card {
   position: relative;
   pointer-events: auto;
   transition: opacity 150ms;
   width: min(420px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
   background: var(--panel-solid);
-  padding: 22px 20px 20px;
   box-shadow: var(--lift);
   --cut: 14px;
   animation: card-slam 0.45s cubic-bezier(.2, 1.1, .4, 1) both;
 }
+.death-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 22px 20px 4px; }
+.death-foot { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: var(--s3); padding: 12px 20px 20px; }
+.death-foot #respawn { flex: 1 1 auto; }
+.death-back { flex: none; }
+.death-back::before { content: "\2039\00a0"; }
+.death-more-toggle { flex: none; margin-right: auto; min-height: 40px; padding: 0 var(--s2); font: 700 var(--t-label) var(--display); letter-spacing: 0.1em; text-transform: uppercase; }
+.death-more-toggle:is(:hover, :active, :focus):not(:disabled) { background: none; box-shadow: none; transform: none; }
+.death-gist { margin-top: 6px; font: 700 var(--t-label) var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); }
 /* The card drops in oversized and lands with a jolt. */
 @keyframes card-slam {
   0% { transform: scale(1.14) translateY(-10px); opacity: 0; }
   50% { transform: scale(0.985); opacity: 1; }
   66% { transform: translate(-4px, 2px); } 80% { transform: translate(3px, -1px); } 100% { transform: none; }
 }
-.death-card > h2:first-child { animation: stamp-title 0.4s cubic-bezier(.2, 1.5, .4, 1) 0.18s both; }
+.death-body > h2:first-child { animation: stamp-title 0.4s cubic-bezier(.2, 1.5, .4, 1) 0.18s both; }
 @keyframes stamp-title { from { transform: scale(1.6) rotate(-3deg); opacity: 0; } }
 /* Hazard tape along the top edge. */
 .death-card::before {
@@ -580,13 +593,13 @@ a.wordmark { text-decoration: none; }
 .death-cause { font: 600 var(--t-body) var(--text); color: var(--muted); margin-top: 2px; }
 .death-lost { margin-top: 4px; color: var(--gold); font: 700 var(--t-label) var(--display); letter-spacing: 0.08em; text-transform: uppercase; }
 .death-card .loadout h2 { margin: var(--s4) 0 var(--s2); }
+.death-card #death-sub { margin-top: var(--s3); }
 .death-card .weapons, .death-card .armors { gap: 6px; }
 .death-card .tile { padding: 6px 4px; }
 .death-card .gun-art { max-width: 100px; }
 .death-card .gun-stats { display: none; }
 .death-card .swatch { width: 30px; height: 30px; }
-.death-card #respawn { margin-top: var(--s4); }
-.death-card > h2:first-child { margin: 0 0 var(--s1); font: italic 900 30px/1 var(--display); color: var(--ink); text-transform: uppercase; letter-spacing: 0.02em; }
+.death-body > h2:first-child { margin: 0 0 var(--s1); font: italic 900 30px/1 var(--display); color: var(--ink); text-transform: uppercase; letter-spacing: 0.02em; }
 
 /* The life just lost, as four stamped stats; a record gets an orange plate and a tag. */
 .recap { margin-top: var(--s4); }
@@ -849,7 +862,7 @@ a.wordmark { text-decoration: none; }
   .logo em { color: var(--accent); }
   button.primary::before, .perk::after, .medal-rays, .medal-ring, .medal-spark { display: none; }
   .tile:hover:not(:disabled) { transform: none; }
-  .medal-toast, .medal-toast .medal-art, .medal-shine::before, .medal-name, .medal-score, .death-card, .death-card > h2:first-child,
+  .medal-toast, .medal-toast .medal-art, .medal-shine::before, .medal-name, .medal-score, .death-card, .death-body > h2:first-child,
   .recap-stat, .perk, .perk-panel, .tile { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; }
   .medal-toast { animation: medal-out 0.4s ease-in calc(var(--life) - 0.4s) both !important; }
   .perk-panel.collapsed { animation: none; }
@@ -1080,3 +1093,45 @@ body.phone-hud .rs-body { gap: 10px; padding: 3px 10px; }
 body.phone-hud .rs span { white-space: nowrap; }
 body.phone-hud .rs b { font-size: 17px; }
 @media (max-width: 899px) { body.phone-hud .rs:nth-child(n + 3) { display: none; } body.phone-hud .rs-grid { grid-template-columns: repeat(2, auto); } }
+
+/*
+ * The death card on a phone on its side (deathflow.ts): phonehud.ts sizes #death to the visible screen inside the insets and
+ * clear of the cog, and the card shows one step at a time with only what matters. Stats is the killer, the gun, one gold line
+ * and Try again (More opens the tiles, records and nemesis); Loadout is weapon, color and armor as three labelled rows of
+ * touch-sized chips, with Respawn always in view under them. The touch controls fold away while you are dead.
+ */
+.hud.no-touch-controls :is(.touch-buttons, .touch-emote, .touch-radio) { display: none !important; }
+.death.compact { padding: 0; align-items: center; justify-content: center; background: rgba(12, 13, 16, 0.55); box-shadow: 0 0 0 100vmax rgba(12, 13, 16, 0.55); }
+.death.compact .death-card { width: 100%; --cut: 10px; }
+.death.compact .death-body { padding: 14px 16px 2px; }
+.death.compact .death-foot { padding: 8px 10px 10px; gap: var(--s2); min-height: 52px; }
+.death.compact .death-foot button { min-height: 44px; }
+.death.compact .death-foot #respawn { flex: 0 1 260px; margin-left: auto; font-size: 20px; }
+.death.compact .death-body > h2:first-child { font-size: 24px; line-height: 1.05; overflow-wrap: anywhere; }
+.death.compact .death-cause { font-size: 15px; }
+.death.compact .death-gist { font-size: 14px; }
+.death.compact .recap { margin-top: var(--s3); }
+.death.compact .recap-row { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.death.compact .recap-stat { padding: 8px 4px 5px; animation-delay: calc(var(--i, 0) * 50ms); }
+.death.compact .recap-stat b { font-size: 20px; }
+.death.compact .recap-stat span { font-size: 10px; letter-spacing: 0.12em; }
+.death.compact .recap-stat i { font-size: 9px; top: -7px; padding: 1px 4px; }
+.death.compact .recap-bests, .death.compact .recap-nemesis { font-size: 13px; margin-top: 6px; }
+.death.compact .recap-nemesis { padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.death.compact .death-lost { margin-top: 6px; }
+.death.compact .death-enlist { margin-top: 6px; font-size: 13px; }
+/* Loadout: a narrow label column, then the chips. */
+.death.compact[data-step="loadout"] .death-body { padding-top: 10px; }
+.death.compact #loadout-death { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 8px 8px; align-items: center; }
+.death.compact #loadout-death h2 { margin: 0; font-size: 12px; letter-spacing: 0.12em; }
+.death.compact #loadout-death h2::before { display: none; }
+.death.compact .weapons { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+.death.compact .weapon { padding: 4px 2px 5px; gap: 2px; min-height: 44px; }
+.death.compact .weapon .gun-art { max-width: 100%; }
+.death.compact .weapon b { font-size: 12px; letter-spacing: 0.04em; white-space: nowrap; }
+.death.compact .weapon small, .death.compact .armor small { display: none; }
+.death.compact .armors { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.death.compact .armor { padding: 6px 6px 7px; min-height: 44px; align-content: center; }
+.death.compact .armor b { font-size: 14px; }
+.death.compact .swatches { gap: 8px; }
+.death.compact .swatch { width: 40px; height: 40px; }

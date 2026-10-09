@@ -36,6 +36,7 @@ import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } fro
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
 import { makeDelay } from './netsim.ts';
 import { createOverlays } from './overlays.ts';
+import { compactDeath, touchControlsShown } from './deathflow.ts';
 import { createDelight } from './delight.ts';
 import { doorsOf, decayCorrection, drawnPosition, NO_PREDICTION, predictAbility, predictInput, reconcile, selfMotion, solidsOf } from './predict.ts';
 import { startEffect } from './effects.ts';
@@ -185,6 +186,15 @@ function setState(next: ClientState) {
   }
   hudEl.hidden = next.phase === 'menu';
   canvas.classList.toggle('aiming', next.phase === 'playing');
+  // Dead (or spectating), nothing in-match looks tappable: reload, the ability, GG and radio fold away, and a held stick lets go.
+  hudEl.classList.toggle('no-touch-controls', !touchControlsShown(next.phase));
+  if (next.phase !== was.phase && (next.phase === 'dead' || was.phase === 'dead')) {
+    sticks = NO_STICKS;
+    held.clear();
+    firing = false;
+    abilityTapped = false;
+    if (next.phase === 'dead') wheel.close();
+  }
   reconnectEl.hidden = next.phase !== 'reconnecting';
   clearTimeout(retryTimer);
   if (next.phase === 'reconnecting') {
@@ -635,8 +645,9 @@ function buildClick(s: Session, e: MouseEvent) {
   playClick(s);
 }
 
-function respawn() {
-  if (state.phase === 'dead') send(state.s.ws, { t: 'respawn', loadout });
+/** The death card's respawn (deathflow.ts), carrying the loadout picked on it. */
+function sendFromDeath(msg: ClientMsg) {
+  if (state.phase === 'dead') send(state.s.ws, msg);
 }
 
 function resize() {
@@ -649,6 +660,7 @@ function resize() {
   canvas.style.height = `${h}px`;
   setHudInsets(safe);
   applyPhoneHud(hudEl, w, h, safe, touchScreen, hudScaleFor(w, h, touchScreen));
+  overlays.setCompact(compactDeath(w, h, touchScreen));
   clearTimeout(viewTimer);
   viewTimer = setTimeout(() => {
     const s = sessionOf(state);
@@ -808,6 +820,11 @@ function onKeyDown(e: KeyboardEvent) {
     fullBoard = true;
     return;
   }
+  // Space on the death card respawns with the same loadout (once the timer and the click guard are done).
+  if (e.code === 'Space' && !e.repeat && state.phase === 'dead' && overlays.quickRespawn(performance.now())) {
+    e.preventDefault();
+    return;
+  }
   if (e.key === 'Enter') {
     e.preventDefault();
     held.clear();
@@ -925,6 +942,8 @@ canvas.addEventListener('pointerdown', (e) => {
   const building = state.phase === 'playing' && state.s.building ? state.s : null;
   const chip = building && buildChipAt(e.clientX, e.clientY);
   if (building && chip) { pressBuildChip(building, chip); return; }
+  // Only a living soldier takes a stick: a thumb on the world while dead must not wake one up for the respawn.
+  if (state.phase !== 'playing') return;
   sticks = pressStick(sticks, e.pointerId, e.clientX, e.clientY, view.w);
 });
 window.addEventListener('pointermove', (e) => {
@@ -944,6 +963,7 @@ for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'relo
   button.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     autoFullscreen.tap();
+    if (state.phase !== 'playing') return;
     held.add(action);
     if (action !== 'ability') return;
     abilityTapped = true;
@@ -1090,7 +1110,7 @@ function toggleMuted(name: string) {
   renderMuted($('muted'), muted, toggleMuted);
 }
 
-const overlays = createOverlays(pick, respawn, toggleMuted);
+const overlays = createOverlays(pick, sendFromDeath, toggleMuted, () => loadout);
 const delight = createDelight();
 const rangeUi = createRangeUi(hudEl, (msg) => { const s = sessionOf(state); if (s) send(s.ws, msg); }, () => { const s = sessionOf(state); if (s) playClick(s); });
 const celebrate = createCelebration(document.body);

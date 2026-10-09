@@ -141,16 +141,25 @@
     <aside id="xp-card" class="xp-card" hidden aria-live="polite"></aside>
     <div id="objective" class="objective" role="status" hidden></div>
     <div id="reconnect" class="reconnect" role="status" hidden></div>
-    <div id="death" class="death" hidden>
+    <div id="death" class="death" hidden data-step="all">
       <div class="death-card">
-        <h2 id="death-title">You were eliminated</h2>
-        <p id="death-cause" class="death-cause" hidden></p>
-        <p id="death-lost" class="death-lost" hidden></p>
-        <div id="death-recap" class="recap" hidden></div>
-        <p id="death-sub" class="muted"></p>
-        <p id="death-enlist" class="death-enlist" hidden><span id="death-enlist-text"></span> <button id="death-enlist-go" type="button" class="link" title="Leave the match and make a free account">Enlist &#8250;</button></p>
-        <div id="loadout-death" class="loadout"></div>
-        <button id="respawn" type="button" class="primary">Respawn</button>
+        <div class="death-body">
+          <h2 id="death-title">You were eliminated</h2>
+          <p id="death-cause" class="death-cause" hidden></p>
+          <p id="death-gist" class="death-gist" hidden></p>
+          <div id="death-more" class="death-more">
+            <p id="death-lost" class="death-lost" hidden></p>
+            <div id="death-recap" class="recap" hidden></div>
+            <p id="death-enlist" class="death-enlist" hidden><span id="death-enlist-text"></span> <button id="death-enlist-go" type="button" class="link" title="Leave the match and make a free account">Enlist &#8250;</button></p>
+          </div>
+          <p id="death-sub" class="muted"></p>
+          <div id="loadout-death" class="loadout"></div>
+        </div>
+        <div class="death-foot">
+          <button id="death-more-toggle" type="button" class="link death-more-toggle" aria-controls="death-more" aria-expanded="false" hidden>More</button>
+          <button id="death-back" type="button" class="death-back" hidden>Stats</button>
+          <button id="respawn" type="button" class="primary">Respawn</button>
+        </div>
       </div>
     </div>
   </div>
