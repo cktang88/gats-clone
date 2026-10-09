@@ -378,7 +378,7 @@ export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
 export const PLAYER_KINDS = ['human', 'bot'] as const;
 export type PlayerKind = (typeof PLAYER_KINDS)[number];
 /** Humans carry multiplied health so a person outlasts the bots that fill the room. Regen scales with it, so healing takes the same time. */
-export const HP_MULTIPLIER: Record<PlayerKind, number> = { human: 4, bot: 1 };
+export const HP_MULTIPLIER: Record<PlayerKind, number> = { human: 2, bot: 1 };
 
 export type Pick = { k: 'perk'; tier: Tier; /** The tier-2 perks offered this life (`TIER2_OFFER` of the pool, drawn at spawn); absent means the whole tier. */ offer?: readonly PerkId[] } | { k: 'evolve' };
 export type PendingPick = { level: number } & Pick;

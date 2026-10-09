@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { PERK_ICONS } from '../src/client/icons.ts';
-import { ARMORS, GUNS, PERK_INFO, PERK_TIERS, pickOptions, settleRulesOf, SPRINT, TIER2_OFFER, WORLD, type PerkId } from '../src/shared/defs.ts';
+import { ARMORS, GUNS, HP_MULTIPLIER, PERK_INFO, PERK_TIERS, pickOptions, settleRulesOf, SPRINT, TIER2_OFFER, WORLD, type PerkId } from '../src/shared/defs.ts';
 import { loadOf, sprintShareOf } from '../src/shared/handling.ts';
 import { step } from '../src/shared/sim.ts';
 import { damagePlayer, explode } from '../src/shared/sim/combat.ts';
@@ -191,7 +191,7 @@ test('Bloodlust: heal 15% of the damage you deal', () => {
   if (human.life.k === 'alive') human.life.hp = 100;
   human.perks = { 2: 'bloodlust' };
   hit(w, victim, human, 20);
-  assert.ok(Math.abs(hpOf(human) - (100 + 0.15 * 20 * 4)) < 1e-9, 'a human heals in its own bigger health scale');
+  assert.ok(Math.abs(hpOf(human) - (100 + 0.15 * 20 * HP_MULTIPLIER.human)) < 1e-9, 'a human heals in its own bigger health scale');
   if (p.life.k === 'alive') p.life.hp = effectiveStats(p).maxHp - 1;
   hit(w, victim, p, 20);
   assert.equal(hpOf(p), effectiveStats(p).maxHp, 'never past full health');

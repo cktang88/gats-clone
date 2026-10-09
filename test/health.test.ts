@@ -56,7 +56,8 @@ test('humans kill each other as fast as bots kill each other, armored or not, an
   for (const armor of ['none', 'medium'] as const) {
     assert.equal(ttk('human', 'human', armor), ttk('bot', 'bot', armor), `${armor} armor`);
     assert.equal(ttk('human', 'bot', armor), ttk('bot', 'bot', armor), `a human hits a bot for base damage (${armor} armor)`);
-    assert.ok(ttk('bot', 'human', armor) > 2 * ttk('bot', 'bot', armor), `a bot needs far longer on a human (${armor} armor)`);
+    assert.ok(ttk('bot', 'human', armor) >= 0.9 * H * ttk('bot', 'bot', armor), `a bot needs about the human multiple of the time on a human (${armor} armor)`);
+    assert.ok(ttk('bot', 'human', armor) <= 1.2 * H * ttk('bot', 'bot', armor), `but no more than that (${armor} armor)`);
   }
 });
 
