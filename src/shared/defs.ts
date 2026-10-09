@@ -671,8 +671,11 @@ export const WORLD = {
   regenDelayMs: 4000,
   regenPerSec: 5,
   tickHz: 30,
-  /** Half the width of the world a player sees with no view bonus (see `VIEW` for the bonuses). */
-  viewRadius: 780,
+  /**
+   * Half the width of the world a player sees with no view bonus (see `VIEW` for the bonuses): 700, zoomed in about 10% from 780 so bodies
+   * and rounds read bigger. The stronger aim look-ahead (shared/lookahead.ts) gives back the ground down the aim, so a sniper sees as far as before.
+   */
+  viewRadius: 700,
   crateHp: 40,
   crateScore: 10,
   killScore: 100,

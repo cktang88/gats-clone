@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { WallView } from '../src/shared/protocol.ts';
+import { BOT_VIEW_ASPECT, type WallView } from '../src/shared/protocol.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { IDLE_INPUT } from '../src/shared/sim/world.ts';
@@ -175,7 +175,8 @@ test('a bot walled off from a hunted marker walks around the wall and fights ins
     const r = seeded(seed);
     let mem = newBotMemory(r);
     for (let i = 1; i <= 20 * 30 && hpOf(hunted) === fullHp; i++) {
-      const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
+      // A bot sees by BOT_VIEW_ASPECT, as the server's bot tick gives it: at 16:9 a 700 px view leaves him out of sight past the wall's end.
+      const d = botThink(snapshotFor(w, bot.id, [], BOT_VIEW_ASPECT), arenaFor(w), mem, r);
       mem = d.mem;
       setInput(w, bot.id, i, d.input);
       step(w, TICK_MS);

@@ -8,6 +8,8 @@ import { crateRect, createWorld, IDLE_INPUT, rand, type Player, type Wall, type 
 import { arenaFor } from '../../src/server/bot/arena.ts';
 import { clearShot, dist, findPath, isOpen, type Point } from '../../src/server/bot/nav.ts';
 import { segmentBlocked } from '../../src/shared/sim/movement.ts';
+import { lookReach } from '../../src/shared/lookahead.ts';
+import { boundLean, visibleHalf } from '../../src/client/camera.ts';
 import { newBotMemory, type BotMemory } from '../../src/server/bots.ts';
 import { startIntent, type PersonalityId } from '../../src/server/bot/intent.ts';
 import { thinkBots } from '../../src/server/bot/tick.ts';
@@ -35,9 +37,15 @@ const join = (w: World, gun: GunId, x: number, y: number, kind: 'bot' | 'human')
 };
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+/**
+ * Whether the human has a line on the bot: in the view a person on a 16:9 screen has while aiming at it (his view radius, his camera leaned
+ * toward it by the aim look-ahead and held by `boundLean`, as the client does) and with no wall between them.
+ */
 const sees = (w: World, a: Player, b: Player) => {
-  const sight = viewExtents(WORLD.viewRadius, DEFAULT_VIEW_ASPECT);
-  return Math.abs(a.x - b.x) <= sight.halfW && Math.abs(a.y - b.y) <= sight.halfH && !segmentBlocked(w.walls.filter((x) => !x.ns), a.x, a.y, b.x - a.x, b.y - a.y);
+  const R = effectiveStats(a).viewRadius, half = visibleHalf(1600, 900, R);
+  const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, reach = lookReach(R, a.gun);
+  const lean = boundLean({ x: (dx / d) * reach, y: (dy / d) * reach }, half);
+  return Math.abs(dx - lean.x) <= half.halfW && Math.abs(dy - lean.y) <= half.halfH && !segmentBlocked(w.walls.filter((x) => !x.ns), a.x, a.y, dx, dy);
 };
 
 /** Keys toward `to` for the human (8 ways, as a keyboard). */

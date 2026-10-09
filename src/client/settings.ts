@@ -15,7 +15,7 @@ export type ShakeMode = 'on' | 'reduced' | 'off';
 export type MotionMode = 'system' | 'on' | 'off';
 export type CrosshairStyle = 'classic' | 'dot' | 'ring' | 'open';
 export type CrosshairColor = 'bone' | 'orange' | 'gold' | 'mint';
-/** How far the camera leans toward where you aim (shared/lookahead.ts): not at all, the old subtle lean (0.4), or the full reach. */
+/** How far the camera leans toward where you aim (shared/lookahead.ts): not at all, the old subtle lean (0.3), or the full reach. */
 export type LookAheadMode = 'off' | 'low' | 'normal';
 
 export type Settings = {
@@ -99,8 +99,8 @@ export const percentOfGain = (gain: number): number => (Number.isFinite(gain) ? 
 export const shakeFactor = (mode: ShakeMode): number => (mode === 'off' ? 0 : mode === 'reduced' ? 0.35 : 1);
 
 /** The share of the aim look-ahead's full reach to use. */
-/** Low is 0.4 of Normal: about the first, subtler lean, for anyone who preferred it. */
-export const lookAheadFactor = (mode: LookAheadMode): number => (mode === 'off' ? 0 : mode === 'low' ? 0.4 : 1);
+/** Low is 0.3 of Normal: about the first, subtler lean (assault 0.15 of the view, from 0.14), for anyone who preferred it. */
+export const lookAheadFactor = (mode: LookAheadMode): number => (mode === 'off' ? 0 : mode === 'low' ? 0.3 : 1);
 
 /** Whether to treat motion as reduced, given the setting and what the system asks for. */
 export const motionReduced = (mode: MotionMode, systemPrefers: boolean): boolean => (mode === 'on' ? true : mode === 'off' ? false : systemPrefers);

@@ -38,16 +38,24 @@ test('look-ahead: no lean at the middle, the full reach at the edge, clamped pas
 
 test('look-ahead reach scales with the view and the gun: a scope leans furthest, a shotgun or an SMG least', () => {
   const R = WORLD.viewRadius;
-  // Pinned: about 2.5x the first port's shares (pistol 0.13, SMG 0.11, shotgun 0.1, assault and LMG 0.14, sniper 0.19), which read as too subtle.
-  assert.deepEqual({ ...LOOK_AHEAD.share }, { pistol: 0.32, smg: 0.28, shotgun: 0.26, assault: 0.36, sniper: 0.5, lmg: 0.34 });
-  assert.equal(LOOK_AHEAD.maxShare, 0.6);
-  const old = { pistol: 101, smg: 86, shotgun: 78, assault: 109, lmg: 109, sniper: 202 } as const;
-  for (const [id, was] of Object.entries(old) as [keyof typeof old, number][]) {
-    const reach = lookReach(R * viewMulFor(id, {}), id);
-    assert.ok(reach >= 2.3 * was && reach <= 2.7 * was, `${id} leans ${reach.toFixed(0)} px, about 2.5x its old ${was}`);
+  // Pinned: 1.4x the previous shares (pistol 0.32, SMG 0.28, shotgun 0.26, assault 0.36, LMG 0.34, sniper 0.5), taken with the view zoomed in from 780 to 700.
+  assert.deepEqual({ ...LOOK_AHEAD.share }, { pistol: 0.45, smg: 0.39, shotgun: 0.36, assault: 0.5, sniper: 0.7, lmg: 0.48 });
+  assert.equal(LOOK_AHEAD.maxShare, 0.75);
+  assert.equal(R, 700);
+  const was = { pistol: 0.32, smg: 0.28, shotgun: 0.26, assault: 0.36, lmg: 0.34, sniper: 0.5 } as const;
+  for (const [id, share] of Object.entries(was) as [keyof typeof was, number][]) {
+    const ratio = LOOK_AHEAD.share[id] / share;
+    assert.ok(ratio >= 1.3 && ratio <= 1.5, `${id} leans ${ratio.toFixed(2)}x its previous share`);
+  }
+  // What you see down the aim at a full lean, the view plus the lean: about what the wider view and the weaker lean showed (780 px and the
+  // old shares), so zooming in costs no ground ahead of you, only round you.
+  for (const [id, share] of Object.entries(was) as [keyof typeof was, number][]) {
+    const now = R * viewMulFor(id, {}), then = 780 * viewMulFor(id, {});
+    const ahead = now + lookReach(now, id), before = then + Math.min(then * 0.6, Math.max(then * share, GUNS[id].range - then));
+    assert.ok(ahead >= before * 0.95 && ahead <= before * 1.1, `${id} sees ${ahead.toFixed(0)} px down the aim, against ${before.toFixed(0)} before`);
   }
   const assault = lookReach(R, 'assault');
-  assert.ok(near(assault, 0.36 * R) && near(lookReach(R * viewMulFor('sniper', {}), 'sniper'), 0.5 * R * viewMulFor('sniper', {})));
+  assert.ok(near(assault, 0.5 * R) && near(lookReach(R * viewMulFor('sniper', {}), 'sniper'), 0.7 * R * viewMulFor('sniper', {})));
   assert.ok(lookReach(R, 'sniper') > assault && lookReach(R, 'smg') < assault && lookReach(R, 'shotgun') < assault);
   for (const id of ['pistol', 'smg', 'shotgun', 'assault', 'lmg'] as const) {
     assert.ok(lookReach(R * viewMulFor('sniper', {}), 'sniper') > lookReach(R * viewMulFor(id, {}), id), `a scoped sniper leans further than a ${id}`);
@@ -62,7 +70,7 @@ test('look-ahead reach scales with the view and the gun: a scope leans furthest,
   for (const id of Object.keys(GUNS) as (keyof typeof GUNS)[]) assert.ok(lookReach(R, id) > 0, id);
 });
 
-test('look-ahead bound: your own soldier stays at least a fifth of the screen from every edge, on every screen, gun and aim', () => {
+test('look-ahead bound: your own soldier stays at least 15% of the screen from every edge (a quarter on touch), on every screen, gun and aim', () => {
   const screens = { '16:9': [1600, 900], '21:9': [2560, 1080], '32:9': [3840, 1080], 'phone landscape': [844, 390], 'phone portrait': [390, 844], square: [1000, 1000] } as const;
   const self = { x: 3000, y: 3000 };
   for (const [name, [w, h]] of Object.entries(screens)) {
@@ -78,15 +86,20 @@ test('look-ahead bound: your own soldier stays at least a fifth of the screen fr
           assert.ok(Math.abs(Math.atan2(Math.sin(Math.atan2(lean.y, lean.x) - a), Math.cos(Math.atan2(lean.y, lean.x) - a))) < 1e-9, 'the bound shortens the lean, never turns it');
           const at = worldToScreen(makeCamera({ x: self.x + lean.x, y: self.y + lean.y }, w, h, R), self);
           const gap = (1 - edge) / 2 - 1e-6;
+          assert.ok(gap >= (touch ? 0.25 : 0.15) - 1e-5, 'the bound itself');
           assert.ok(at.x >= gap * w && at.x <= w - gap * w && at.y >= gap * h && at.y <= h - gap * h,
             `${name} ${id}${touch ? ' (touch)' : ''} aimed at ${(a * 180 / Math.PI).toFixed(0)}: soldier drawn at ${at.x.toFixed(0)},${at.y.toFixed(0)} of ${w}x${h}`);
         }
       }
     }
   }
-  // A full lean down the long side of a 16:9 screen is not cut short: an assault rifle aimed at the side edge shows its whole reach.
+  // A full lean down the long side of a 16:9 or 21:9 screen is not cut short: an assault rifle or a scoped sniper aimed at the side edge shows its whole reach.
   const half = visibleHalf(1600, 900, WORLD.viewRadius), reach = lookReach(WORLD.viewRadius, 'assault');
   assert.ok(near(boundLean({ x: reach, y: 0 }, half).x, reach));
+  for (const [w, h] of [[1600, 900], [2560, 1080]]) {
+    const R = WORLD.viewRadius * viewMulFor('sniper', {}), sniper = lookReach(R, 'sniper');
+    assert.ok(near(boundLean({ x: sniper, y: 0 }, visibleHalf(w, h, R)).x, sniper), `${w}x${h}: a sniper leans its whole ${sniper.toFixed(0)} px sideways`);
+  }
   assert.ok(boundLean({ x: 0, y: reach }, half).y < reach, 'up or down, the short side, is held to the bound');
   assert.deepEqual(boundLean({ x: NaN, y: 0 }, half), { x: 0, y: 0 });
   // A phone held upright crops the view's sides (cover scale): the bound uses what is actually on screen.
@@ -194,7 +207,8 @@ test('the held widening always covers a camera easing away from an old lean, at 
 
 test('the look-ahead setting: Normal by default, Low about the old subtle lean, Off removes it, junk falls back', () => {
   assert.equal(DEFAULTS.lookAhead, 'normal');
-  assert.deepEqual(['off', 'low', 'normal'].map((m) => lookAheadFactor(m as 'off')), [0, 0.4, 1]);
+  assert.deepEqual(['off', 'low', 'normal'].map((m) => lookAheadFactor(m as 'off')), [0, 0.3, 1]);
+  assert.ok(Math.abs(LOOK_AHEAD.share.assault * lookAheadFactor('low') - 0.14) < 0.02, 'Low is about the first port\'s assault lean');
   assert.equal(sanitize({ lookAhead: 'low' }).lookAhead, 'low');
   assert.equal(sanitize({ lookAhead: 'huge' }).lookAhead, 'normal');
 });

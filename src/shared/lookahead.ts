@@ -12,20 +12,22 @@ import { GUNS, type GunId, type WeaponId } from './defs.ts';
 export const LOOK_AHEAD = {
   /**
    * The reach as a share of the view radius (the view's half width), by gun class: a scope wants to see far, a close gun the room around it.
-   * About two and a half times the first port's lean (pistol 0.13, SMG 0.11, shotgun 0.1, assault and LMG 0.14, sniper 0.19), which read as
-   * too subtle: aimed at the screen's edge, an assault rifle now shows about 280 px more ground that way and a scoped sniper about 500.
+   * 1.4 times the previous lean (pistol 0.32, SMG 0.28, shotgun 0.26, assault 0.36, LMG 0.34, sniper 0.5), itself about two and a half times
+   * the first port's, taken with the view zoomed in to 700: aimed at the screen's edge, an assault rifle shows 350 px more ground that way
+   * (1050 in all, about what it saw at 780 with the old lean) and a scoped sniper about 630 (1520 in all, a little more than before).
    */
-  share: { pistol: 0.32, smg: 0.28, shotgun: 0.26, assault: 0.36, sniper: 0.5, lmg: 0.34 } satisfies Record<WeaponId, number>,
+  share: { pistol: 0.45, smg: 0.39, shotgun: 0.36, assault: 0.5, sniper: 0.7, lmg: 0.48 } satisfies Record<WeaponId, number>,
   /**
    * A gun that reaches past the view's edge leans further, far enough that its full lean shows its whole range down the aim (so nobody
    * shoots what they cannot see), but never past this share of the view radius.
    */
-  maxShare: 0.6,
+  maxShare: 0.75,
   /**
    * However far a gun would lean, your own soldier stays inside this share of the visible half width and half height (an ellipse round the
-   * middle of the screen, `boundLean` in client/camera.ts): at least a fifth of the screen from any edge, on any shape of screen.
+   * middle of the screen, `boundLean` in client/camera.ts): at least 15% of the screen from any edge, on any shape of screen. It was a fifth
+   * (0.6), which cut a scoped sniper's lean down the long side of a 16:9 screen short of its 0.7 share; 0.7 lets it lean in full there.
    */
-  edge: 0.6,
+  edge: 0.7,
   /**
    * A thumb on the aim stick leans this share of a mouse's reach, and keeps the soldier inside `touchEdge`: the stick is pushed far
    * whenever it fires, a phone's screen is small and the sticks sit at its bottom corners.

@@ -5,6 +5,7 @@ import { DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../src/sh
 import { effectiveStats, stackView, viewBonuses, viewMulFor } from '../src/shared/sim/stats.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { makeCamera } from '../src/client/camera.ts';
+import { lookReach } from '../src/shared/lookahead.ts';
 import { emptyWorld, spawnAt } from './helpers.ts';
 
 const close = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps;
@@ -21,12 +22,12 @@ function maxKit(gun: GunId, anyAttachment: boolean): Partial<Record<Tier, PerkId
   return kit;
 }
 
-test('the default view is zoomed in from the old 900 px by 12 to 15%', () => {
-  assert.ok(WORLD.viewRadius >= 900 * 0.85 && WORLD.viewRadius <= 900 * 0.88, `${WORLD.viewRadius}`);
-  // Still enough to fight: at 16:9 every gun's reach that is not a scope's fits across the view, and even an ultrawide or phone shows
-  // well past an SMG's damage fade above and below.
-  for (const id of GUN_IDS) if (GUNS[id].base !== 'sniper' && GUNS[id].base !== 'assault') assert.ok(GUNS[id].range <= WORLD.viewRadius * 1.25, id);
-  assert.ok(viewExtents(WORLD.viewRadius, 2.4).halfH >= 300, 'an ultrawide still sees 300 px up and down');
+test('the default view is zoomed in from the old 900 px, then from 780 by about 10%', () => {
+  assert.ok(WORLD.viewRadius >= 780 * 0.88 && WORLD.viewRadius <= 780 * 0.9, `${WORLD.viewRadius}`);
+  // Still enough to fight: at 16:9 every gun's reach that is not a scope's fits inside the view and its aim look-ahead, and even an
+  // ultrawide shows past where an SMG's damage starts to fade above and below.
+  for (const id of GUN_IDS) if (GUNS[id].base !== 'sniper' && GUNS[id].base !== 'assault') assert.ok(GUNS[id].range <= WORLD.viewRadius + lookReach(WORLD.viewRadius, id), id);
+  assert.ok(viewExtents(WORLD.viewRadius, 2.4).halfH >= 280, 'an ultrawide still sees 280 px up and down');
 });
 
 test('view bonuses stack with diminishing returns: one alone gives its whole value, more give less each, in any order, never past the cap', () => {
