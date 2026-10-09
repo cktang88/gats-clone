@@ -38,6 +38,7 @@ function marks(i: Intent): { to: [number, number] | null; lookAt: [number, numbe
     case 'search': return { to: p(i.at), lookAt: null };
     case 'blinded': return { to: null, lookAt: p(i.at) };
     case 'resupply': return { to: p(i.at), lookAt: null };
+    case 'hold': return { to: p(i.spot), lookAt: p(i.watch) };
   }
 }
 
@@ -70,7 +71,7 @@ const html = `<!doctype html><meta charset="utf-8"><title>Bot trace</title>
 <div id="wrap"><canvas id="c" width="900" height="900"></canvas><div id="side"><div id="head"></div><input id="s" type="range" min="0" step="1"><div id="legend"></div><div id="list"></div></div></div>
 <script>
 const D=${JSON.stringify(data)};
-const C={patrol:'#9aa3ad',takePosition:'#5bc0eb',engage:'#f25f5c',peekAndHide:'#ffe066',reloadInCover:'#c77dff',retreatAndHeal:'#70e000',flank:'#ff9f1c',search:'#f15bb5',dead:'#444'};
+const C={patrol:'#9aa3ad',takePosition:'#5bc0eb',engage:'#f25f5c',peekAndHide:'#ffe066',reloadInCover:'#c77dff',retreatAndHeal:'#70e000',flank:'#ff9f1c',hold:'#2ec4b6',search:'#f15bb5',dead:'#444'};
 const c=document.getElementById('c'),g=c.getContext('2d'),s=document.getElementById('s'),k=900/D.size;
 s.max=D.frames.length-1;
 document.getElementById('legend').innerHTML=Object.entries(C).map(([n,v])=>'<div class="k"><span class="sw" style="background:'+v+'"></span>'+n+'</div>').join('');

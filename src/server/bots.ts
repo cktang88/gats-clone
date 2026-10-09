@@ -7,6 +7,7 @@ import { act, freshMotor, type Motor } from './bot/motor.ts';
 import { crawlThink, royaleThink } from './bot/royale.ts';
 import { supplyFor } from './bot/supplies.ts';
 import { isOpen } from './bot/nav.ts';
+import { readTactics, type Tactics } from './bot/tactics.ts';
 import { DEAD_ZONE, siegeThink } from './bot/siege.ts';
 
 export type BotMemory = {
@@ -16,6 +17,8 @@ export type BotMemory = {
   motor: Motor;
   /** When it last thought and last planned, and what it saw then, for the think cadence (see tick.ts). */
   beat?: Beat;
+  /** How it last saw each enemy, and where it pre-aims (see tactics.ts); fresh each life. */
+  tactics?: Tactics;
 };
 
 /**
@@ -81,12 +84,15 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
   if (snap.run) return { ...siegeThink(snap, snap.run, me, arena, mem, rand), pick: choice };
   if (snap.royale) return { ...royaleThink(snap, snap.royale, me, arena, mem, rand), pick: choice };
 
-  const { awareness, view } = perceive(snap, arena, me, mem.awareness);
+  const perceived = perceive(snap, arena, me, mem.awareness);
+  const { awareness } = perceived;
+  // What it read off each enemy it saw, whom it shoots first, and where it pre-aims (see tactics.ts); a fresh life starts a fresh read.
+  const { view, tactics } = readTactics(mem.intent ? mem.tactics ?? null : null, perceived.view, awareness);
   const persona = PERSONALITIES[mem.persona];
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier, supply: supplyFor(snap, me, (p) => isOpen(arena.nav, p)) };
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier, supply: supplyFor(snap, me, (p) => isOpen(arena.nav, p)), tac: tactics };
   const intent = nextIntent(mem.intent ?? startIntent({ k: 'patrol', goal: me }, ctx), view, ctx);
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
-  return { input, pick: choice, mem: { ...mem, intent, awareness, motor } };
+  return { input, pick: choice, mem: { ...mem, intent, awareness, motor, tactics } };
 }
 
 export type TeamCounts = { red: number; blue: number };

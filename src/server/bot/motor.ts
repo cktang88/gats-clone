@@ -1,5 +1,5 @@
 import { GUNS, rulesOf, WORLD, type AbilityId, type GunId, type PerkId, type Tier } from '../../shared/defs.ts';
-import { DEFAULT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
+import { BOT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { BOT_BLOOM_DECAY_MUL, BOT_SPREAD_MUL, bloomRecoverMul, settleShare, spreadFor } from '../../shared/sim/stats.ts';
@@ -13,6 +13,7 @@ import { BLIND_AT, focus, type Perception, type Threat } from './awareness.ts';
 import { sightBlocked } from '../../shared/sim/vision.ts';
 import { justLost, lane, type Intent, type IntentCtx } from './intent.ts';
 import { inOpenReach } from './supplies.ts';
+import { hiddenFromSeen } from './tactics.ts';
 import { between, clearShot, dist, findPath, isOpen, walkable, type Point } from './nav.ts';
 import { boltCue, DODGE_AT, dangerTo, dodgeLeg, dodgeStyle, nextDodge, weave, type Dodge, type DodgeStyle } from './evade.ts';
 
@@ -92,6 +93,8 @@ export type Hold = {
   wakeAt: number;
   /** A planted gun thinks again the tick after its round leaves (not on every pull of a trigger still cycling), to move off its spot (see `nextDodge`, `thinkBots`). */
   wakeOnFire: boolean;
+  /** It was pre-aiming an angle with nobody in sight (see `watchPoint`), so one who shows there is taken in quickly (`PRE_AIMED_REACT`). */
+  watching?: boolean;
   /** Whether it stood at `to` when it decided, so only arriving there later wakes it to plan the next move. */
   arrived: boolean;
   /** The nav grid it routed on (a barrel going up or coming back makes a new one), and the door on its way and whether it stood open. */
@@ -216,6 +219,11 @@ const LOOK_HOLD_INSIDE_PX = 150;
 /** An enemy in sight this far off where its gun points catches it off-angle (see `HANDS.startle`). */
 const STARTLE_RAD = (40 * Math.PI) / 180;
 const LOOK_AHEAD_PX = 400;
+/** An enemy who comes into sight this near where its gun points was pre-aimed: it takes him in in `PRE_AIMED_REACT` of its usual time. */
+const PRE_AIMED_RAD = (10 * Math.PI) / 180;
+const PRE_AIMED_REACT = 0.6;
+/** Below this share of its magazine it reloads even in an enemy's line. */
+const OPEN_RELOAD_FRAC = 0.2;
 
 function lookAt(at: Point | null, me: Point, mine: Point, minPx = LOOK_HOLD_INSIDE_PX): { want: number; spin: number; d: number } | null {
   if (!at || dist(at, me) < Math.max(1, minPx)) return null;
@@ -383,6 +391,10 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
       return { steer: { to, face: intent.mode === 'hold' ? null : intent.at, reload: v.self.ammo < v.self.mag / 2 && intent.mode !== 'spray', crates: false }, stance: m.stance };
     }
     case 'flank': return { steer: { to: intent.via, face: intent.lastKnown, reload: false, crates: false }, stance: m.stance };
+    case 'hold': {
+      const there = dist(me, intent.spot) < WAYPOINT_PX * 2;
+      return { steer: { to: intent.spot, face: intent.watch, reload: there && v.threats.length === 0 && v.self.ammo < v.self.mag, crates: false }, stance: m.stance };
+    }
     case 'peekAndHide': {
       const t = focus(v, intent.target);
       const face = t ? t.p : v.lastSeen ?? intent.peek;
@@ -802,7 +814,10 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const mine = m.aim ? { x: (me.x - m.last.x) * WORLD.tickHz, y: (me.y - m.last.y) * WORLD.tickHz } : { x: 0, y: 0 };
   // An enemy in sight is what it looks at, whatever it was about (a reload, a walk, the spot the last one was), and one well off its
   // facing it turns to quickly (`HANDS.startle`); it takes him in, and aims and fires, only once its reaction time has passed.
-  const faceAt = (intent.k !== 'blinded' ? t?.p : undefined) ?? s.face ?? v.lastSeen ?? v.lead;
+  // With nobody in sight but someone about, it pre-aims where he would come from (`watchPoint`: the edge of the cover he is behind, or the
+  // way a shot came), whatever it is doing, as a person keeps his crosshair on the angle rather than on his own feet.
+  const watch = intent.k !== 'blinded' && !t ? c.tac?.watch ?? null : null;
+  const faceAt = (intent.k !== 'blinded' ? t?.p : undefined) ?? watch ?? s.face ?? v.lastSeen ?? v.lead;
   const startled = t !== undefined && faceAt === t.p && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) > STARTLE_RAD;
   let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: startled ? HANDS.startle : HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p } : { k: 'ahead' };
   const barrels = seenBarrels(snap.barrels);
@@ -812,14 +827,16 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   if (t) {
     const tracked = held(t.p.id) ? m.engaged : null;
     const sharp = sharpnessAgainst(t.p);
-    engaged = engage(tracked, t.p, sharp, v.tick, c.rand, v.flash, c.persona.reactMul);
+    // An enemy who steps into the angle its gun already holds is shot on sight: the reaction a person has for a target he was waiting for.
+    const preAimed = !tracked && !!m.hold?.watching && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) < PRE_AIMED_RAD;
+    engaged = engage(tracked, t.p, sharp, v.tick, c.rand, v.flash, c.persona.reactMul * (preAimed ? PRE_AIMED_REACT : 1));
     const shot = barrelToShoot(me, barrels, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range)
       ?? propToShoot(me, props, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range);
     const blocked = !shot && (shotWouldBurnMe(barrels, me, t.p) || shotWouldHurtMe(props, me, t.p));
     track = { id: t.p.id, sharp, shoot: shot ? { x: shot.x, y: shot.y } : null, fire: !blocked };
     if (v.tick >= engaged.noticeAtTick) threat = { d: t.d };
   } else if (s.crates && snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading) {
-    const crate = crateInSight(me, snap.crates, [...c.arena.walls, ...c.arena.barrels], gun.range * 0.95, viewExtents(snap.self.viewRadius, DEFAULT_VIEW_ASPECT));
+    const crate = crateInSight(me, snap.crates, [...c.arena.walls, ...c.arena.barrels], gun.range * 0.95, viewExtents(snap.self.viewRadius, BOT_VIEW_ASPECT));
     if (crate) gaze = { k: 'point', at: crate, minPx: 0, hand: HANDS.calm, sigma: 0, fire: true };
   }
   // Blind or half-blind, it still has a trigger: it rakes the spot the enemy was last in, with an error that only a flash gives.
@@ -881,7 +898,9 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !rests, ability0, m.shots);
   const tap = nextTap(rhythm, fire, m.tap, v.tick, own, snap.self.ammo);
   const angle = aim.angle, aimDist = Math.max(1, look.d);
-  const reloadWish = s.reload || (!t && snap.self.ammo < snap.self.mag / 2);
+  // Not in the open with an enemy about: a half-empty magazine waits for cover from where it last saw him (a dry one never waits).
+  const exposed = !!c.tac && !hiddenFromSeen(me, c.tac.seen, v.solids, v.tick);
+  const reloadWish = s.reload || (!t && snap.self.ammo < snap.self.mag / 2 && (!exposed || snap.self.ammo < snap.self.mag * OPEN_RELOAD_FRAC));
   const reload = !fire && snap.self.ammo < snap.self.mag && !snap.self.reloading && reloadWish;
   // A bot sprints only to travel: with no enemy in sight (or its fight just ended) or when running to cover to heal. Anything else, it walks, so it can fire.
   const travelling = anyKey(keys);
@@ -902,7 +921,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     tick: v.tick, to, at: heading === null && way.at !== routed.at ? way.at : null, heading, keys: keys !== drive.keys ? keys : null,
     gaze, track, turn, ability: ability0, stillToFire, reload: reloadWish, sprint: sprintWish && wanted === null, mag: snap.self.mag, rhythm, settleMs: snap.self.settleMs ?? 0, urgent,
     wakeAt: Math.min(Infinity, ...timers), wakeOnFire: style.k === 'plant' && fighting !== undefined, arrived: to !== null && dist(me, to) < ARRIVED_PX * 2,
-    nav: c.arena.nav.serial, door: doorOnWay(me, way.at, c.arena, snap.doors),
+    nav: c.arena.nav.serial, door: doorOnWay(me, way.at, c.arena, snap.doors), ...(watch && faceAt === watch && { watching: true }),
   };
   return {
     // E on the cabinet it walked up to (supplies.ts): the same `use` a person's key sends.

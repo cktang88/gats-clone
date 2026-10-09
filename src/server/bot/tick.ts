@@ -1,5 +1,5 @@
 import { GUNS, WORLD, type GunId } from '../../shared/defs.ts';
-import { DEFAULT_VIEW_ASPECT, viewExtents, type GameEvent, type Snapshot } from '../../shared/protocol.ts';
+import { BOT_VIEW_ASPECT, viewExtents, type GameEvent, type Snapshot } from '../../shared/protocol.ts';
 import { canRespawn, respawn, setInput } from '../../shared/sim.ts';
 import { flashAmount } from '../../shared/sim/abilities.ts';
 import { build, upgrade } from '../../shared/sim/run.ts';
@@ -154,11 +154,11 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
       onDecision?.(id, snap, mem, d, back);
     };
     const think = (tier: Wake) => {
-      const snap = snapshotFor(w, id, eventsSince(history, mem.beat?.thought));
+      const snap = snapshotFor(w, id, eventsSince(history, mem.beat?.thought), BOT_VIEW_ASPECT);
       const strategic = tier === 'strategic';
       const d = botThink(snap, arena, mem, rand, tiered ? { strategic, lastPlan: mem.beat?.planned } : {});
       if (tiered && p) {
-        const sight = viewExtents(snap.self.viewRadius, DEFAULT_VIEW_ASPECT);
+        const sight = viewExtents(snap.self.viewRadius, BOT_VIEW_ASPECT);
         const blinded = Math.round(flashAmount(p, w.now) * 100) / 100 > BLIND_AT;
         d.mem = { ...d.mem, beat: { thought: w.tick, planned: strategic ? w.tick : mem.beat?.planned ?? w.tick, seen: enemiesInView(w, p, sight), inSight: blinded ? [] : enemiesInSight(w, arena, p, sight), zones, sight } };
       }

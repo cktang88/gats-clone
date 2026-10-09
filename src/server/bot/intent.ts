@@ -7,6 +7,7 @@ import { sightBlocked } from '../../shared/sim/vision.ts';
 import { coverNear, pickCover } from './cover.ts';
 import { between, clearShot, dist, isOpen, nearestOpenPoint, type Point } from './nav.ts';
 import type { Supply } from './supplies.ts';
+import { fightOdds, holdsAngle, type Tactics } from './tactics.ts';
 
 export const PERSONALITY_IDS = ['aggressive', 'cautious', 'marksman'] as const;
 export type PersonalityId = (typeof PERSONALITY_IDS)[number];
@@ -28,12 +29,17 @@ export type Personality = {
   dodgeMs: readonly [number, number];
   /** Scales how long it takes to take in an enemy that comes into its sight (`noticeMs` in aim.ts): a hothead is quickest on the draw. */
   reactMul: number;
+  /**
+   * The worst odds (`fightOdds`) it takes a fight on: below them it breaks the enemy's line and holds an angle on him from cover (`hold`)
+   * instead, and a fight it is in that sinks `ODDS_SLACK` below them it leaves. A hothead takes worse fights than a careful one.
+   */
+  takesOdds: number;
 };
 
 export const PERSONALITIES: Record<PersonalityId, Personality> = {
-  aggressive: { rangeMul: 0.8, retreatHp: 0.1, healedHp: 0.35, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.2, flankOdds: 0.5, pushOdds: 1, sidestepOdds: 0.8, plantsFromCover: false, commitMul: 0.8, evasion: 0.8, dodgeMs: [500, 1300], reactMul: 0.8 },
-  cautious: { rangeMul: 1, retreatHp: 0.2, healedHp: 0.45, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.4, flankOdds: 0.2, pushOdds: 0.85, sidestepOdds: 0.5, plantsFromCover: false, commitMul: 1.2, evasion: 1, dodgeMs: [700, 2000], reactMul: 0.95 },
-  marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3, evasion: 0.65, dodgeMs: [600, 1500], reactMul: 0.85 },
+  aggressive: { rangeMul: 0.8, retreatHp: 0.1, healedHp: 0.35, peekMs: [1000, 1800], hideMs: [250, 500], peekOdds: 0.2, flankOdds: 0.5, pushOdds: 1, sidestepOdds: 0.8, plantsFromCover: false, commitMul: 0.8, evasion: 0.8, dodgeMs: [500, 1300], reactMul: 0.8, takesOdds: -0.45 },
+  cautious: { rangeMul: 1, retreatHp: 0.2, healedHp: 0.45, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.4, flankOdds: 0.2, pushOdds: 0.85, sidestepOdds: 0.5, plantsFromCover: false, commitMul: 1.2, evasion: 1, dodgeMs: [700, 2000], reactMul: 0.95, takesOdds: -0.05 },
+  marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3, evasion: 0.65, dodgeMs: [600, 1500], reactMul: 0.85, takesOdds: -0.2 },
 };
 
 /**
@@ -75,11 +81,15 @@ export type Plan =
   | { k: 'patrol'; goal: Point }
   | { k: 'takePosition'; spot: Point; facing: Point }
   | { k: 'engage'; target: number }
-  | { k: 'peekAndHide'; target: number; spot: Point; peek: Point; phase: 'hide' | 'peek'; phaseUntil: number }
+  /** `phaseSince` when the phase began; `waits` how many times it put off a peek into an angle the enemy holds (see `advancePeekPhase`). */
+  | { k: 'peekAndHide'; target: number; spot: Point; peek: Point; phase: 'hide' | 'peek'; phaseUntil: number; phaseSince?: number; waits?: number }
+  /** A fight not worth taking: hidden from him at `spot`, it holds the angle he would come from (`watch`) until `until`, firing first if he shows. */
+  | { k: 'hold'; target: number; spot: Point; watch: Point; until: number }
   | { k: 'reloadInCover'; spot: Point; threat: Point }
   | { k: 'retreatAndHeal'; spot: Point | null; threat: Point }
-  | { k: 'flank'; target: number; via: Point; lastKnown: Point }
-  | { k: 'search'; at: Point; giveUpAt: number }
+  /** `committed`: sent at him after holding an angle he never walked into, so it takes the fight it finds (no holding off again). */
+  | { k: 'flank'; target: number; via: Point; lastKnown: Point; committed?: boolean }
+  | { k: 'search'; at: Point; giveUpAt: number; committed?: boolean }
   /** Flashed: blind until it wears off. `spray` fires at where the enemy last was, `fallBack` backs away from it, `hold` stands its ground. */
   | { k: 'blinded'; mode: 'spray' | 'fallBack' | 'hold'; at: Point }
   /** Off to a pack on the floor (walking over it takes it) or a cabinet (`open`: it stands at `at` and presses E), with nobody to fight. */
@@ -97,6 +107,8 @@ export type IntentCtx = {
   tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number; home?: { at: Point; r: number; face: Point }; strategic?: boolean; lastPlan?: number;
   /** The pack or cabinet it needs and could fetch (supplies.ts), if any. */
   supply?: Supply | null;
+  /** Its read of the fight (tactics.ts): sightings and where it pre-aims; absent in a test or a mode that gives it none. */
+  tac?: Tactics;
 };
 
 /** The ticks since this bot last planned (1 when it plans every tick). */
@@ -107,8 +119,26 @@ const overTicks = (p: number, c: IntentCtx) => 1 - (1 - p) ** sincePlan(c);
 const cameRound = (at: number, c: IntentCtx) => c.tick - sincePlan(c) < at && at <= c.tick;
 
 const MIN_COMMIT_MS: Record<IntentKind, number> = {
-  patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500, blinded: 0, resupply: 0,
+  patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500, blinded: 0, resupply: 0, hold: 1200,
 };
+/** How long a bot holds an angle on an enemy it would rather not fight before it moves on him another way (see `hold`). */
+const HOLD_MS: readonly [number, number] = [2500, 4500];
+/** A fight in hand sinking this far below its `takesOdds` is one it leaves; one this far above them it commits to (no peeking, it pushes). */
+const ODDS_SLACK = 0.3;
+const COMMIT_ODDS = 0.6;
+/** Under these odds a fight is not clearly its own: it pokes it from cover (seen coming, it takes cover first), `POKE_MORE` likelier than its temper's `peekOdds`. */
+const POKE_ODDS = 0.3;
+/** A bot poking from cover leaves it to push only on odds this good (he is caught reloading, nearly dead, or outnumbered). */
+const PUSH_FROM_COVER_ODDS = 0.9;
+const POKE_MORE = 0.3;
+const HUNTED_ODDS = 1;
+/** A peek into an angle the enemy holds is put off this long, at most `PEEK_WAITS` times, before it goes round another way. */
+const PEEK_WAIT_MS: readonly [number, number] = [500, 900];
+const PEEK_WAITS = 2;
+/** Shot at this long into a peek, it ducks back (a poke is a burst and back before he answers, not a stand). */
+const POKE_ANSWERED_MS = 250;
+/** Being hit, it breaks off a fight only for cover this near; further, it fights on. */
+const UNDER_FIRE_COVER_PX = 140;
 const SEARCH_MS = 5000;
 const GUNFIRE_PULL_PX = 2500;
 const FLANK_MS = 8000;
@@ -158,6 +188,30 @@ function peekPlan(v: Perception, c: IntentCtx, t: Threat, from: readonly Point[]
   return { k: 'peekAndHide', target: t.p.id, spot: pick.spot, peek: pick.peek, phase: 'hide', phaseUntil: c.tick + ticks(travel + between(c.persona.hideMs, c.rand)) };
 }
 
+/** This bot's odds on `t` (see `fightOdds`), or null with no read of the fight (a test or a mode that gives it no tactics). */
+const oddsOn = (v: Perception, c: IntentCtx, t: Threat): number | null => (c.tac ? fightOdds(v, t, c.tac.seen) : null);
+
+/**
+ * A fight not worth taking: cover that hides it from every enemy it sees (and a lane to shoot from when he comes), holding the angle he
+ * would come from. A person breaks line and makes the other man walk into his pre-aim rather than trade on even or worse terms. Null with no such cover.
+ */
+function holdPlan(v: Perception, c: IntentCtx, t: Threat): Plan | null {
+  const from = [pos(t), ...v.threats.filter((x) => x !== t).map(pos)];
+  const taken = [...v.allies, ...doorLanes(c.arena, pos(t), DOOR_WATCH_PX)];
+  // Under his fire, cover a long walk off is a walk in the open with its back to him: it only goes for cover a step or two away.
+  const reach = v.underFire ? UNDER_FIRE_COVER_PX : COVER_REACH_PX;
+  const pick = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, from, { reach, range: c.band.ideal, peek: false, taken, takenPx: MATE_COVER_PX });
+  if (!pick) return null;
+  return { k: 'hold', target: t.p.id, spot: pick.spot, watch: pos(t), until: c.tick + ticks(between(HOLD_MS, c.rand)) };
+}
+
+/** Whether a fight with `t` is one to leave or not take: its odds under `takesOdds` (less `slack`), and him not on top of it (where running is worse). */
+const badFight = (v: Perception, c: IntentCtx, t: Threat, slack = 0) => {
+  const odds = oddsOn(v, c, t);
+  // A hunted enemy (a stage-2 gun, marked on every minimap) is the room's quarry: it is fought on worse odds, the whole room being on him.
+  return odds !== null && odds < c.persona.takesOdds - slack - (t.p.hunted ? HUNTED_ODDS : 0) && t.d > CORNERED_PX;
+};
+
 /** The side of an enemy to flank round: +1 or -1 for the one holding fewer of this bot's mates, or null when they are even or there are none. */
 function emptierSide(v: Perception, at: Point): 1 | -1 | null {
   const ux = v.me.x - at.x, uy = v.me.y - at.y;
@@ -183,7 +237,9 @@ function flankPlan(v: Perception, c: IntentCtx, target: number, at: Point): Plan
 }
 
 const searchPlan = (v: Perception, c: IntentCtx, lead: Point): Plan => {
-  const at = spreadGoal(v, c, lead);
+  // A sound is placed roughly (and a last sighting may be against a wall): it heads for open ground there, a point it can walk to, never into a wall.
+  const spread = spreadGoal(v, c, lead);
+  const at = isOpen(c.arena.nav, spread) ? { x: spread.x, y: spread.y } : nearestOpenPoint(c.arena.nav, spread, 200) ?? { x: spread.x, y: spread.y };
   return { k: 'search', at, giveUpAt: c.tick + ticks(SEARCH_MS + (dist(v.me, at) / v.self.speed) * 1000) };
 };
 
@@ -220,7 +276,14 @@ function lostSight(v: Perception, c: IntentCtx, target: number): Plan {
   if (!last) return idlePlan(v, c);
   // It lost him in smoke: he is still there, but pushing into a cloud is walking blind, so it holds and waits for him to come out.
   if (sightBlocked(v.smokes, v.me.x, v.me.y, last.x, last.y)) return { k: 'takePosition', spot: v.me, facing: last };
-  if (c.rand() < c.persona.flankOdds) return flankPlan(v, c, target, last);
+  // He was last seen planted with this way pre-aimed: walking round his corner is walking into his crosshair. It goes round another way,
+  // or holds the angle on him from cover until he moves.
+  const held = holdsAngle(c.tac?.seen.find((s) => s.id === last.id), v.me, v.tick);
+  if (c.rand() < c.persona.flankOdds || (held && c.rand() < 0.5)) return flankPlan(v, c, target, last);
+  if (held) {
+    const spot = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, [last], { reach: COVER_REACH_PX, range: c.band.ideal, peek: false, taken: v.allies, takenPx: MATE_COVER_PX })?.spot ?? v.me;
+    return { k: 'hold', target, spot, watch: last, until: c.tick + ticks(between(HOLD_MS, c.rand)) };
+  }
   if (c.rand() < c.persona.pushOdds) return searchPlan(v, c, last);
   const taken = [...v.allies, ...doorLanes(c.arena, last, DOOR_WATCH_PX)];
   const spot = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, [last], { reach: COVER_REACH_PX, range: c.band.ideal, peek: false, taken, takenPx: MATE_COVER_PX })?.spot ?? v.me;
@@ -267,7 +330,7 @@ const reloadWhenDry: Interrupt = (cur, v, c) => {
 
 /** The cover spot an intent holds or makes for, if it has one. */
 const coverSpot = (cur: Intent): Point | null =>
-  cur.k === 'peekAndHide' || cur.k === 'reloadInCover' ? cur.spot : cur.k === 'retreatAndHeal' ? cur.spot : null;
+  cur.k === 'peekAndHide' || cur.k === 'reloadInCover' || cur.k === 'hold' ? cur.spot : cur.k === 'retreatAndHeal' ? cur.spot : null;
 
 /**
  * Cover that no longer covers: an enemy it can see has a clear line into the spot it hides at (he came round the wall, or a second one
@@ -288,17 +351,34 @@ const coverBlown: Interrupt = (cur, v, c) => {
     // Nowhere to hide from him: a gun with rounds left fights; a dry one, or one fleeing, keeps backing off from him.
     return cur.k === 'reloadInCover' && v.self.ammo > 0 ? { k: 'engage', target: t.p.id } : { k: 'retreatAndHeal', spot: null, threat: pos(t) };
   }
+  if (cur.k === 'hold') {
+    // Seen where it meant to hold an angle from: a fight worth taking it takes; else other cover from all of them, or it fights from here.
+    const hold = badFight(v, c, t) ? holdPlan(v, c, t) : null;
+    return hold && hold.k === 'hold' && dist(hold.spot, spot) > ARRIVED_PX ? hold : { k: 'engage', target: t.p.id };
+  }
   if (c.band.rushes && t.d < c.band.max) return { k: 'engage', target: t.p.id };
   const next = peekPlan(v, c, t, all) ?? (all.length > 1 ? peekPlan(v, c, t) : null);
   return next && next.k === 'peekAndHide' && dist(next.spot, spot) > ARRIVED_PX ? next : { k: 'engage', target: t.p.id };
 };
 
-const engageOnSight: Interrupt = (cur, v) => {
+const engageOnSight: Interrupt = (cur, v, c) => {
   const calm = cur.k === 'patrol' || cur.k === 'takePosition' || cur.k === 'search' || cur.k === 'flank' || cur.k === 'resupply';
   const t = v.threats[0];
   if (!calm || !t) return null;
   // Holding a zone, it lets a far enemy walk by; not one shooting at it.
   if (cur.k === 'takePosition' && v.zones.length > 0 && t.d > 400 && !v.underFire && v.shotAt?.owner !== t.p.id) return null;
+  // A fight it would lose (outgunned, hurt, or one of two on it): it breaks his line and holds the angle instead of walking into it.
+  const committed = (cur.k === 'flank' || cur.k === 'search') && cur.committed;
+  if (!committed && badFight(v, c, t)) {
+    const hold = holdPlan(v, c, t);
+    if (hold) return hold;
+  }
+  // An even fight seen coming, out of his fire: it takes cover with a lane on him and pokes from it, rather than meet him in the open.
+  const odds = oddsOn(v, c, t);
+  if (!committed && odds !== null && odds < POKE_ODDS && !c.band.rushes && !v.underFire && t.d >= c.band.headOn) {
+    const poke = peekPlan(v, c, t, v.threats.map(pos));
+    if (poke) return poke;
+  }
   return { k: 'engage', target: t.p.id };
 };
 
@@ -329,7 +409,18 @@ const fetchSupplies: Interrupt = (cur, v, c) => {
   return free ? { k: 'resupply', at: s.at, id: s.id, open: s.open } : null;
 };
 
-const INTERRUPTS: readonly Interrupt[] = [goBlind, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, engageOnSight, fetchSupplies, investigateGunfire];
+/**
+ * A fight that has turned (a second enemy coming up on it, its health gone, his mate arriving): it breaks off to cover that hides it from
+ * all of them before the newcomer gets on it, rather than fight one with another in its side. One nearly dead it finishes (see `fightOdds`).
+ */
+const leaveTurnedFight: Interrupt = (cur, v, c) => {
+  if (cur.k !== 'engage' && cur.k !== 'peekAndHide') return null;
+  const t = v.threats.find((x) => x.p.id === cur.target) ?? v.threats[0];
+  if (!t || !badFight(v, c, t, ODDS_SLACK)) return null;
+  return holdPlan(v, c, t);
+};
+
+const INTERRUPTS: readonly Interrupt[] = [goBlind, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, leaveTurnedFight, engageOnSight, fetchSupplies, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {
@@ -345,12 +436,20 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
       const hide = peekPlan(v, c, t);
       if (hide) return hide;
     }
-    if (c.band.rushes || t.d < c.band.headOn * 0.7 || c.rand() >= overTicks(c.persona.peekOdds, c)) return null;
+    // A fight well in hand (he is hurt, reloading, outnumbered) is pressed, not peeked.
+    const odds = oddsOn(v, c, t);
+    if (odds !== null && odds > COMMIT_ODDS) return null;
+    // A fight not clearly in hand is poked from cover more readily than one going its way.
+    const peekOdds = c.persona.peekOdds + (odds !== null && odds < POKE_ODDS ? POKE_MORE : 0);
+    if (c.band.rushes || t.d < c.band.headOn * 0.7 || c.rand() >= overTicks(peekOdds, c)) return null;
     return peekPlan(v, c, t);
   },
   peekAndHide: (cur, v, c) => {
     const t = v.threats.find((x) => x.p.id === cur.target) ?? v.threats[0];
     if (t && t.d < c.band.headOn * 0.7) return { k: 'engage', target: t.p.id };
+    // He is caught out (reloading, hurt, alone against it and a mate): the poking stops and it pushes him.
+    const odds = t ? oddsOn(v, c, t) : null;
+    if (t && odds !== null && odds > PUSH_FROM_COVER_ODDS) return { k: 'engage', target: t.p.id };
     // A mate got to this cover first: it takes another bit of the wall rather than standing on his shoulder.
     const crowded = v.allies.some((m) => dist(m, cur.spot) < MATE_COVER_PX * 0.75 && dist(m, cur.spot) < dist(v.me, cur.spot));
     if (crowded && t) return peekPlan(v, c, t);
@@ -371,8 +470,21 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
     return { k: 'retreatAndHeal', spot: hideFrom(v, c, threat), threat };
   },
   flank: (cur, v, c) => {
-    if (v.tick - cur.since > ticks(FLANK_MS) || dist(v.me, cur.via) < ARRIVED_PX) return searchPlan(v, c, cur.lastKnown);
+    if (v.tick - cur.since > ticks(FLANK_MS) || dist(v.me, cur.via) < ARRIVED_PX) return { ...searchPlan(v, c, cur.lastKnown), ...(cur.committed && { committed: true }) };
     return null;
+  },
+  hold: (cur, v, c) => {
+    const t = v.threats.find((x) => x.p.id === cur.target) ?? v.threats[0];
+    if (t) {
+      // He walked into its angle, or the odds came round (he is reloading, hurt, its mates are up): it takes the fight now.
+      const odds = oddsOn(v, c, t);
+      if (odds === null || odds >= c.persona.takesOdds || t.d < CORNERED_PX) return { k: 'engage', target: t.p.id };
+      return v.tick > cur.until ? holdPlan(v, c, t) ?? { k: 'engage', target: t.p.id } : null;
+    }
+    if (v.tick <= cur.until) return null;
+    // He did not come: it goes to him another way (he holds the way it came), or, a hothead, looks for him.
+    const last = v.lastSeen;
+    return last && last.id === cur.target ? { ...(c.rand() < 0.5 + c.persona.flankOdds ? flankPlan(v, c, cur.target, last) : searchPlan(v, c, last)), committed: true } : idlePlan(v, c);
   },
   blinded: (cur, v, c) => {
     if (v.flash > BLIND_AT) return null;
@@ -392,12 +504,25 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
 };
 
 function advancePeekPhase(cur: Intent, v: Perception, c: IntentCtx): Intent {
-  if (cur.k !== 'peekAndHide' || v.tick < cur.phaseUntil) return cur;
-  const unansweredPeek = cur.phase === 'peek' && !v.underFire && v.threats.some((t) => t.p.id === cur.target);
+  if (cur.k !== 'peekAndHide') return cur;
+  const since = cur.phaseSince ?? cur.since;
+  const seen = c.tac?.seen.find((s) => s.id === cur.target);
+  // A poke is a burst and back: shot at a moment into the peek, it ducks before his answer lands.
+  const answered = cur.phase === 'peek' && v.underFire && (v.tick - since) * TICK_MS >= POKE_ANSWERED_MS;
+  // He was last seen reloading: the hide is cut short to catch him at it.
+  const caught = cur.phase === 'hide' && seen?.reloadEnd !== null && seen?.reloadEnd !== undefined && seen.reloadEnd > v.tick + ticks(300) && (v.tick - since) * TICK_MS >= 200;
+  if (!answered && !caught && v.tick < cur.phaseUntil) return cur;
+  const unansweredPeek = !answered && cur.phase === 'peek' && !v.underFire && v.threats.some((t) => t.p.id === cur.target);
   if (unansweredPeek) return cur;
+  // He holds the angle it would peek into (planted, aimed at its peek): it waits him out a little, then goes round another way.
+  if (cur.phase === 'hide' && !caught && holdsAngle(seen, cur.peek, v.tick)) {
+    const waits = cur.waits ?? 0;
+    if (waits >= PEEK_WAITS && seen) return startIntent(flankPlan(v, c, cur.target, seen), c);
+    return { ...cur, waits: waits + 1, phaseUntil: v.tick + ticks(between(PEEK_WAIT_MS, c.rand)) };
+  }
   const phase = cur.phase === 'hide' ? 'peek' : 'hide';
   const ms = between(phase === 'peek' ? c.persona.peekMs : c.persona.hideMs, c.rand);
-  return { ...cur, phase, phaseUntil: v.tick + ticks(ms) };
+  return { ...cur, phase, phaseUntil: v.tick + ticks(ms), phaseSince: v.tick };
 }
 
 /**
