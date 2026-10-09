@@ -50,7 +50,7 @@ const keyTap = async (code: string, k: string, vk: number) => {
 };
 const clickText = (selector: string, text: string) => js(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(selector)})].find((n) => n.textContent.trim().toLowerCase().startsWith(${JSON.stringify(text.toLowerCase())})); if (!b) return false; (b.closest('button') ?? b).click(); return true; })()`);
 
-/** Out through the booth's open side and along the back to a lane's firing line: the dividers between bays block a straight walk. */
+/** Out along the back of the booth and up to the firing line level with `y`: the short dividers at each bay's edge block a straight walk. */
 async function goLane(y: number) {
   await goTo(200, me()?.y ?? y);
   await goTo(200, y);
@@ -87,7 +87,7 @@ const [bx, by] = await js(`(() => { const b = document.getElementById('range-sta
 await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: bx, y: by, button: 'left', clickCount: 1 });
 await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: bx, y: by, button: 'left', clickCount: 1 });
 for (let i = 0; i < 100 && !(full?.targets && me()); i++) await sleep(100);
-check(!!full?.targets && full.targets.length >= 20, `joined a range with ${full?.targets?.length ?? 0} targets`);
+check(!!full?.targets && full.targets.length === MAPS.range.range!.targets.length, `joined a range with ${full?.targets?.length ?? 0} targets`);
 check(full?.match.mode === 'RNG', 'the room is mode RNG');
 check((full?.players.length ?? 0) === 1, 'no bots share the range');
 check(!!(await js(`!document.getElementById('range-hud').hidden`)), 'the readout shows');
@@ -116,9 +116,9 @@ await keyTap('KeyL', 'l', 76);
 await sleep(300);
 check(!!(await js(`document.getElementById('range-panel').hidden`)), 'L closes it');
 
-// ---- shoot the nearest paper target on the static lane (lane 2, 100 px out, stepped to y 620)
+// ---- shoot the nearest paper target in the field (100 px out)
 const layout = MAPS.range.range!;
-const idx = layout.targets.findIndex((t) => t.kind === 'paper' && t.y === 620);
+const idx = layout.targets.findIndex((t) => t.kind === 'paper' && t.x === layout.line + 100);
 const t = layout.targets[idx]!;
 await goLane(t.y);
 await mouse('mouseMoved', VIEW.w / 2 + 420, VIEW.h / 2);
@@ -163,21 +163,21 @@ const lay = fell >= 0 && rose > fell ? Math.round(((frames[rose]!.tick - frames[
 say(`down for ${lay} ms by the server's ticks`);
 check(lay >= 3900 && lay <= 4300, 'it stood up again about four seconds after falling');
 
-// ---- the rails and the long lane, from further up the range
+// ---- the sliders, the far end of the field and the blast corner, each from the firing line
 await keyTap('KeyL', 'l', 76);
 await sleep(200);
 await clickText('#range-panel .rp-tile b', 'Marksman');
 await clickText('#range-panel .rp-chip b', 'Optics');
 await sleep(300);
 await keyTap('KeyL', 'l', 76);
-await goLane(990);
+await goLane(500);
 await mouse('mouseMoved', VIEW.w / 2 + 420, VIEW.h / 2);
 await sleep(800);
 await shot('12-rails');
-await goLane(1320);
+await goLane(1030);
 await sleep(600);
-await shot('13-long-lane');
-await goLane(1980);
+await shot('13-field');
+await goLane(1900);
 await sleep(600);
 await shot('14-blast-lane');
 for (const e of page.exceptions) { say(`exception: ${e}`); failed = true; }

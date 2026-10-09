@@ -30,7 +30,10 @@ const shooterFor = (w: World, t: { x: number; y: number }, back = 200, loadout =
 test('a Range world stands every target of the layout whole, and no other mode has any', () => {
   const w = rangeWorld();
   assert.equal(w.range!.targets.length, layout.targets.length);
-  assert.ok(layout.targets.length >= 20 && ['paper', 'plank', 'rail', 'dummy'].every((k) => layout.targets.some((t) => t.kind === k)));
+  assert.ok(['paper', 'plank', 'rail', 'dummy'].every((k) => layout.targets.some((t) => t.kind === k)), 'every kind stands somewhere');
+  // A few targets, not a crowd: one standing at each painted distance, and a handful of extras.
+  assert.ok(layout.targets.length >= layout.marks.length && layout.targets.length <= 12, `${layout.targets.length} targets`);
+  for (const m of layout.marks) assert.equal(layout.targets.filter((t) => !t.rail && t.x === layout.line + m && t.y > layout.lanes[1]!.y0 && t.y < layout.lanes[1]!.y1).length, 1, `one target in the field at ${m} px`);
   assert.ok(w.range!.targets.every((t, i) => t.hp === TARGETS[t.def.kind].hp && t.id === RANGE.idBase + i));
   for (const mode of ['FFA', 'TDM', 'DOM', 'BR'] as const) assert.equal(createWorld(mode, 1, 'plaza').range, undefined, mode);
   assert.equal(createWorld('ZOM', 1, 'outpost').range, undefined);
@@ -40,7 +43,7 @@ test('a Range world stands every target of the layout whole, and no other mode h
   assert.ok(!('targets' in snap) && !('range' in snap), 'a versus snapshot carries nothing of the range');
   assert.ok(STICKY_KEYS.includes('targets'));
   const rng = createWorld('RNG', 1, 'range');
-  assert.ok(rng.barrels.length >= 5 && rng.props.length >= 4, 'the range keeps its barrels and props');
+  assert.ok(rng.barrels.length >= 2 && rng.props.length >= 1, 'the range keeps a few barrels and props');
   assert.deepEqual(rng.airdrops.due, [], 'and has no supply planes');
 });
 
@@ -219,7 +222,7 @@ test('barrels and props go off like anywhere, then stand again within seconds', 
   const q = w.props.find((o) => o.kind === 'oil')!;
   q.hp = 0;
   p.x = q.x - 500;
-  const prop = w.props.find((o) => o.kind === 'paint')!;
+  const prop = w.props.find((o) => o !== q)!;
   prop.respawnAt = w.now + 90_000;
   run(w, RANGE.propRespawnMs + 400);
   assert.equal(prop.respawnAt, null, 'a long-lived prop is shortened to the range\'s time');
@@ -345,7 +348,7 @@ test('a range room is one player\'s own, with no bots, and writes no account, pr
 test('the range is deterministic: the same inputs give byte-identical snapshots', () => {
   const play = () => {
     const w = createWorld('RNG', 5, 'range');
-    const p = spawnAt(w, 380, 660, { loadout: { weapon: 'smg' } });
+    const p = spawnAt(w, 380, 1250, { loadout: { weapon: 'smg' } });
     setRangeLoadout(w, p, { gun: 'hailstorm', perks: { 3: 'fragGrenade' } });
     const out: string[] = [];
     for (let i = 0; i < 400; i++) {
@@ -417,4 +420,20 @@ test('every target in the layout can be shot from the firing line by some gun th
     }
     assert.ok(hit, `target ${i} (${d.kind} at ${d.x},${d.y}, ${d.x - layout.line} px out) can't be hit from the firing line with the ${longest} (reach ${reach})`);
   });
+});
+
+test('the field is staggered: from the firing line beside the pad, no target stands in front of another', () => {
+  const field = layout.targets.filter((d) => !d.rail && d.y > layout.lanes[1]!.y0 && d.y < layout.lanes[1]!.y1);
+  const near = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+    const dx = bx - ax, dy = by - ay, k = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(px - ax - dx * k, py - ay - dy * k);
+  };
+  // Anywhere on the line from 300 px north of the pad to 200 px south of it.
+  const pad = layout.pad.y + layout.pad.h / 2;
+  for (let y = pad - 300; y <= pad + 200; y += 10) {
+    for (const a of field) for (const b of field) {
+      if (a === b || Math.hypot(b.x - layout.line, b.y - y) >= Math.hypot(a.x - layout.line, a.y - y)) continue;
+      assert.ok(near(b.x, b.y, layout.line, y, a.x, a.y) > TARGETS[b.kind].r + 4, `from (${layout.line}, ${y}) the target ${b.x - layout.line} px out hides the one ${a.x - layout.line} px out`);
+    }
+  }
 });

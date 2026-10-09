@@ -81,8 +81,8 @@ test('the line sits where a real round fired down the range dies, for the pistol
   for (const [gun, perks] of [['pistol', {}], ['smg', {}], ['sniper', {}], ['piercer', {}], ['sniper', { 1: 'longRange' }]] as [GunId, Partial<Record<Tier, PerkId>>][]) {
     const w = rangeWorld();
     w.range!.targets.forEach((t) => { t.respawnAt = Infinity; });
-    // Between two lanes and clear of every target, so nothing stops the round short.
-    const p = spawnAt(w, 380, 1485);
+    // Level with no target and clear of every wall, so nothing stops the round short.
+    const p = spawnAt(w, 380, 1330);
     assert.ok(setRangeLoadout(w, p, { gun, perks }));
     run(w, 900);
     const r = reachOf(gun, perks);
@@ -176,8 +176,8 @@ test('in range or out: the pip under each target matches what a real round from 
   const tally: Record<ReachClass, number> = { full: 0, falloff: 0, out: 0 };
   for (const [gun, perks] of GUNS_TRIED) {
     const r = reachOf(gun, perks);
-    // Level with each target on the line, and from one spot on the line for the far lanes' diagonals.
-    const spots = layout.targets.flatMap((d, i) => (d.rail ? [] : [{ i, x: layout.line - 10, y: d.y }, { i, x: layout.line - 10, y: 1320 }]));
+    // Level with each target on the line, and from one spot on the line (beside the pad) for the diagonals.
+    const spots = layout.targets.flatMap((d, i) => (d.rail ? [] : [{ i, x: layout.line - 10, y: d.y }, { i, x: layout.line - 10, y: 1250 }]));
     for (const { i, x, y } of spots) {
       const d = layout.targets[i]!;
       const cls = reachClass(r, { x, y }, d, d.kind);

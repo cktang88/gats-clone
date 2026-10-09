@@ -322,6 +322,15 @@ function hazardPattern(g: CanvasRenderingContext2D): CanvasPattern {
   return hazard;
 }
 
+/** True when a distance number stencilled at (`x`, `y`), its top left beside the bar, would sit under a target or a slider's run. */
+function underTarget(layout: RangeLayout, x: number, y: number): boolean {
+  return layout.targets.some((d) => {
+    const half = d.rail ? d.rail.reach : 0;
+    const ax = d.rail?.axis === 'x' ? half : 0, ay = d.rail?.axis === 'y' ? half : 0;
+    return d.x + ax + 40 > x - 10 && d.x - ax - 40 < x + 80 && d.y + ay + 40 > y - 10 && d.y - ay - 70 < y + 34;
+  });
+}
+
 /** Stencil paint on the range floor: pale bone, so numbers read on the dark concrete. */
 const PAINT = '#d2cab4';
 
@@ -364,17 +373,23 @@ export function drawRangeFloor(g: CanvasRenderingContext2D, layout: RangeLayout,
     g.fillStyle = '#3d4450';
     for (const e of [0, 1]) { const ex = axis === 'x' ? x0 + e * (len - 8) : d.x - 11, ey = axis === 'y' ? y0 + e * (len - 8) : d.y - 11; g.fillRect(ex, ey, axis === 'x' ? 8 : 22, axis === 'y' ? 8 : 22); g.strokeRect(ex, ey, axis === 'x' ? 8 : 22, axis === 'y' ? 8 : 22); }
   }
-  // The distance marks: a painted bar across each lane and its number in stencil beside it.
+  // The distance marks: a painted bar across each lane and its number in stencil beside it, repeated down a tall bay so one is always in view.
   g.fillStyle = PAINT;
   for (const l of lanes) {
     if (l.y1 < view.y0 || l.y0 > view.y1) continue;
+    const rows = Math.max(1, Math.round((l.y1 - l.y0) / 360));
+    const pitch = (l.y1 - l.y0) / rows;
     for (const m of marks) {
       const x = line + m;
       if (!inX(x, 120)) continue;
       g.globalAlpha = 0.62;
       g.fillRect(x - 3, l.y0 + 34, 6, l.y1 - l.y0 - 68);
       g.globalAlpha = 0.72;
-      stencil(g, String(m), x + 12, l.y0 + 38, 24);
+      // A number a target (or a slider's run) stands on moves to the foot of the bar, or is left out where another row shows it.
+      const ys = Array.from({ length: rows }, (_, k) => l.y0 + 38 + k * pitch);
+      let clear = ys.filter((y) => !underTarget(layout, x, y));
+      if (!clear.length && !underTarget(layout, x, l.y1 - 62)) clear = [l.y1 - 62];
+      for (const y of clear) stencil(g, String(m), x + 12, y, 24);
     }
   }
   g.globalAlpha = 1;
@@ -408,7 +423,8 @@ export function drawRangeFloor(g: CanvasRenderingContext2D, layout: RangeLayout,
   g.textBaseline = 'alphabetic';
   g.textAlign = 'left';
   for (const [i, l] of lanes.entries()) {
-    const yc = (l.y0 + l.y1) / 2;
+    // Near the top of a tall bay, so the name stays clear of the pad in its middle.
+    const yc = Math.min((l.y0 + l.y1) / 2, l.y0 + 200);
     if (yc + 60 < view.y0 || yc - 60 > view.y1) continue;
     g.fillStyle = PAINT;
     g.globalAlpha = 0.62;
