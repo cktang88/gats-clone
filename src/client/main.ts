@@ -4,7 +4,7 @@ import { cleanName, type ClientMsg, type Loadout, type PlayerView, type ServerMs
 import { fillSnapshot } from '../shared/wire.ts';
 import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
 import { toggleMute } from './chatmute.ts';
-import { cursorPush, followLook, lookAhead, makeCamera, NO_LOOKCAM, screenToWorld, viewAspect, worldToScreen, type Camera, type LookCam, type Point } from './camera.ts';
+import { boundLean, cursorPush, followLook, lookAhead, makeCamera, NO_LOOKCAM, screenToWorld, viewAspect, visibleHalf, worldToScreen, type Camera, type LookCam, type Point } from './camera.ts';
 import { LOOK_AHEAD, lookReach } from '../shared/lookahead.ts';
 import { createAudio } from './audio.ts';
 import { musicDuck, musicProbe, musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } from './music.ts';
@@ -487,9 +487,11 @@ function leanTarget(s: Session, me: PlayerView, viewRadius: number): Point {
   // Reduced motion: a shorter lean on a flatter curve, so small cursor moves leave the view still.
   const ease = reduced ? 1.8 : LOOK_AHEAD.ease;
   const { dx, dy } = aimOffset(s);
-  if (sticks.aim && touchAim(sticks)) return lookAhead({ x: dx, y: dy }, stickVector(sticks.aim).mag, reach, ease);
+  const half = visibleHalf(view.w, view.h, viewRadius);
+  // A thumb leans less than a mouse and keeps further from the edge (LOOK_AHEAD.touch, touchEdge); either way your own soldier stays well inside the screen (boundLean).
+  if (sticks.aim && touchAim(sticks)) return boundLean(lookAhead({ x: dx, y: dy }, stickVector(sticks.aim).mag, reach * LOOK_AHEAD.touch, ease), half, LOOK_AHEAD.touchEdge);
   if (!mouseAiming || touchScreen) return { x: 0, y: 0 };
-  return lookAhead({ x: dx, y: dy }, cursorPush(mouse, view.w, view.h), reach, ease);
+  return boundLean(lookAhead({ x: dx, y: dy }, cursorPush(mouse, view.w, view.h), reach, ease), half);
 }
 
 /**
@@ -505,6 +507,9 @@ function stepLean(s: Session, snap: Snapshot, me: PlayerView | undefined, eye: P
   const target = !own ? { x: 0, y: 0 } : active ? leanTarget(s, me!, snap.self.viewRadius || WORLD.viewRadius) : { x: lookCam.x, y: lookCam.y };
   const quick = own && (firing || isDeployed(me!.gun, sinceMove(s)));
   lookCam = followLook(lookCam, eye, `${eye.id}|${s.mapId}`, target, dt, quick ? LOOK_AHEAD.aimRate : LOOK_AHEAD.rate);
+  // The eased lean stays inside the bound its targets keep to; this only binds the frame a resize, a rotated phone or a lost scope shrinks it.
+  const bounded = boundLean(lookCam, visibleHalf(view.w, view.h, snap.self.viewRadius || WORLD.viewRadius));
+  lookCam = { ...lookCam, x: bounded.x, y: bounded.y };
   return { x: lookCam.x, y: lookCam.y };
 }
 

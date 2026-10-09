@@ -4,25 +4,41 @@ import { GUNS, type GunId, type WeaponId } from './defs.ts';
  * Aim look-ahead: the camera leans a little toward where you aim, so you see more of the side you are looking at.
  *
  * The client's camera follows `you + offset`, the offset pointing exactly along your aim angle (the angle the server already has from your
- * inputs) and as long as `reach` times how far the cursor (or the aim stick) is pushed from the middle of the screen. The server widens each
+ * inputs) and as long as `reach` times how far the cursor (or the aim stick) is pushed from the middle of the screen, shortened (never turned)
+ * so your own soldier stays well inside the screen. The server widens each
  * player's snapshot interest rectangle on the aimed side by the same reach (`lookSides`), held open while the client's camera eases back
  * (`holdLook`), so the leaned camera never shows ground the server culled, and an enemy only the lean reveals is still sent.
  */
 export const LOOK_AHEAD = {
-  /** The reach as a share of the view radius (the view's half width), by gun class: a scope wants to see far, a close gun the room around it. */
-  share: { pistol: 0.13, smg: 0.11, shotgun: 0.1, assault: 0.14, sniper: 0.19, lmg: 0.14 } satisfies Record<WeaponId, number>,
+  /**
+   * The reach as a share of the view radius (the view's half width), by gun class: a scope wants to see far, a close gun the room around it.
+   * About two and a half times the first port's lean (pistol 0.13, SMG 0.11, shotgun 0.1, assault and LMG 0.14, sniper 0.19), which read as
+   * too subtle: aimed at the screen's edge, an assault rifle now shows about 280 px more ground that way and a scoped sniper about 500.
+   */
+  share: { pistol: 0.32, smg: 0.28, shotgun: 0.26, assault: 0.36, sniper: 0.5, lmg: 0.34 } satisfies Record<WeaponId, number>,
   /**
    * A gun that reaches past the view's edge leans further, far enough that its full lean shows its whole range down the aim (so nobody
    * shoots what they cannot see), but never past this share of the view radius.
    */
-  maxShare: 0.35,
+  maxShare: 0.6,
+  /**
+   * However far a gun would lean, your own soldier stays inside this share of the visible half width and half height (an ellipse round the
+   * middle of the screen, `boundLean` in client/camera.ts): at least a fifth of the screen from any edge, on any shape of screen.
+   */
+  edge: 0.6,
+  /**
+   * A thumb on the aim stick leans this share of a mouse's reach, and keeps the soldier inside `touchEdge`: the stick is pushed far
+   * whenever it fires, a phone's screen is small and the sticks sit at its bottom corners.
+   */
+  touch: 0.7,
+  touchEdge: 0.5,
   /** How sharply the lean grows with the cursor's distance from the middle: past 1 a cursor near the middle barely moves the view. */
   ease: 1.2,
-  /** The cursor reaches the full lean at this share of the screen's shorter half. */
-  fullAt: 0.9,
+  /** The cursor reaches the full lean at this share of the way from the middle to the screen's edge (measured per axis, so on any shape). */
+  fullAt: 0.8,
   /** Exponential follow rates (per second): calm, and while the trigger is held or the gun is planted (the view keeps up with a fight). */
-  rate: 6,
-  aimRate: 9,
+  rate: 5,
+  aimRate: 8,
   /** An eye that moves further than this between frames (a respawn, a teleport, a map change) snaps the lean instead of easing it. */
   snapPx: 600,
 } as const;

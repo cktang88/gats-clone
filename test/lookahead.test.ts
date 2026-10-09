@@ -5,7 +5,8 @@ import { VIEW_PRELOAD_MARGIN, viewExtents } from '../src/shared/protocol.ts';
 import { holdLook, LOOK_AHEAD, lookReach, lookSides, NO_LOOK } from '../src/shared/lookahead.ts';
 import { interestLook, snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
-import { cursorPush, followLook, lookAhead, makeCamera, NO_LOOKCAM, screenToWorld, worldToScreen, type LookCam } from '../src/client/camera.ts';
+import { boundLean, cursorPush, followLook, lookAhead, makeCamera, NO_LOOKCAM, screenToWorld, visibleHalf, worldToScreen, type LookCam } from '../src/client/camera.ts';
+import { viewMulFor } from '../src/shared/sim/stats.ts';
 import { DEFAULTS, lookAheadFactor, sanitize } from '../src/client/settings.ts';
 import { emptyWorld, spawnAt } from './helpers.ts';
 
@@ -15,9 +16,14 @@ test('look-ahead: no lean at the middle, the full reach at the edge, clamped pas
   const w = 1600, h = 900;
   assert.equal(cursorPush({ x: w / 2, y: h / 2 }, w, h), 0);
   const full = (h / 2) * LOOK_AHEAD.fullAt;
-  assert.ok(near(cursorPush({ x: w / 2 + full, y: h / 2 }, w, h), 1));
+  assert.ok(near(cursorPush({ x: w / 2 + (w / 2) * LOOK_AHEAD.fullAt, y: h / 2 }, w, h), 1), 'full at fullAt of the way to the side edge');
+  assert.ok(near(cursorPush({ x: w / 2 + full, y: h / 2 }, w, h), full / (w / 2) / LOOK_AHEAD.fullAt), 'measured against the half width sideways');
+  for (const [cw, ch] of [[1600, 900], [2560, 1080], [844, 390], [390, 844]]) {
+    for (const edge of [{ x: cw - 1, y: ch / 2 }, { x: 1, y: ch / 2 }, { x: cw / 2, y: 1 }, { x: cw / 2, y: ch - 1 }]) assert.equal(cursorPush(edge, cw, ch), 1, `${cw}x${ch}: a cursor at any edge is a full push`);
+  }
   assert.equal(cursorPush({ x: w, y: 0 }, w, h), 1, 'a corner is clamped to a full push');
   assert.ok(near(cursorPush({ x: w / 2, y: h / 2 + full / 2 }, w, h), 0.5));
+  assert.equal(cursorPush({ x: 3, y: 3 }, 0, 0), 0, 'no screen, no push');
   assert.deepEqual(lookAhead({ x: 3, y: 0 }, 0, 100), { x: 0, y: 0 });
   assert.deepEqual(lookAhead({ x: 0, y: 0 }, 1, 100), { x: 0, y: 0 }, 'no aim, no lean');
   const at1 = lookAhead({ x: 0, y: -5 }, 1, 100);
@@ -30,11 +36,22 @@ test('look-ahead: no lean at the middle, the full reach at the edge, clamped pas
   assert.deepEqual(lookAhead({ x: 1, y: 0 }, NaN, 100), { x: 0, y: 0 });
 });
 
-test('look-ahead reach scales with the view and the gun: a scope leans further than a shotgun or an SMG', () => {
-  const R = WORLD.viewRadius, halfH = viewExtents(R, 16 / 9).halfH;
+test('look-ahead reach scales with the view and the gun: a scope leans furthest, a shotgun or an SMG least', () => {
+  const R = WORLD.viewRadius;
+  // Pinned: about 2.5x the first port's shares (pistol 0.13, SMG 0.11, shotgun 0.1, assault and LMG 0.14, sniper 0.19), which read as too subtle.
+  assert.deepEqual({ ...LOOK_AHEAD.share }, { pistol: 0.32, smg: 0.28, shotgun: 0.26, assault: 0.36, sniper: 0.5, lmg: 0.34 });
+  assert.equal(LOOK_AHEAD.maxShare, 0.6);
+  const old = { pistol: 101, smg: 86, shotgun: 78, assault: 109, lmg: 109, sniper: 202 } as const;
+  for (const [id, was] of Object.entries(old) as [keyof typeof old, number][]) {
+    const reach = lookReach(R * viewMulFor(id, {}), id);
+    assert.ok(reach >= 2.3 * was && reach <= 2.7 * was, `${id} leans ${reach.toFixed(0)} px, about 2.5x its old ${was}`);
+  }
   const assault = lookReach(R, 'assault');
-  assert.ok(assault >= 0.1 * R && assault <= 0.3 * halfH, `assault reach ${assault} sits in 10% of the width .. 30% of the height`);
+  assert.ok(near(assault, 0.36 * R) && near(lookReach(R * viewMulFor('sniper', {}), 'sniper'), 0.5 * R * viewMulFor('sniper', {})));
   assert.ok(lookReach(R, 'sniper') > assault && lookReach(R, 'smg') < assault && lookReach(R, 'shotgun') < assault);
+  for (const id of ['pistol', 'smg', 'shotgun', 'assault', 'lmg'] as const) {
+    assert.ok(lookReach(R * viewMulFor('sniper', {}), 'sniper') > lookReach(R * viewMulFor(id, {}), id), `a scoped sniper leans further than a ${id}`);
+  }
   assert.ok(R * 1.35 + lookReach(R * 1.35, 'sniper') > R + lookReach(R, 'sniper'), 'a wider view sees further down the aim');
   assert.ok(lookReach(R * 1.35, 'smg') > lookReach(R, 'smg'), 'and a class share leans further with it');
   for (const id of Object.keys(GUNS) as (keyof typeof GUNS)[]) {
@@ -43,6 +60,38 @@ test('look-ahead reach scales with the view and the gun: a scope leans further t
     assert.ok(R + reach >= Math.min(GUNS[id].range, R * (1 + LOOK_AHEAD.maxShare)) - 1e-9, `${id}'s full lean shows its range down the aim`);
   }
   for (const id of Object.keys(GUNS) as (keyof typeof GUNS)[]) assert.ok(lookReach(R, id) > 0, id);
+});
+
+test('look-ahead bound: your own soldier stays at least a fifth of the screen from every edge, on every screen, gun and aim', () => {
+  const screens = { '16:9': [1600, 900], '21:9': [2560, 1080], '32:9': [3840, 1080], 'phone landscape': [844, 390], 'phone portrait': [390, 844], square: [1000, 1000] } as const;
+  const self = { x: 3000, y: 3000 };
+  for (const [name, [w, h]] of Object.entries(screens)) {
+    for (const id of Object.keys(GUNS) as (keyof typeof GUNS)[]) {
+      const R = WORLD.viewRadius * viewMulFor(id, {}), half = visibleHalf(w, h, R);
+      for (const touch of [false, true]) {
+        const edge = touch ? LOOK_AHEAD.touchEdge : LOOK_AHEAD.edge, reach = lookReach(R, id) * (touch ? LOOK_AHEAD.touch : 1);
+        for (let k = 0; k < 24; k++) {
+          const a = (k / 24) * Math.PI * 2;
+          const lean = boundLean(lookAhead({ x: Math.cos(a), y: Math.sin(a) }, 1, reach), half, edge);
+          const len = Math.hypot(lean.x, lean.y);
+          assert.ok(len <= reach + 1e-9 && len > 0, `${name} ${id}: leans, never past its reach`);
+          assert.ok(Math.abs(Math.atan2(Math.sin(Math.atan2(lean.y, lean.x) - a), Math.cos(Math.atan2(lean.y, lean.x) - a))) < 1e-9, 'the bound shortens the lean, never turns it');
+          const at = worldToScreen(makeCamera({ x: self.x + lean.x, y: self.y + lean.y }, w, h, R), self);
+          const gap = (1 - edge) / 2 - 1e-6;
+          assert.ok(at.x >= gap * w && at.x <= w - gap * w && at.y >= gap * h && at.y <= h - gap * h,
+            `${name} ${id}${touch ? ' (touch)' : ''} aimed at ${(a * 180 / Math.PI).toFixed(0)}: soldier drawn at ${at.x.toFixed(0)},${at.y.toFixed(0)} of ${w}x${h}`);
+        }
+      }
+    }
+  }
+  // A full lean down the long side of a 16:9 screen is not cut short: an assault rifle aimed at the side edge shows its whole reach.
+  const half = visibleHalf(1600, 900, WORLD.viewRadius), reach = lookReach(WORLD.viewRadius, 'assault');
+  assert.ok(near(boundLean({ x: reach, y: 0 }, half).x, reach));
+  assert.ok(boundLean({ x: 0, y: reach }, half).y < reach, 'up or down, the short side, is held to the bound');
+  assert.deepEqual(boundLean({ x: NaN, y: 0 }, half), { x: 0, y: 0 });
+  // A phone held upright crops the view's sides (cover scale): the bound uses what is actually on screen.
+  const portrait = visibleHalf(390, 844, WORLD.viewRadius);
+  assert.ok(portrait.halfW < WORLD.viewRadius * 0.5 && near(portrait.halfH, WORLD.viewRadius));
 });
 
 test('follow: exponential, the same after one long frame as after several short ones, and snapping on a jump or a new eye', () => {
@@ -72,7 +121,7 @@ test('aim stays exact under a leaning camera: the screen point of the cursor map
     for (let i = 0; i < 60; i++) {
       const at = worldToScreen(cam, self);
       const aim = { x: (cursor.x - at.x) / cam.scale, y: (cursor.y - at.y) / cam.scale };
-      const want = lookAhead(aim, cursorPush(cursor, w, h), lookReach(WORLD.viewRadius, 'assault'));
+      const want = boundLean(lookAhead(aim, cursorPush(cursor, w, h), lookReach(WORLD.viewRadius, 'sniper')), visibleHalf(w, h, WORLD.viewRadius));
       lean = { x: lean.x + (want.x - lean.x) * 0.3, y: lean.y + (want.y - lean.y) * 0.3 };
       cam = makeCamera({ x: self.x + lean.x, y: self.y + lean.y }, w, h, WORLD.viewRadius);
     }
@@ -143,9 +192,9 @@ test('the held widening always covers a camera easing away from an old lean, at 
   assert.deepEqual(lookSides(NaN, 100), NO_LOOK);
 });
 
-test('the look-ahead setting: Normal by default, Low halves it, Off removes it, junk falls back', () => {
+test('the look-ahead setting: Normal by default, Low about the old subtle lean, Off removes it, junk falls back', () => {
   assert.equal(DEFAULTS.lookAhead, 'normal');
-  assert.deepEqual(['off', 'low', 'normal'].map((m) => lookAheadFactor(m as 'off')), [0, 0.5, 1]);
+  assert.deepEqual(['off', 'low', 'normal'].map((m) => lookAheadFactor(m as 'off')), [0, 0.4, 1]);
   assert.equal(sanitize({ lookAhead: 'low' }).lookAhead, 'low');
   assert.equal(sanitize({ lookAhead: 'huge' }).lookAhead, 'normal');
 });

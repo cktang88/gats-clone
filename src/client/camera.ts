@@ -30,12 +30,33 @@ export const screenToWorld = (c: Camera, p: Point): Point => ({
 
 // ---- aim look-ahead (shared/lookahead.ts): the camera leans toward where you aim ----
 
-/** How far the cursor is pushed from the middle of the screen, 0..1: 1 at `fullAt` of the screen's shorter half and beyond. */
+/**
+ * How far the cursor is pushed from the middle of the screen, 0..1, measured per axis against the screen's own half width and half height:
+ * 1 at `fullAt` of the way to any edge and beyond, so a cursor at the edge leans fully on a wide screen and a tall one alike, and the
+ * middle half of the screen still grades it.
+ */
 export function cursorPush(cursor: Point, w: number, h: number, fullAt: number = LOOK_AHEAD.fullAt): number {
-  const r = (Math.min(w, h) / 2) * fullAt;
-  if (!(r > 0)) return 0;
-  const d = Math.hypot(cursor.x - w / 2, cursor.y - h / 2) / r;
+  if (!(w > 0) || !(h > 0) || !(fullAt > 0)) return 0;
+  const d = Math.hypot((cursor.x - w / 2) / (w / 2), (cursor.y - h / 2) / (h / 2)) / fullAt;
   return Number.isFinite(d) ? Math.min(1, d) : 0;
+}
+
+/** The world half width and half height actually on screen: the allowed view, less what `coverScale` crops off a phone held upright. */
+export function visibleHalf(w: number, h: number, viewRadius: number): { halfW: number; halfH: number } {
+  const c = makeCamera({ x: 0, y: 0 }, w, h, viewRadius);
+  return c.scale > 0 ? { halfW: w / (2 * c.scale), halfH: h / (2 * c.scale) } : { halfW: 0, halfH: 0 };
+}
+
+/**
+ * The lean shortened (never turned, so the server's widening along the aim still covers it) until your own soldier, drawn at the screen's
+ * middle less the lean, sits inside `edge` of the visible half width and half height: an ellipse, so a lean toward a short side of the
+ * screen (up on a wide one, sideways on one held upright) stops sooner than a lean down the long side.
+ */
+export function boundLean(lean: Point, half: { halfW: number; halfH: number }, edge: number = LOOK_AHEAD.edge): Point {
+  const ax = half.halfW * edge, ay = half.halfH * edge;
+  if (!(ax > 0) || !(ay > 0) || !Number.isFinite(lean.x) || !Number.isFinite(lean.y)) return { x: 0, y: 0 };
+  const e = Math.hypot(lean.x / ax, lean.y / ay);
+  return e <= 1 ? lean : { x: lean.x / e, y: lean.y / e };
 }
 
 /**
