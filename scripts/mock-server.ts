@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { ABILITY_COOLDOWN_MS, ARMOR_IDS, ARMORS, EVOLUTIONS, GUNS, isPerkId, PERK_TIERS, WORLD, type AbilityId, type GunId, type ModeId, type PendingPick } from '../src/shared/defs.ts';
+import { ABILITY_COOLDOWN_MS, ARMOR_IDS, ARMORS, EVOLUTIONS, GUNS, isPerkId, loadoutWalkMul, PERK_TIERS, WORLD, type AbilityId, type GunId, type ModeId, type PendingPick } from '../src/shared/defs.ts';
 import {
   parseClientMsg, type BulletView, type GameEvent, type InputState, type Loadout, type PlayerView, type ServerMsg,
   type Snapshot, type ThrownView, type WallView, type ZoneView,
@@ -155,7 +155,7 @@ function serve(ws: WebSocket, mode: ModeId) {
     const now = Date.now();
     w.tick++;
     const weapon = GUNS[gun];
-    const speed = WORLD.baseSpeed * ARMORS[loadout.armor].speedMul * weapon.moveMul * (me.dashUntil > now ? 2.4 : 1);
+    const speed = WORLD.baseSpeed * loadoutWalkMul(weapon, loadout.armor) * (me.dashUntil > now ? 2.4 : 1);
     if (me.alive && input) {
       const dx = Number(input.right) - Number(input.left);
       const dy = Number(input.down) - Number(input.up);

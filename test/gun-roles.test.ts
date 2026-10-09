@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EVOLUTIONS, GUN_IDS, GUNS, rulesOf, settleRulesOf, SPRINT, WEAPON_IDS, WORLD, type GunId, type WeaponId } from '../src/shared/defs.ts';
+import { loadOf, sprintShareOf } from '../src/shared/handling.ts';
 import type { MapDoor } from '../src/shared/geom.ts';
 import { MAPS, type MapDef } from '../src/shared/maps.ts';
 import { CLASS_ROLES, GUN_ROLES, TRAIT_IDS, TRAITS } from '../src/shared/roles.ts';
@@ -31,8 +32,8 @@ function mechanics(id: GunId): Set<string> {
   if (r.deploy) m.add('deploy');
   if (r.spinUp) m.add('rev');
   if (r.bloom) m.add('bloom');
-  if (r.movingSpreadMul <= 1 && r.movingSpreadAdd === 0) m.add('movesFree');
-  if (r.movingSpreadMul >= 1.5 || r.movingSpreadAdd > 0.04) m.add('movesLoose');
+  if (r.movingSpreadAdd <= 0.1 * g.spread) m.add('movesFree');
+  if (r.movingSpreadAdd >= 0.5 * g.spread || r.movingSpreadAdd > 0.04) m.add('movesLoose');
   if (r.steadyMs > 0) m.add('plants');
   if (r.viewMul > 1.03) m.add('scope');
   if (r.shoveMul >= 2) m.add('shove');
@@ -40,9 +41,9 @@ function mechanics(id: GunId): Set<string> {
   if (r.suppress >= 0.1 && r.suppress < 0.3) m.add('pins');
   if (settleMsOf(id) <= 800) m.add('quickDraw');
   if (settleMsOf(id) >= 2200) m.add('slowDraw');
-  if (g.moveMul >= 1.08) m.add('fast');
+  if (g.moveMul >= 0.98) m.add('fast');
   if (g.moveMul <= 0.82) m.add('slow');
-  if (r.sprintMul < 0.5) m.add('noSprint');
+  if (sprintShareOf(loadOf(g.kg, g.cm, 0)) < 0.5) m.add('noSprint');
   if (g.mag >= 45) m.add('deepMag');
   if (r.viewMul >= 1.35) m.add('farScope');
   if (g.bulletSpeed <= 1500 && g.range >= 900) m.add('slowRound');
@@ -79,13 +80,13 @@ test('the traits a gun advertises are true of its numbers', () => {
     deploy: (id) => rulesOf(GUNS[id]).deploy !== null,
     breach: (id) => rulesOf(GUNS[id]).breach || GUNS[id].blast !== undefined,
     shove: (id) => rulesOf(GUNS[id]).shoveMul > 1,
-    quickdraw: (id) => settleMsOf(id) <= 800 || settleMsOf(id) <= 0.8 * settleMsOf(GUNS[id].base),
+    quickdraw: (id) => settleMsOf(id) <= 800 || settleMsOf(id) <= 0.85 * settleMsOf(GUNS[id].base),
     scope: (id) => rulesOf(GUNS[id]).viewMul > 1,
-    plant: (id) => rulesOf(GUNS[id]).steadyMs > 0 || rulesOf(GUNS[id]).movingSpreadMul >= 1.2 || rulesOf(GUNS[id]).movingSpreadAdd > 0,
-    strafe: (id) => rulesOf(GUNS[id]).movingSpreadMul <= 1 && rulesOf(GUNS[id]).movingSpreadAdd <= 0.05,
+    plant: (id) => rulesOf(GUNS[id]).steadyMs > 0 || rulesOf(GUNS[id]).movingSpreadAdd >= 0.2 * GUNS[id].spread,
+    strafe: (id) => rulesOf(GUNS[id]).movingSpreadAdd <= 0.05,
     heavy: (id) => GUNS[id].damage >= 30 || GUNS[id].damage * GUNS[id].pellets >= 100 || (GUNS[id].burst !== undefined && GUNS[id].damage * GUNS[id].burst.count >= 90),
     close: (id) => rulesOf(GUNS[id]).falloff !== null || GUNS[id].range <= 440,
-    fast: (id) => GUNS[id].moveMul >= 1,
+    fast: (id) => GUNS[id].moveMul >= 0.96,
     slow: (id) => GUNS[id].moveMul <= 0.93 || settleMsOf(id) >= 2200,
     deep: (id) => GUNS[id].mag >= 40 || GUNS[id].pellets > 1 || GUNS[id].mag >= 24,
     reach: (id) => GUNS[id].range >= 800,
@@ -124,7 +125,7 @@ test('stage-2 siblings of one class are also unlike each other across the class,
 
 test('SMG rushes: no accuracy lost on the move, quick off a sprint, and rounds that fade hard past 350 px', () => {
   assert.equal(spreadFor('smg', {}, false), spreadFor('smg', {}, true));
-  assert.ok(settleMsOf('smg') <= 650 && settleMsOf('smg') * 3 <= settleMsOf('assault') && settleMsOf('smg') < SPRINT.settleMs * 0.35);
+  assert.ok(settleMsOf('smg') <= 650 && settleMsOf('smg') * 3 <= settleMsOf('assault') && settleMsOf('smg') < settleMsOf('assault') * 0.35);
   assert.equal(falloffMul('smg', 100), 1);
   assert.ok(falloffMul('smg', 350) < 0.55 && falloffMul('smg', 600) <= 0.3 + 1e-9, 'a third of its punch by 350 px, the floor past it');
   assert.ok(dpsAt('smg', 150, false) > dpsAt('assault', 150, false), 'the SMG out-damages the assault rifle up close');

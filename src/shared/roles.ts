@@ -80,7 +80,7 @@ export const GUN_ROLES: Record<GunId, Role> = {
 
   sniper: { role: 'Long-range pick: one shot drops the unarmored', traits: ['heavy', 'plant', 'scope'] },
   longshot: { role: 'Cannon: one shot drops light armor, rocks them back', traits: ['heavy', 'shove', 'slow'] },
-  semiAuto: { role: 'Two-hit sniper with quick follow-ups', traits: ['plant', 'reach', 'quickdraw'] },
+  semiAuto: { role: 'Two-hit sniper with quick follow-ups', traits: ['plant', 'reach', 'pin'] },
   piercer: { role: 'Lane punisher: through three, one-shots medium armor', traits: ['pierce', 'scope', 'slow'] },
   artillery: { role: 'Shells with a wide blast: flush cover', traits: ['blast', 'breach', 'slow'] },
   repeater: { role: 'Jog-and-shoot marksman: fastest follow-ups', traits: ['strafe', 'reach', 'quickdraw'] },
@@ -88,10 +88,10 @@ export const GUN_ROLES: Record<GunId, Role> = {
 
   lmg: { role: 'Suppressor: rev up and hose a lane', traits: ['rev', 'pin', 'deep'] },
   heavyLmg: { role: 'Bipod: stand half a second and every round lands', traits: ['deploy', 'pin', 'slow'] },
-  lightMg: { role: 'Hip-fire MG: no rev-up, shoots on the walk', traits: ['quickdraw', 'deep'] },
+  lightMg: { role: 'Hip-fire MG: no rev-up, shoots on the walk', traits: ['auto', 'deep'] },
   minigun: { role: 'Torrent: long rev-up, huge damage, no sprint', traits: ['rev', 'auto', 'slow'] },
   juggernaut: { role: 'Fortress: no rev-up, plant, biggest rounds', traits: ['deploy', 'heavy', 'pin'] },
-  ranger: { role: 'Squad MG: keeps pace, accurate on the move', traits: ['strafe', 'quickdraw', 'deep'] },
+  ranger: { role: 'Squad MG: keeps pace, accurate on the move', traits: ['strafe', 'auto', 'deep'] },
   twinMg: { role: 'Paired barrels: double rounds, double pinning', traits: ['spray', 'pin', 'deep'] },
 };
 

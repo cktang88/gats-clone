@@ -33,7 +33,7 @@ test('the predicted reticle shows the post-sprint bloom: it opens while sprintin
   const walk = spreadOf(f);
   for (let i = 0; i < 20; i++) go({ ...moving, fire: false, shots: 0, sprint: true });
   const peak = spreadOf(f);
-  const moveSpread = GUNS.assault.spread * rulesOf(GUNS.assault).movingSpreadMul;
+  const moveSpread = GUNS.assault.spread + rulesOf(GUNS.assault).movingSpreadAdd;
   assert.ok(Math.abs(peak - SPRINT.settleMul * moveSpread) < 1e-9 && peak > 3 * walk, `wide while sprinting (${peak} vs walking ${walk})`);
   const after: number[] = [];
   for (let i = 0; i < 90; i++) after.push(go({ ...moving, right: false, fire: false, shots: 0 }));

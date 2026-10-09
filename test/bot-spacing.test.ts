@@ -52,9 +52,11 @@ test('a shotgun bot is not held off: it closes to its short band', () => {
   const w = emptyWorld();
   const bot = spawnAt(w, 2000, 2000, { loadout: { weapon: 'shotgun' } });
   const foe = spawnAt(w, 2400, 2000);
-  play(w, [bot], 'aggressive', 150);
-  const band = bandFor(bot.gun, PERSONALITIES.aggressive);
-  assert.ok(gap(bot, foe) <= band.ideal * 1.3, `closed to ${Math.round(gap(bot, foe))}px of ideal ${Math.round(band.ideal)}`);
+  // Once in, it weaves to and fro about its band, so it is judged on where it stays over the last two seconds, not on one tick.
+  const late: number[] = [];
+  play(w, [bot], 'aggressive', 150, (i) => { if (i >= 90) late.push(gap(bot, foe)); });
+  const band = bandFor(bot.gun, PERSONALITIES.aggressive), mean = late.reduce((a, b) => a + b, 0) / late.length;
+  assert.ok(mean <= band.ideal * 1.3, `stayed ${Math.round(mean)}px off, ideal ${Math.round(band.ideal)}`);
 });
 
 test('two mates sent the same way spread out rather than walking in a stack', () => {

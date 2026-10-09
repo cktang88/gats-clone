@@ -34,11 +34,12 @@ function spray(gun: GunId, still: boolean, count: number): number[] {
 
 const widest = (angles: readonly number[]) => Math.max(...angles.map(Math.abs));
 
-test('pistol, SMG and shotgun lose nothing on the move; assault drifts a lot, LMG much more, a walking sniper misses past 300px', () => {
-  const expected: Record<string, number> = { pistol: 1, smg: 1, shotgun: 1, assault: 1.7, lmg: 2 };
+test('pistol and SMG lose nothing on the move and a shotgun little; assault drifts a lot, LMG much more, a walking sniper misses past 300px', () => {
+  // The sway is the gun's weight and length (handling.ts): [least, most] of the still spread on the move.
+  const expected: Record<string, readonly [number, number]> = { pistol: [1, 1], smg: [1, 1], shotgun: [1, 1.2], assault: [1.6, 1.8], lmg: [1.9, 2.2] };
   for (const weapon of WEAPON_IDS.filter((w) => w !== 'sniper')) {
-    const ratio = spreadFor(weapon, {}, false) / spreadFor(weapon, {}, true);
-    assert.ok(Math.abs(ratio - expected[weapon]!) < 1e-9, `${weapon} moves at ${ratio}x spread`);
+    const ratio = spreadFor(weapon, {}, false) / spreadFor(weapon, {}, true), [lo, hi] = expected[weapon]!;
+    assert.ok(ratio >= lo - 1e-9 && ratio <= hi + 1e-9, `${weapon} moves at ${ratio}x spread`);
   }
   for (const gun of ['sniper', 'longshot', 'piercer'] as const) {
     assert.ok(spreadFor(gun, {}, false) > Math.atan(WORLD.playerRadius / 300), `a walking ${gun} can miss a body 300px off`);
@@ -239,13 +240,13 @@ test('Bipod is gone as a perk: no menu offers it, and standing still tightens an
   for (const weapon of ['pistol', 'smg'] as const) assert.equal(spreadFor(weapon, {}, true), spreadFor(weapon, {}, false));
 });
 
-test('no gun is ever a laser: each has a spread floor, smallest on light guns and largest on machine guns, a bipod and a planted sniper small', () => {
+test('no gun is ever a laser: each has a spread floor, wider for a short barrel or a big round, a bipod and a planted sniper small, an LMG never tight standing', () => {
   const deg = (rad: number) => (rad * 180) / Math.PI;
   const floor = (gun: GunId, deployed = false) => minSpreadOf(GUNS[gun], deployed);
-  for (const [a, b] of [['pistol', 'smg'], ['smg', 'assault'], ['assault', 'shotgun'], ['shotgun', 'lmg']] as const) assert.ok(floor(a) < floor(b), `${a} holds tighter than ${b}`);
-  assert.ok(floor('handCannon') > floor('machinePistol'), 'a heavier evolution of a class has a wider floor');
+  for (const [a, b] of [['assault', 'smg'], ['smg', 'pistol']] as const) assert.ok(floor(a) < floor(b), `${a}'s longer barrel holds tighter than ${b}`);
+  assert.ok(floor('handCannon') > floor('machinePistol'), 'a bigger round from the same length of barrel groups wider');
   for (const gun of ['sniper', 'longshot', 'piercer', 'artillery', 'semiAuto', 'repeater', 'ghost'] as const) assert.ok(deg(floor(gun)) >= 0.35 && deg(floor(gun)) <= 0.65, `${gun} floor ${deg(floor(gun)).toFixed(2)} deg`);
-  assert.ok(deg(floor('lmg')) >= 1.5 && deg(floor('heavyLmg')) >= 1.5, 'an LMG standing never holds tighter than ~1.5 degrees');
+  for (const gun of ['lmg', 'heavyLmg'] as const) assert.ok(deg(spreadFor(gun, { 1: 'grip' }, true)) >= 1.5, `a ${gun} standing never holds tighter than ~1.5 degrees, gripped or not`);
   assert.ok(deg(floor('heavyLmg', true)) >= 0.6 && deg(floor('heavyLmg', true)) <= 0.8, 'a set-down bipod gets its own small floor');
   // However planted, steady, unsuppressed and perked (a grip narrows spread), nothing fires under its floor.
   for (const gun of GUN_IDS) {

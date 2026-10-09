@@ -4,10 +4,11 @@ import { test } from 'node:test';
 import { CONTROLS, assembleInput, actionForKey } from '../src/client/input.ts';
 import { stepTrigger, NO_FIRING, settle, settleOf, spreadOf, type ServerGun } from '../src/client/fire.ts';
 import { NO_STICKS, dragStick, pressStick, touchMoves } from '../src/client/touch.ts';
-import { GUNS, LOAD_SPEED_FLOOR, minSpreadOf, rulesOf, settleRulesOf, SPREAD_EASE, SPRINT, WORLD, type GunId } from '../src/shared/defs.ts';
+import { ARMORS, GUNS, LOAD_SPEED_FLOOR, minSpreadOf, rulesOf, settleRulesOf, SPREAD_EASE, SPRINT, WORLD, type GunId } from '../src/shared/defs.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { easedSpread, effectiveStats, postSprintSpread, spreadFor } from '../src/shared/sim/stats.ts';
+import { loadOf, sprintShareOf } from '../src/shared/handling.ts';
 import type { Player } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
@@ -23,9 +24,12 @@ function travelled(sprint: boolean, ms: number, loadout: Parameters<typeof spawn
   return p.x - 500;
 }
 
-test('sprinting moves SPRINT.speedMul times faster than walking, and only while moving', () => {
+/** How much faster than a walk a pistol with no armor sprints: the bonus, by the share its light load keeps (see handling.ts). */
+const PISTOL_SPRINT = 1 + (SPRINT.speedMul - 1) * sprintShareOf(loadOf(GUNS.pistol.kg, GUNS.pistol.cm, 0));
+
+test('sprinting moves the bonus its load allows faster than walking, and only while moving', () => {
   const walk = travelled(false, 1000), sprint = travelled(true, 1000);
-  assert.ok(Math.abs(sprint / walk - SPRINT.speedMul) < 0.03, `sprint ${sprint.toFixed(1)} vs walk ${walk.toFixed(1)}`);
+  assert.ok(Math.abs(sprint / walk - PISTOL_SPRINT) < 0.03, `sprint ${sprint.toFixed(1)} vs walk ${walk.toFixed(1)}`);
   const w = emptyWorld();
   const p = spawnAt(w, 500, 500);
   press(w, p, { sprint: true });
@@ -34,13 +38,15 @@ test('sprinting moves SPRINT.speedMul times faster than walking, and only while 
   assert.equal(snapshotFor(w, p.id).self.sprint, false, 'and is not a sprint');
 });
 
-test('sprint multiplies the loadout speed after the 58% floor, and Lightweight stacks with it', () => {
+test('sprint multiplies the loadout speed after the 58% floor by the share its load allows, and Lightweight stacks with it', () => {
   const heavy = { weapon: 'lmg', armor: 'heavy' } as const;
   const base = WORLD.baseSpeed * LOAD_SPEED_FLOOR;
-  const lmgSprint = 1 + (SPRINT.speedMul - 1) * rulesOf(GUNS.lmg).sprintMul;
-  assert.ok(Math.abs(travelled(true, 1000, { loadout: heavy }) - base * lmgSprint) < 4, 'the heaviest loadout still sprints above its floor speed (an LMG a little less than most)');
-  const light = travelled(true, 1000, {}, ['lightweight']);
-  assert.ok(Math.abs(light - WORLD.baseSpeed * 1.25 * SPRINT.speedMul) < 4, `Lightweight sprint ${light.toFixed(1)}`);
+  const lmgSprint = 1 + (SPRINT.speedMul - 1) * sprintShareOf(loadOf(GUNS.lmg.kg, GUNS.lmg.cm, ARMORS.heavy.kg));
+  assert.ok(Math.abs(travelled(true, 1000, { loadout: heavy }) - base * lmgSprint) < 4, 'the heaviest loadout still sprints above its floor speed, if barely');
+  assert.ok(lmgSprint < 1.2, 'an LMG in heavy armor barely sprints');
+  const light = travelled(true, 1000, {}, ['lightweight']), share = sprintShareOf(loadOf(GUNS.pistol.kg, GUNS.pistol.cm, 0));
+  assert.ok(share > 1, 'a pistol with no armor sprints harder than the plain bonus');
+  assert.ok(Math.abs(light - WORLD.baseSpeed * GUNS.pistol.moveMul * 1.25 * (1 + (SPRINT.speedMul - 1) * share)) < 4, `Lightweight sprint ${light.toFixed(1)}`);
 });
 
 test('a sprinting player cannot fire; a click ends the sprint and fires at once', () => {
@@ -80,7 +86,7 @@ test('reloading while sprinting is allowed', () => {
 /** The spread player `p`'s next shot gets right now (the eased spread, see `easeSpread`). */
 const easedOf = (p: Player): number => (p.life.k === 'alive' ? easedSpread(p.life.spreadHist) : 0);
 /** Its target this tick, still or on the move, with `settle` of the post-sprint bloom left. */
-const moving = (gun: GunId) => GUNS[gun].spread * rulesOf(GUNS[gun]).movingSpreadMul + rulesOf(GUNS[gun]).movingSpreadAdd;
+const moving = (gun: GunId) => GUNS[gun].spread + rulesOf(GUNS[gun]).movingSpreadAdd;
 
 test('leaving sprint throws the post-sprint bloom: ~4x the gun\'s moving spread, easing out over its settle to whatever the stance gives', () => {
   const w = emptyWorld();
@@ -123,7 +129,7 @@ test('every class blooms to ~4x off a sprint, wider than walking; the pistol and
   const ms = (gun: GunId) => settleRulesOf(GUNS[gun]).ms;
   assert.ok(ms('pistol') <= 550 && ms('smg') <= 650, `the sidearm and the rusher settle in about half a second (${ms('pistol')}, ${ms('smg')})`);
   assert.ok(ms('gunslinger') <= 400 && ms('skirmisher') <= 400, 'their quickest variants faster still');
-  assert.ok(ms('shotgun') >= 1000 && ms('shotgun') <= 1400, 'the shotgun in between');
+  assert.ok(ms('shotgun') >= 2 * ms('smg'), 'a shotgun is as long and heavy as a rifle, and settles like one');
   assert.ok(ms('assault') >= 1900 && ms('assault') <= 2100, 'the anchor takes ~2 s');
   assert.ok(ms('sniper') >= 2200 && ms('lmg') >= 2200 && ms('sniper') <= 2500 && ms('lmg') <= 2500, 'the long guns longest');
   assert.ok(ms('smg') * 3 <= ms('assault'), 'quick off a sprint is the SMG\'s edge');
@@ -226,7 +232,7 @@ test('a sprint ending mid-settle restarts it, and sprint speed appears in the se
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const s = effectiveStats(a);
-  assert.ok(Math.abs(s.sprintSpeed - s.speed * SPRINT.speedMul) < 1e-9);
+  assert.ok(Math.abs(s.sprintSpeed - s.speed * PISTOL_SPRINT) < 1e-9);
   press(w, a, { right: true, sprint: true });
   run(w, TICK_MS * 2);
   assert.equal(snapshotFor(w, a.id).self.sprintSpeed, s.sprintSpeed);

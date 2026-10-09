@@ -88,7 +88,7 @@ export function dodgeStyle(gun: GunId, rushing: boolean): DodgeStyle {
   const def = GUNS[gun], r = rulesOf(def);
   const moveMs = def.fireMs - r.steadyMs - PLANT_MARGIN_MS;
   if (r.plant === 'always' && moveMs >= MIN_MOVE_MS) return { k: 'plant', moveMs };
-  if (rushing || (r.movingSpreadMul <= 1 && r.movingSpreadAdd === 0 && r.steadyMs === 0)) return { k: 'zigzag' };
+  if (rushing || (r.movingSpreadAdd <= 0.3 * def.spread && r.steadyMs === 0)) return { k: 'zigzag' };
   return { k: 'counter', stopMs: [r.steadyMs + STOP_TAP_MS[0], r.steadyMs + STOP_TAP_MS[1]] };
 }
 

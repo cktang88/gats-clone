@@ -5,7 +5,7 @@
  * aim in a short, purely cosmetic `swingMsOf`. A bolt-action's reticle greys while the bolt is worked after each shot (`cycling`), at its
  * true (bloomed) gap, and snaps bright the moment the next round is chambered; a click made too early for the bolt gives a soft "not yet" shake.
  */
-import { GUNS, PRESS_BUFFER_MS, settleRulesOf, type GunId } from '../shared/defs.ts';
+import { GUNS, handlingOfGun, PRESS_BUFFER_MS, type GunId } from '../shared/defs.ts';
 import { boltLeftOf, type Firing } from './fire.ts';
 
 /* --------------------------------------------------------------- the body ------------------------------------------------------------ */
@@ -13,8 +13,8 @@ import { boltLeftOf, type Firing } from './fire.ts';
 /** How fast the gun drops into the sprint carry (ms for the whole way), the overshoot past the aim once it is up, and the swing back up (ms, see `swingMsOf`). */
 export const CARRY = { downMs: 140, overshoot: 0.16, overshootMs: 140, lift: 0.12, liftK: 0.2, ease: 1.5, swingMinMs: 150, swingMaxMs: 300 } as const;
 
-/** How long the gun's swing from the carry back up to the aim takes on the soldier (cosmetic: it can fire all along): a light gun flicks up, a heavy one swings. */
-export const swingMsOf = (gun: GunId): number => Math.round(Math.min(CARRY.swingMaxMs, Math.max(CARRY.swingMinMs, 120 + settleRulesOf(GUNS[gun]).ms * 0.07)));
+/** How long the gun's swing from the carry back up to the aim takes on the soldier (cosmetic: it can fire all along), from its build (handling.ts `swingMs`): a light gun flicks up, a heavy one swings. */
+export const swingMsOf = (gun: GunId): number => Math.min(CARRY.swingMaxMs, Math.max(CARRY.swingMinMs, handlingOfGun(GUNS[gun]).swingMs));
 
 /**
  * The carry pose `sinceEnd` ms after a sprint ended, the gun having been `from` (0..1) of the way into the carry: 1 is

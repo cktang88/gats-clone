@@ -1,6 +1,7 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SPREAD_EASE, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, VIEW, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
+  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, SPREAD_EASE, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, VIEW, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
+import { loadOf, sprintShareOf, walkMulOf } from '../handling.ts';
 import { rand, type Life, type PerkOfTier, type Player, type World } from './world.ts';
 
 type PerkMods = {
@@ -77,7 +78,7 @@ export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, stil
   const pin = still && rules.pinpoint && suppression <= SUPPRESSION.breaksPinpoint && settle <= 0.05;
   const bloomBuild = Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomBuildMul ?? 1), 1);
   const bipod = still && deployed && rules.deploy ? rules.deploy : null;
-  const moving = def.spread * rules.movingSpreadMul + rules.movingSpreadAdd;
+  const moving = def.spread + rules.movingSpreadAdd;
   const base = pin ? 0 : still ? def.spread * (bipod?.spreadMul ?? 1) : moving;
   const share = !still ? 1 : bipod ? bipod.bloom : rules.bloom?.still ?? 1;
   // A pinpoint gun's bloom is a kick of its own still spread whatever its stance, so a sniper on the move is not thrown a mile wide on top of its walking cone.
@@ -191,9 +192,10 @@ export const sprintWanted = (i: { sprint?: boolean; fire?: boolean; up?: boolean
 
 export function effectiveStats(p: Player): Stats {
   const weapon = GUNS[p.gun];
-  const armor = ARMORS[p.loadout.armor];
+  // The load carried (the gun's weight and length, the armor's weight) sets the walk and how much of a sprint it allows (handling.ts).
+  const load = loadOf(weapon.kg, weapon.cm, ARMORS[p.loadout.armor].kg);
   const s: Stats = {
-    speed: WORLD.baseSpeed * Math.max(LOAD_SPEED_FLOOR, weapon.moveMul * armor.speedMul),
+    speed: WORLD.baseSpeed * walkMulOf(load),
     sprintSpeed: 0,
     settleMs: settleRulesOf(weapon).ms,
     maxHp: WORLD.baseHp,
@@ -205,7 +207,7 @@ export function effectiveStats(p: Player): Stats {
     viewRadius: WORLD.viewRadius * viewMulFor(p.gun, p.perks),
     piercing: false, silenced: silencedFor(p.gun, p.perks), shield: false, thermal: false, ghillie: false,
   };
-  let sprintMul = 1 + (SPRINT.speedMul - 1) * rulesOf(weapon).sprintMul;
+  let sprintMul = 1 + (SPRINT.speedMul - 1) * sprintShareOf(load);
   for (const perk of Object.values(p.perks)) {
     const m = PERK_MODS[perk];
     s.mag = Math.floor(s.mag * (m.magMul ?? 1));

@@ -1,4 +1,5 @@
 import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS, type ModeId, type WeaponId } from '../shared/defs.ts';
+import { HANDLING } from '../shared/handling.ts';
 import type { Loadout } from '../shared/protocol.ts';
 import { CLASS_ROLES } from '../shared/roles.ts';
 import { authenticate, fetchStats, loadAccount, saveAccount, type Account, type ServerInfo } from './api.ts';
@@ -67,7 +68,8 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
   });
   const armorButtons = ARMOR_IDS.map((id) => {
     const a = ARMORS[id];
-    const speed = Math.round((1 - a.speedMul) * 100);
+    // What its weight costs in walk speed (handling.ts: every kg carried takes the same share off).
+    const speed = Math.round(a.kg * HANDLING.load.perKg * 100);
     const tier = ARMOR_IDS.indexOf(id);
     const meter = el('span', { className: 'meter' }, ...[1, 2, 3].map((n) => el('i', { className: n <= tier ? 'on' : '' })));
     const cost = a.blockFrac

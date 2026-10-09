@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ARMOR_IDS, ARMORS, GUNS, minSpreadOf, rulesOf, SUPPRESSION, type GunId } from '../src/shared/defs.ts';
+import { ARMOR_IDS, ARMORS, GUNS, loadoutWalkMul, minSpreadOf, rulesOf, SUPPRESSION, type GunId } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats, spreadFor, suppressionMul } from '../src/shared/sim/stats.ts';
@@ -95,9 +95,9 @@ test('a round passing far off, or a teammate\'s, does not suppress', () => {
 });
 
 test('heavier armor and heavier guns slow you down more', () => {
-  const speeds = ARMOR_IDS.map((a) => ARMORS[a].speedMul);
+  const speeds = ARMOR_IDS.map((a) => loadoutWalkMul(GUNS.assault, a));
   for (let i = 1; i < speeds.length; i++) assert.ok(speeds[i]! < speeds[i - 1]!, 'each armor tier is slower than the one below');
-  assert.ok(ARMORS.heavy.speedMul <= 0.75, 'heavy armor is a real burden');
+  assert.ok(loadoutWalkMul(GUNS.pistol, 'heavy') <= 0.75, 'heavy armor is a real burden');
   assert.ok(GUNS.lmg.moveMul < GUNS.assault.moveMul && GUNS.assault.moveMul < GUNS.smg.moveMul);
   assert.ok(GUNS.juggernaut.moveMul < GUNS.lmg.moveMul);
 });
