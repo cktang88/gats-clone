@@ -1,6 +1,7 @@
 import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, MEDALS, type Badge, type CareerId, type MedalId, type WeaponId } from '../shared/defs.ts';
 import { careerArt, careerName, careerTooltip, medalArt, medalSvg } from './medals.ts';
 import { trackRootScale } from './uiscale.ts';
+import { loadAccount } from './api.ts';
 import { COSMETIC_BY_ID, SLOTS, type Slot } from '../shared/cosmetics.ts';
 import { COLORS, COLOR_IDS, type ColorId } from '../shared/defs.ts';
 import { hash32 } from '../shared/cosmetics.ts';
@@ -113,6 +114,13 @@ function render(p: ProfileJson) {
   const stars = (p as unknown as { prestige?: number }).prestige ?? 0;
   const sub = el('p', 'profile-sub', `${lvl ? `Level ${lvl}${stars ? ` · ${stars} star${stars === 1 ? '' : 's'}` : ''} · ` : ''}${p.featured ? `Wears ${careerName(p.featured)}` : 'No lifetime medal yet'}`);
   who.append(el('h1', 'profile-name', p.name), sub);
+  // Your own record (from the menu's name chip): a way back to the account sheet, where its settings live.
+  if (loadAccount()?.name.toLowerCase() === p.name.toLowerCase()) {
+    const settings = el('a', 'profile-settings', 'Account settings ›');
+    settings.id = 'profile-settings';
+    (settings as HTMLAnchorElement).href = '/?account';
+    who.append(settings);
+  }
   head.append(worn, who);
   const kd = p.deaths ? (p.kills / p.deaths).toFixed(2) : String(p.kills);
   const stats: [string, string][] = [
@@ -142,7 +150,11 @@ async function load(name: string) {
   try {
     const res = await fetch(`/api/profile/${encodeURIComponent(name)}`);
     if (seq !== loadSeq) return;
-    if (res.status === 404) { $('profile-status').textContent = `No one called ${name} has played yet.`; return; }
+    if (res.status === 404) {
+      const mine = loadAccount()?.name.toLowerCase() === name.toLowerCase();
+      $('profile-status').textContent = mine ? 'Your record starts with your first match. Play one and it shows here.' : `No one called ${name} has played yet.`;
+      return;
+    }
     if (!res.ok) throw new Error(String(res.status));
     const body = await res.json() as ProfileJson;
     if (seq !== loadSeq) return;

@@ -8,7 +8,7 @@ import { EMAIL_MAX, emailError } from '../shared/email.ts';
 import type { MutedNames } from './chatmute.ts';
 import { CONTROLS } from './input.ts';
 import { drawGunCard } from './gunart.ts';
-import { MODE_INFO, type ModeArt, type SceneId } from './modecards.ts';
+import { MODE_INFO, type SceneId } from './modecards.ts';
 
 export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -116,34 +116,30 @@ export function renderMuted(root: HTMLElement, muted: MutedNames, unmute: (name:
   })));
 }
 
-type CardRefs = { wrap: HTMLElement; btn: HTMLButtonElement; live: HTMLElement; canvas: HTMLCanvasElement };
+type CardRefs = { wrap: HTMLElement; btn: HTMLButtonElement; live: HTMLElement };
 const cardCache = new WeakMap<HTMLElement, { key: string; cards: Map<string, CardRefs> }>();
 
-/** The diorama stage of a mode card: its canvas, and the live pill laid over a corner of it. */
-export function cardStage(mode: SceneId, live: string): { stage: HTMLElement; canvas: HTMLCanvasElement; live: HTMLElement } {
-  const canvas = el('canvas', { className: 'mc-art' });
-  canvas.setAttribute('aria-hidden', 'true');
+/** Who is in, as a small pill (empty until the count is known). */
+export function livePill(live: string): { pill: HTMLElement; live: HTMLElement } {
   const n = el('span', { className: 'n' }, live);
-  const pill = el('span', { className: 'mc-live' }, el('i'), n);
-  return { stage: el('span', { className: 'mc-stage' }, canvas, pill), canvas, live: n };
+  return { pill: el('span', { className: 'mc-live' }, el('i'), n), live: n };
 }
 
-/** The plate under a stage: the mode's chip and name, then its one-line pitch. */
-export function cardPlate(mode: SceneId, ...more: (Node | string)[]): HTMLElement {
+/** A mode's info, in type only: its chip, name and who is in, then its one-line pitch and anything it adds (its own buttons). */
+export function cardPlate(mode: SceneId, pill: HTMLElement, ...more: (Node | string)[]): HTMLElement {
   const info = MODE_INFO[mode];
   return el('span', { className: 'mc-plate' },
-    el('span', { className: 'mc-head' }, el('span', { className: `mode mode-${mode.toLowerCase()}` }, mode), el('b', { className: 'mc-name' }, info.name)),
+    el('span', { className: 'mc-head' }, el('span', { className: `mode mode-${mode.toLowerCase()}` }, mode), el('b', { className: 'mc-name' }, info.name), pill),
     el('span', { className: 'mc-pitch' }, info.pitch), ...more);
 }
 
 /**
- * The public rooms as mode cards (screen one): a lit diorama, the mode's name and pitch, and who is in. The cards stay put between
- * polls (their scenes keep running), and only the live counts and the picked state change.
+ * The public rooms as mode cards (screen one): the mode's name and pitch, and who is in. The cards stay put between polls, and only
+ * the live counts and the picked state change.
  */
-export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, selected: string | null, pick: (id: string, mode: ModeId) => void, art?: ModeArt) {
+export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, selected: string | null, pick: (id: string, mode: ModeId) => void) {
   const old = cardCache.get(root);
   if (servers === null || !servers.length) {
-    old?.cards.forEach((c) => art?.remove(c.canvas));
     cardCache.delete(root);
     root.replaceChildren(el('p', { className: 'muted mc-empty' }, servers === null ? 'Could not load servers. Retrying…' : 'No servers running.'));
     return;
@@ -151,22 +147,19 @@ export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, s
   const key = servers.map((sv) => `${sv.id}:${sv.mode}`).join('|');
   let entry = old;
   if (!entry || entry.key !== key) {
-    old?.cards.forEach((c) => art?.remove(c.canvas));
     const cards = new Map<string, CardRefs>();
     root.replaceChildren(...servers.map((sv) => {
-      const { stage, canvas, live } = cardStage(sv.mode as SceneId, '');
+      const { pill, live } = livePill('');
       const btn = el('button', { type: 'button', className: `server mode-card plate mc-${sv.mode.toLowerCase()}` },
-        el('span', { className: 'mc-face' }, stage, cardPlate(sv.mode as SceneId)));
+        el('span', { className: 'mc-face' }, cardPlate(sv.mode as SceneId, pill)));
       btn.dataset.room = sv.id;
       btn.onclick = () => pick(sv.id, sv.mode);
       const wrap = el('div', { className: 'mc-wrap' }, btn);
-      cards.set(sv.id, { wrap, btn, live, canvas });
-      art?.add(canvas, sv.mode as SceneId, btn);
+      cards.set(sv.id, { wrap, btn, live });
       return wrap;
     }));
     entry = { key, cards };
     cardCache.set(root, entry);
-    art?.paint();
   }
   for (const sv of servers) {
     const c = entry.cards.get(sv.id);
@@ -180,13 +173,11 @@ export function renderServers(root: HTMLElement, servers: ServerInfo[] | null, s
 type SquadMenu = { code: string | null; selected: boolean; link: string | null; busy: boolean };
 
 /**
- * The Zombies card: the Bastion squad's diorama and pitch, with a button that starts a squad at once (a shortcut that deploys with
+ * The Zombies card: the Bastion squad's name and pitch, with a button that starts a squad at once (a shortcut that deploys with
  * the loadout you last picked) and, once a squad exists, its room chip and invite link. The rest of the card chooses Zombies and
  * goes on to the gear screen, where Deploy starts the squad (or joins the one from an invite link).
  */
-export function renderSquad(root: HTMLElement, squad: SquadMenu, on: { start(): void; pick(): void; choose?(): void }, art?: ModeArt) {
-  const oldArt = root.querySelector('canvas');
-  if (oldArt) art?.remove(oldArt);
+export function renderSquad(root: HTMLElement, squad: SquadMenu, on: { start(): void; pick(): void; choose?(): void }) {
   const start = el('button', { type: 'button', id: 'squad-start', className: 'mc-btn', disabled: squad.busy }, squad.busy ? 'Starting…' : squad.code ? 'New squad' : 'Start a squad');
   start.onclick = on.start;
   const actions = el('span', { className: 'mc-actions' });
@@ -202,13 +193,11 @@ export function renderSquad(root: HTMLElement, squad: SquadMenu, on: { start(): 
     copy.onclick = () => void copyText(link.value, copy);
     actions.append(room, el('span', { className: 'invite' }, link, copy));
   }
-  const { stage, canvas } = cardStage('ZOM', squad.code ? 'private squad' : 'up to 4 players');
+  const { pill } = livePill(squad.code ? 'private squad' : 'up to 4 players');
   actions.prepend(el('span', { className: 'mc-cta' }, start));
   const hit = el('button', { type: 'button', className: 'mc-hit', ariaLabel: 'Zombies: choose your gear' });
   hit.onclick = on.choose ?? on.pick;
-  root.replaceChildren(el('span', { className: 'mc-face' }, stage, cardPlate('ZOM', actions)), hit);
-  art?.add(canvas, 'ZOM', root);
-  art?.paint();
+  root.replaceChildren(el('span', { className: 'mc-face' }, cardPlate('ZOM', pill, actions)), hit);
 }
 
 /** Each copy button's resting label and its pending restore, so a second press inside the 1.6 s never takes "Copied" for the label. */

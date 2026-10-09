@@ -1,7 +1,7 @@
 /*
  * The menu, as part of the diorama (docs/art/STYLE.md): plates are objects with a lit top face, a darker front lip and an ink outline,
  * shadows fall down and to the right (key light top left), nothing blurs, and buttons press down into their lip. Two steps (choose
- * your fight, gear up) over a slow night yard painted by menuscene.ts; every mode card holds a diorama painted with the match's own art.
+ * your fight, gear up) over a slow night yard painted by menuscene.ts; a mode is told in type alone: its chip, name, pitch and who is in.
  * Text sits on dark gunmetal at 4.5:1 or better; nothing is under 13px at 1x --ui, and --ui scales the lot to 4K.
  */
 #menu {
@@ -160,12 +160,7 @@
 #menu .mode-card[aria-pressed="true"], #menu .mode-card:has(#squad-room[aria-pressed="true"]) { --ring: var(--m-accent); }
 #menu .mode-card:focus-visible, #menu .mode-card:has(.mc-hit:focus-visible) { outline: 3px solid var(--m-accent-text); outline-offset: 5px; }
 #menu .mc-face { display: flex; flex-direction: column; flex: 1; overflow: hidden; border-radius: 7px; }
-#menu .mc-stage { display: block; position: relative; aspect-ratio: 360 / 180; overflow: hidden; background: #1a1d24; border-bottom: 3px solid var(--m-ink); }
-#menu .mc-art { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
-/* A warm bloom crosses the diorama window when the card is up (light, drawn over the art; the soldiers react in the canvas). */
-#menu .mc-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(255, 214, 150, 0.14), transparent 60%); opacity: 0; transition: opacity 0.2s; }
-#menu .mode-card:hover .mc-stage::after, #menu .mode-card:has(.mc-hit:focus-visible) .mc-stage::after { opacity: 1; }
-#menu .mc-live { position: absolute; left: 10px; top: 10px; display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 8px; background: var(--m-ink); border-radius: 4px; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4); font: 700 14px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--m-text); }
+#menu .mc-live { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 8px; background: var(--m-ink); border-radius: 4px; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4); font: 700 14px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--m-text); }
 #menu .mc-live i { width: 9px; height: 9px; background: var(--m-ok); border-radius: 50%; }
 #menu .mc-live .n:empty { display: none; }
 #menu .mc-live:has(.n:empty) { display: none; }
@@ -314,14 +309,10 @@
   #menu .step-title { font-size: 40px; }
   #menu .steps { display: none; }
   #menu .mode-grid { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-right: 12px; }
-  /* A card lies on its side: the diorama on the left, the plate on the right. */
-  #menu .mc-face { display: grid; grid-template-columns: 46% minmax(0, 1fr); }
-  #menu .mc-stage { aspect-ratio: auto; min-height: 100%; border-bottom: 0; border-right: 3px solid var(--m-ink); overflow: hidden; }
-  #menu .mc-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   #menu .mc-plate, #menu .range-pitch { padding: 11px 12px 14px; gap: 6px; }
   #menu .mc-name, #menu .range-title b { font-size: 23px; }
   #menu .mc-pitch { font-size: 14px; }
-  #menu .mc-live { left: 6px; top: 6px; font-size: 13px; padding: 3px 7px 3px 6px; }
+  #menu .mc-live { font-size: 13px; padding: 3px 7px 3px 6px; }
   #menu .mc-actions { gap: 8px; }
   #menu .mc-btn { padding: 9px 12px; font-size: 15px; }
   #menu .swatches { gap: 9px; }
@@ -347,7 +338,7 @@
   #menu .step-sub, #menu .steps { display: none; }
   #menu .mode-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 16px; }
   #menu .mc-pitch { display: none; }
-  #menu .mc-live { left: 5px; top: 5px; font-size: 12px; padding: 3px 6px 3px 5px; gap: 5px; }
+  #menu .mc-live { font-size: 12px; padding: 3px 6px 3px 5px; gap: 5px; }
   #menu .mc-live i { width: 7px; height: 7px; }
   #menu .mc-name, #menu .range-title b { font-size: 21px; }
   #menu .mc-plate, #menu .range-pitch { padding: 9px 11px 12px; gap: 6px; }
@@ -361,5 +352,5 @@
   #menu .acct-sheet { top: 52px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  #menu .mode-card, #menu .loadout .tile, #menu .swatch, #menu button, #menu .mc-stage::after { transition: none !important; }
+  #menu .mode-card, #menu .loadout .tile, #menu .swatch, #menu button { transition: none !important; }
 }

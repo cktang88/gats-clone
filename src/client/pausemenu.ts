@@ -3,6 +3,7 @@ import { CONTROLS, TOUCH_NOTES } from './input.ts';
 import { getMusicVolume, isMusicMuted, musicGainNow, setMusicVolume, setSoundMuted, toggleMusicMuted } from './music.ts';
 import { allCredits, MARCH_CREDIT } from './musicstream.ts';
 import { chatterOn, setChatterOn } from './chatter.ts';
+import { FEEDBACK_EMAIL, feedbackLink } from './contact.ts';
 import { copyText } from './menu.ts';
 import { padIntent, type PadSample } from './pausegate.ts';
 import { fxCapable, fxState, lightingStatus } from './postfx.ts';
@@ -174,7 +175,10 @@ export function createPauseMenu(hud: HTMLElement, deps: PauseDeps) {
   const confirm = h('div', 'pz-confirm', h('b', 'pz-confirm-title', 'Leave this match?'), confirmText, h('span', 'pz-confirm-row', stay, reallyLeave));
   confirm.hidden = true;
   confirm.setAttribute('role', 'alertdialog');
-  panels.get('home')!.append(resume, h('div', 'pz-navrow', toSettings, toControls), invite, h('div', 'pz-spacer'), leaveBtn, confirm);
+  const feedback = feedbackLink('pause');
+  feedback.id = 'pause-feedback';
+  panels.get('home')!.append(resume, h('div', 'pz-navrow', toSettings, toControls), invite, h('div', 'pz-spacer'), leaveBtn, confirm,
+    h('p', 'pz-feedback', feedback, h('span', '', FEEDBACK_EMAIL)));
 
   // ---- Settings tab ----
   const sync: (() => void)[] = [];

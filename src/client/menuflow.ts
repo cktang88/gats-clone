@@ -1,14 +1,14 @@
-import { MODE_INFO, type ModeArt, type SceneId } from './modecards.ts';
+import { MODE_INFO, type SceneId } from './modecards.ts';
 
 /**
  * The menu's flow: two steps (choose your fight, then gear up) under three tabs (Deploy, Armory, Challenges), the account sheet,
  * and the keyboard and gamepad navigation that moves focus between cards by where they sit. It also decides what runs: the backdrop
- * while the menu is up, the cards' scenes only on the mode step of the Deploy tab, the gear stage only on the gear step, and
+ * while the menu is up, the gear stage only on the gear step of the Deploy tab, and
  * nothing at all while the tab is hidden or a match has the screen.
  */
 export type Step = 'modes' | 'gear';
 type Runner = { start(): void; stop(): void };
-type Deps = { menu: HTMLElement; art: ModeArt; stage: Runner & { paint(): void }; scene: Runner; onStep?: (s: Step) => void; onEscape?: () => boolean };
+type Deps = { menu: HTMLElement; stage: Runner & { paint(): void }; scene: Runner; onStep?: (s: Step) => void; onEscape?: () => boolean };
 
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -25,12 +25,10 @@ export function createMenuFlow(d: Deps) {
   const sync = () => {
     const live = visible && !document.hidden;
     if (live) d.scene.start(); else d.scene.stop();
-    if (live && tab === 'tab-deploy' && step === 'modes') d.art.start(); else d.art.stop();
     if (live && tab === 'tab-deploy' && step === 'gear') d.stage.start(); else d.stage.stop();
-    if (live && tab === 'tab-deploy' && step === 'modes') d.art.paint(performance.now());
   };
 
-  const focusable = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>('button, input, a[href], summary')].filter((e) => !(e as HTMLButtonElement).disabled && e.getClientRects().length > 0);
+  const focusable = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>('button, input, select, a[href], summary')].filter((e) => !(e as HTMLButtonElement).disabled && e.getClientRects().length > 0);
 
   function go(next: Step, opts: { focus?: boolean } = {}) {
     if (next === 'gear') chosen = true;
@@ -47,7 +45,7 @@ export function createMenuFlow(d: Deps) {
     if (opts.focus === false) return;
     requestAnimationFrame(() => {
       if (next === 'gear') (gear.querySelector<HTMLElement>('.weapon[aria-pressed="true"]') ?? gear.querySelector<HTMLElement>('button'))?.focus({ preventScroll: true });
-      else (lastCard && lastCard.isConnected ? (lastCard.matches('button') ? lastCard : lastCard.querySelector<HTMLElement>('.mc-hit')) : modes.querySelector<HTMLElement>('.server'))?.focus({ preventScroll: true });
+      else (lastCard && lastCard.isConnected && lastCard.getClientRects().length ? (lastCard.matches('button') ? lastCard : lastCard.querySelector<HTMLElement>('.mc-hit')) : modes.querySelector<HTMLElement>('#mode-select') ?? modes.querySelector<HTMLElement>('.server'))?.focus({ preventScroll: true });
     });
   }
 
@@ -105,7 +103,7 @@ export function createMenuFlow(d: Deps) {
     const dir = KEYS[e.key];
     if (!dir) return;
     const t = e.target as HTMLElement;
-    if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable) return;
+    if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable) return;
     if (moveFocus(dir)) e.preventDefault();
   });
 

@@ -3,8 +3,8 @@ import type { ClientMsg, Snapshot } from '../shared/protocol.ts';
 import { TARGETS } from '../shared/range.ts';
 import { drawGunCard } from './gunart.ts';
 import { iconSvg, PERK_ICONS } from './icons.ts';
-import { cardStage } from './menu.ts';
-import { MODE_INFO, type ModeArt } from './modecards.ts';
+import { livePill } from './menu.ts';
+import { MODE_INFO } from './modecards.ts';
 
 /**
  * The shooting range's own interface (mode `RNG`): the menu card that opens a private range, the readout plate (last hit, DPS over
@@ -37,17 +37,14 @@ export async function openRangeRoom(): Promise<{ room: string } | { error: strin
   }
 }
 
-/** The menu card: a lit range diorama, what the range is in one line, and a button (or the whole card) that opens one for you alone. */
-export function renderRangeCard(root: HTMLElement, state: { busy: boolean }, on: { start(): void }, art?: ModeArt) {
-  const oldArt = root.querySelector('canvas');
-  if (oldArt) art?.remove(oldArt);
+/** The menu card: what the range is in one line, and a button (or the whole card) that opens one for you alone. */
+export function renderRangeCard(root: HTMLElement, state: { busy: boolean }, on: { start(): void }) {
   const start = plate('mc-btn range-start', state.busy ? 'Opening…' : 'Open the range');
   start.id = 'range-start';
   start.disabled = state.busy;
   start.addEventListener('click', on.start);
-  const { stage, canvas } = cardStage('RNG', 'private · just you');
   const pitch = el('span', 'range-pitch mc-plate',
-    el('span', 'range-title mc-head', el('span', 'mode mode-rng', 'RNG'), el('b', 'mc-name', 'Shooting range')),
+    el('span', 'range-title mc-head', el('span', 'mode mode-rng', 'RNG'), el('b', 'mc-name', 'Shooting range'), livePill('private · just you').pill),
     el('span', 'mc-pitch', MODE_INFO.RNG.pitch));
   pitch.append(el('span', 'mc-actions', el('span', 'mc-cta', start)));
   const hit = el('button', 'mc-hit');
@@ -55,9 +52,7 @@ export function renderRangeCard(root: HTMLElement, state: { busy: boolean }, on:
   hit.setAttribute('aria-label', 'Shooting range: open a private range');
   hit.disabled = state.busy;
   hit.addEventListener('click', on.start);
-  root.replaceChildren(el('span', 'mc-face', stage, pitch), hit);
-  art?.add(canvas, 'RNG', root);
-  art?.paint();
+  root.replaceChildren(el('span', 'mc-face', pitch), hit);
 }
 
 type Send = (msg: ClientMsg) => void;

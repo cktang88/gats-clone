@@ -37,6 +37,10 @@ import { nextInputDue, pullsInput } from './inputclock.ts';
 import { EMPTY_BUFFER, TICK_MS, newestSnap, pushSnap, renderTime, sampleAt } from './interp.ts';
 import { $, mountAccount, mountLoadoutPicker, renderControls, renderMuted, renderServers, renderSquad, renderSquadChip } from './menu.ts';
 import { makeDelay } from './netsim.ts';
+import { setFeedbackGame, wireFeedback } from './contact.ts';
+import { DISCORD_URL } from './config.ts';
+import { applyDiscord, mountChangelog, renderTopBar } from './menubar.ts';
+import { mountModePicker } from './modepicker.ts';
 import { createOverlays } from './overlays.ts';
 import { compactDeath, touchControlsShown } from './deathflow.ts';
 import { createDelight } from './delight.ts';
@@ -85,7 +89,7 @@ import { isAnniversary, isCenturion } from './friendly.ts';
 import { EMOTES } from '../shared/emotes.ts';
 import { COSMETIC_BY_ID, type Slot } from '../shared/cosmetics.ts';
 import { cosLook, lookOfEquipped } from './cosmeticlook.ts';
-import { createModeArt, type SceneId } from './modecards.ts';
+import type { SceneId } from './modecards.ts';
 import { createMenuScene } from './menuscene.ts';
 import { createGearStage } from './gearup.ts';
 import { createMenuFlow } from './menuflow.ts';
@@ -121,6 +125,21 @@ const playBtn = $<HTMLButtonElement>('play');
 const nameInput = $<HTMLInputElement>('name');
 const serversEl = $('servers');
 const squadEl = $('squad');
+/** The mode dropdown over the cards: Play deploys into the picked mode at once, Gear up goes to the loadout step first. */
+const roomFor = (mode: SceneId) => servers?.find((x) => x.mode === mode) ?? null;
+const modePicker = mountModePicker($('mode-grid'), {
+  play: (mode) => {
+    if (mode === 'RNG') { void startRange(); return; }
+    if (mode === 'ZOM') chooseZombies();
+    else { const sv = roomFor(mode); if (!sv) return; chooseRoom(sv.id, sv.mode); }
+    $<HTMLFormElement>('play-form').requestSubmit();
+  },
+  gear: (mode) => {
+    if (mode === 'RNG') { void startRange(); return; }
+    if (mode === 'ZOM') chooseZombies();
+    else { const sv = roomFor(mode); if (sv) chooseRoom(sv.id, sv.mode); }
+  },
+});
 const squadChip = $('squad-chip');
 
 let state: ClientState = { phase: 'menu', status: { kind: 'idle' } };
@@ -1042,7 +1061,7 @@ let rangeKey = '';
 
 function showServers() {
   const picked = chosen ? selectedRoom : null;
-  renderServers(serversEl, servers, picked, chooseRoom, modeArt);
+  renderServers(serversEl, servers, picked, chooseRoom);
   const key = `${squad}|${picked === squad}|${squadBusy}`;
   if (key !== squadKey) {
     squadKey = key;
@@ -1050,12 +1069,13 @@ function showServers() {
       start: () => void startSquad(),
       pick: chooseZombies,
       choose: chooseZombies,
-    }, modeArt);
+    });
   }
   if (rangeKey !== String(rangeBusy)) {
     rangeKey = String(rangeBusy);
-    renderRangeCard($('range-card'), { busy: rangeBusy }, { start: () => void startRange() }, modeArt);
+    renderRangeCard($('range-card'), { busy: rangeBusy }, { start: () => void startRange() });
   }
+  modePicker.sync(servers, squad);
   refreshMission();
   refreshPlayButton();
 }
@@ -1065,6 +1085,7 @@ function chooseRoom(id: string, mode: ModeId) {
   selectedRoom = id;
   mission = mode as SceneId;
   chosen = true;
+  modePicker.select(mission);
   showServers();
   flow.go('gear');
 }
@@ -1073,6 +1094,7 @@ function chooseRoom(id: string, mode: ModeId) {
 function chooseZombies() {
   mission = 'ZOM';
   chosen = true;
+  modePicker.select('ZOM');
   if (squad) selectedRoom = squad;
   showServers();
   flow.go('gear');
@@ -1212,11 +1234,10 @@ const wardrobe = createWardrobe({
   sendEquip: (slot, id) => { const s = sessionOf(state); if (s) send(s.ws, { t: 'equip', slot, id }); },
 });
 const skinNow = () => cosLook({ g: wardrobe.state().equipped.gunSkin }).skin;
-// The menu's art: the dioramas on the mode cards, the backdrop yard, and the gear-up stage, run by the flow (menuflow.ts) only while seen.
-const modeArt = createModeArt(reducedMotion);
+// The menu's art: the backdrop yard and the gear-up stage, run by the flow (menuflow.ts) only while seen.
 const menuScene = createMenuScene($<HTMLCanvasElement>('menu-scene'), reducedMotion);
 const gearStage = createGearStage($<HTMLCanvasElement>('gear-view'), { loadout: () => loadout, look: () => lookOfEquipped(wardrobe.state().equipped), calm: reducedMotion });
-const flow = createMenuFlow({ menu: menuEl, art: modeArt, stage: gearStage, scene: menuScene });
+const flow = createMenuFlow({ menu: menuEl, stage: gearStage, scene: menuScene });
 /** The enlist plate on the first screen (guests only), and the death card's one quiet line when a guest has something at stake. */
 const enlist = mountEnlist($('enlist'), {
   auth: (kind, name, pass, email) => account.auth(kind, name, pass, email),
@@ -1229,7 +1250,14 @@ const syncNudge = () => { const line = guestNudge(!!account.current(), enlist.st
 const noteStakes = (more: Partial<Stakes>) => { if (!account.current()) { enlist.note(more); syncNudge(); } };
 $('death-enlist-go').addEventListener('click', () => { leave(); showTab('tab-deploy'); flow.go('modes', { focus: false }); enlist.open('register'); });
 /** The account chip in the menu's top bar follows who is signed in and their level. */
-const syncAcct = () => { flow.setAccount(account.current()?.name ?? null, wardrobe.state().level.level); enlist.sync(!!account.current()); syncNudge(); };
+const syncAcct = () => {
+  flow.setAccount(account.current()?.name ?? null, wardrobe.state().level.level); enlist.sync(!!account.current()); syncNudge();
+  const me = account.current();
+  renderTopBar($('menu-auth'), me ? { name: me.name, level: wardrobe.state().level } : null, {
+    register: () => { flow.closeSheet(); showTab('tab-deploy'); flow.go('modes', { focus: false }); enlist.open('register'); },
+    logout: () => account.expire(''),
+  });
+};
 const pickers = [
   mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout, skinNow, { gear: true, peek: (g) => gearStage.peek(g), colorRoot: $('gear-colors') }),
   mountLoadoutPicker($('loadout-death'), () => loadout, setLoadout, skinNow),
@@ -1249,6 +1277,16 @@ nameInput.addEventListener('input', tagName);
 tagName();
 linkMyProfile();
 renderControls($('controls'));
+// The bottom bar (What's new, Discord, feedback) and the feedback links on the death card; each mail says where the player was.
+setFeedbackGame(() => {
+  const snap = (() => { const s = sessionOf(state); return s ? newestSnap(s.snaps) : null; })();
+  return snap ? { mode: snap.match.mode, map: snap.match.map } : { mode: modePicker.mode };
+});
+for (const id of ['menu-feedback', 'death-feedback', 'death-feedback-more']) wireFeedback($<HTMLAnchorElement>(id), id === 'menu-feedback' ? 'menu' : 'death');
+applyDiscord($<HTMLAnchorElement>('menu-discord'), DISCORD_URL);
+mountChangelog($('menu-changelog'));
+// ?account (the Account settings link on your own service record) opens the account sheet.
+if (params.has('account') && account.current()) queueMicrotask(() => $('acct-btn').click());
 
 // ---- Progression: the armory, level card and challenges in the menu, and the XP card after a life or a round.
 const levelCard = $('level-card');
@@ -1331,7 +1369,8 @@ let pendingMode: SceneId | null = null;
 {
   const want = MODE_PARAM[(params.get('mode') ?? '').toLowerCase()];
   if (want === 'ZOM') { mission = 'ZOM'; chosen = true; }
-  else if (want === 'RNG') queueMicrotask(() => { $('range-card').scrollIntoView({ block: 'center' }); $('range-card').querySelector<HTMLElement>('.mc-hit')?.focus({ preventScroll: true }); });
+  else if (want === 'RNG') queueMicrotask(() => {
+    modePicker.select('RNG'); $('range-card').scrollIntoView({ block: 'center' }); $('range-card').querySelector<HTMLElement>('.mc-hit')?.focus({ preventScroll: true }); });
   else if (want) pendingMode = want;
 }
 resize();
@@ -1341,6 +1380,6 @@ const syncMotion = () => { document.documentElement.dataset.motion = reducedMoti
 syncMotion();
 onSettings(syncMotion);
 setState(state);
-if (chosen) { flow.reachable(); flow.go('gear', { focus: false }); }
+if (chosen) { modePicker.select(mission); flow.reachable(); flow.go('gear', { focus: false }); }
 requestAnimationFrame(frame);
 trackRootScale();
