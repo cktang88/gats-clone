@@ -25,6 +25,25 @@ const NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [
 const SNAP_CELLS = 4;
 
 let serials = 0;
+/** Every grid built, weakly, for the dev load log (`navStats`): how many are alive and what their memos hold. */
+const LIVE = new Set<WeakRef<NavGrid>>();
+const track = (g: NavGrid): NavGrid => { LIVE.add(new WeakRef(g)); return g; };
+
+/** Grids still alive and the paths and distance fields they hold (dev measurement; see SKIRMISH_NETSTATS in main.ts). */
+export function navStats(): { grids: number; paths: number; fields: number; fieldMb: number } {
+  let grids = 0, paths = 0, fieldBytes = 0;
+  const fieldMaps = new Set<Map<number, Float32Array>>();
+  for (const ref of LIVE) {
+    const g = ref.deref();
+    if (!g) { LIVE.delete(ref); continue; }
+    grids++;
+    paths += g.paths.size;
+    fieldMaps.add(g.fields);
+  }
+  let fields = 0;
+  for (const m of fieldMaps) for (const f of m.values()) { fields++; fieldBytes += f.byteLength; }
+  return { grids, paths, fields, fieldMb: +(fieldBytes / 1e6).toFixed(1) };
+}
 
 export function navGrid(size: number, solids: readonly Rect[], radius: number, cell = NAV_CELL): NavGrid {
   const n = Math.ceil(size / cell);
@@ -37,7 +56,7 @@ export function navGrid(size: number, solids: readonly Rect[], radius: number, c
     }
   }
   for (const r of solids) stamp(open, n, cell, radius, r);
-  return { size, cell, n, open, serial: ++serials, scratch: { g: new Float64Array(n * n), from: new Int32Array(n * n), seen: new Uint32Array(n * n), stamp: 0, heapC: [], heapF: [] }, paths: new Map(), fields: new Map() };
+  return track({ size, cell, n, open, serial: ++serials, scratch: { g: new Float64Array(n * n), from: new Int32Array(n * n), seen: new Uint32Array(n * n), stamp: 0, heapC: [], heapF: [] }, paths: new Map(), fields: new Map() });
 }
 
 function stamp(open: Uint8Array, n: number, cell: number, radius: number, r: Rect) {
@@ -51,7 +70,7 @@ export function withSolids(base: NavGrid, solids: readonly Rect[], radius: numbe
   const open = base.open.slice();
   for (const r of solids) stamp(open, base.n, base.cell, radius, r);
   // Its own path memo (the open cells differ), but the base grid's distance fields: a path read off one is checked against these cells.
-  return { ...base, open, serial: ++serials, paths: new Map() };
+  return track({ ...base, open, serial: ++serials, paths: new Map() });
 }
 
 const cellOf = (nav: NavGrid, p: Point) => {

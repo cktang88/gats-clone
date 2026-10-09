@@ -14,7 +14,8 @@ import { openProfiles, profileView, type Profiles } from './profiles.ts';
 import { loadModerator } from './moderation.ts';
 import { LIMITS, makeFaultLog, makeKeyedLimiter, makeWindowGate, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
-import { warmLayouts } from './bot/arena.ts';
+import { layoutCount, warmLayouts } from './bot/arena.ts';
+import { navStats } from './bot/nav.ts';
 import { ROTATION } from '../shared/maps.ts';
 import { planTicks } from './clock.ts';
 
@@ -307,7 +308,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       load = { tickHz: +(tally.ticks / secs).toFixed(1), droppedTicks: tally.dropped, busy: +(tally.workMs / (end - tally.at)).toFixed(3), maxTickMs: +tally.maxMs.toFixed(1) };
       if (logNet) {
         const live = [...rooms.values()].map((r) => r.netStats()).filter((r) => r.humans > 0 || r.ticked > 0);
-        console.log('netstats ' + JSON.stringify({ t: Math.round(end), rooms: rooms.size, ...load, loopDelayP99: loopDelay ? +(loopDelay.percentile(99) / 1e6).toFixed(1) : null, loopDelayMax: loopDelay ? +(loopDelay.max / 1e6).toFixed(1) : null, gcMs: +gc.ms.toFixed(1), gcMax: +gc.max.toFixed(1), gcN: gc.n, heapMb: Math.round(process.memoryUsage().heapUsed / 1e6), live }));
+        console.log('netstats ' + JSON.stringify({ t: Math.round(end), rooms: rooms.size, ...load, loopDelayP99: loopDelay ? +(loopDelay.percentile(99) / 1e6).toFixed(1) : null, loopDelayMax: loopDelay ? +(loopDelay.max / 1e6).toFixed(1) : null, gcMs: +gc.ms.toFixed(1), gcMax: +gc.max.toFixed(1), gcN: gc.n, heapMb: Math.round(process.memoryUsage().heapUsed / 1e6), nav: { ...navStats(), layouts: layoutCount() }, live }));
         loopDelay?.reset();
         Object.assign(gc, { ms: 0, max: 0, n: 0 });
       }

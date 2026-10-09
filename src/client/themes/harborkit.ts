@@ -1,5 +1,6 @@
 import type { Pt } from '../../shared/geom.ts';
 import { INK } from '../palette.ts';
+import { onMapChange } from '../mapscope.ts';
 
 /**
  * Shared bits of the Harbour theme: its palette, a clock that holds still under `prefers-reduced-motion`, a few shape helpers
@@ -70,6 +71,7 @@ export const rrect = (g: CanvasRenderingContext2D, x: number, y: number, w: numb
 
 export type Sprite = { canvas: HTMLCanvasElement; ox: number; oy: number; w: number; h: number };
 const SPRITES = new Map<string, Sprite>();
+onMapChange(() => SPRITES.clear());
 const SCALE = 2;
 
 /** A painted thing cached by key: `paint` draws in world units with (0, 0) at the box's top-left, `pad` px of margin all round. */

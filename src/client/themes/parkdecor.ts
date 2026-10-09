@@ -4,6 +4,7 @@ import { reducedMotion } from '../screenfx.ts';
 import type { ThemeView } from './registry.ts';
 import { C, DISTRICTS, MID, PARK, districtAt, hash, inside, isBasin, openSides, wallsOf, type Foliage } from './parkkit.ts';
 import * as P from './parkprops.ts';
+import { onMapChange } from '../mapscope.ts';
 
 /**
  * What moves, and what stands, in the Park. `parkUnder` runs after the walls and before bodies: tree shadows, water with its
@@ -20,6 +21,7 @@ const MS = { fade: 160 } as const;
 /* --------------------------------------------------------- sprite cache */
 
 const sprites = new Map<string, HTMLCanvasElement>();
+onMapChange(() => sprites.clear());
 function sprite(key: string, s: P.Sprite): HTMLCanvasElement {
   let c = sprites.get(key);
   if (c) return c;

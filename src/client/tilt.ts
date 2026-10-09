@@ -5,6 +5,7 @@ import { paintFloor, stencil, type FloorPlan } from './floor.ts';
 import { paintFoliage, paintGrain, paintHazard, seeded, type Grain } from './grain.ts';
 import { PALETTE } from './palette.ts';
 import { paintThemedSolids } from './themes/registry.ts';
+import { onMapChange } from './mapscope.ts';
 
 export const LIGHT = { x: 0.62, y: 0.78 } as const;
 const SHADOW_PER_HEIGHT = 3.3;
@@ -1208,6 +1209,7 @@ const SPRITE_PAD = 8;
 const SPRITE_BUDGET = 48_000_000;
 const sprites = new Map<string, HTMLCanvasElement>();
 let spritePixels = 0;
+onMapChange(() => { sprites.clear(); spritePixels = 0; });
 /** Anything this big (the map-edge curbs, the core) is cheaper to paint directly than to cache. */
 const DIRECT = (s: Solid) => s.kind === 'curb' || s.kind === 'core' || s.w > 900 || s.h > 900;
 

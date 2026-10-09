@@ -2,6 +2,7 @@ import type { Pt } from '../../shared/geom.ts';
 import type { MapDef } from '../../shared/maps.ts';
 import { decideFx, watchdog } from '../fxparams.ts';
 import { calm, clock, hexA, C, TAU } from './harborkit.ts';
+import { onMapChange } from '../mapscope.ts';
 
 /**
  * The harbour's water. One small WebGL canvas of its own is rendered each frame for the part of the world in view and stamped
@@ -424,88 +425,127 @@ const fields = new WeakMap<WaterPrep, Uint8Array>();
 const fieldOf = (prep: WaterPrep): Uint8Array => { let f = fields.get(prep); if (!f) { f = field(prep); fields.set(prep, f); } return f; };
 /** A baked tile, or `false` for one with no water in it at all (blitting a clear tile every frame is pure cost). */
 const tiles = new Map<string, HTMLCanvasElement | false>();
+onMapChange(() => { tiles.clear(); job = null; });
 let prepSeq = 0;
 const prepIds = new WeakMap<WaterPrep, number>();
 const prepId = (p: WaterPrep): number => { let i = prepIds.get(p); if (i === undefined) { i = ++prepSeq; prepIds.set(p, i); } return i; };
 const TILE_LIMIT = 36;
 
-/** Bilinear samples of the distance field at a world point: [signed shore distance, distance to land, distance to hull], all in world px. */
-function sample(f: Uint8Array, n: number, wx: number, wy: number, out: number[]): void {
-  const u = Math.min(n - 1.001, Math.max(0, wx / TEXEL - 0.5)), v = Math.min(n - 1.001, Math.max(0, wy / TEXEL - 0.5));
-  const i0 = u | 0, j0 = v | 0, fx = u - i0, fy = v - j0;
-  const a = (j0 * n + i0) * 4, b = a + 4, c = a + n * 4, d = c + 4;
-  const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
-  const ch = (k: number) => f[a + k]! * w00 + f[b + k]! * w10 + f[c + k]! * w01 + f[d + k]! * w11;
-  out[0] = (ch(0) / 255 - 0.5) * 2 * MAXD; out[1] = (ch(1) / 255) * SHORE_MAX; out[2] = (ch(2) / 255) * HULL_MAX;
-}
-
 const hash2 = (x: number, y: number): number => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
-const vnoise = (x: number, y: number): number => {
-  const ix = Math.floor(x), iy = Math.floor(y); let fx = x - ix, fy = y - iy;
-  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
-  const a = hash2(ix, iy), b = hash2(ix + 1, iy), c = hash2(ix, iy + 1), d = hash2(ix + 1, iy + 1);
-  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
-};
 
-function bakeTile(prep: WaterPrep, tx: number, ty: number): HTMLCanvasElement | false {
+const [FOAM_R, FOAM_G, FOAM_B] = FOAM_RGB, [LO_R, LO_G, LO_B] = FOAM_LO_RGB;
+
+/**
+ * `vnoise` with the four lattice hashes of the last cell it was asked about kept: neighbouring pixels nearly always fall in the same
+ * cell (one spans 17 to 60 px at the frequencies below), so a tile takes a tenth of the `Math.sin` calls. Value noise on `hash2`'s lattice, as the shader's `vnoise`.
+ */
+function cachedNoise(): (x: number, y: number) => number {
+  let cx = NaN, cy = NaN, a = 0, b = 0, c = 0, d = 0;
+  return (x, y) => {
+    const ix = Math.floor(x), iy = Math.floor(y); let fx = x - ix, fy = y - iy;
+    if (ix !== cx || iy !== cy) { cx = ix; cy = iy; a = hash2(ix, iy); b = hash2(ix + 1, iy); c = hash2(ix, iy + 1); d = hash2(ix + 1, iy + 1); }
+    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+  };
+}
+const NOISE = { wob: cachedNoise(), swA: cachedNoise(), swB: cachedNoise(), gap: cachedNoise(), hull: cachedNoise() };
+
+/**
+ * Paints tile (`tx`, `ty`) of the plain water into `px` (TILE_PX square, RGBA) and says whether any of it is wet. Every value is a
+ * scalar: a tile is 266k pixels, and the few small arrays a pixel used to make came to ~30 MB of garbage per tile, so walking along the
+ * harbour kept the collector busy and each new tile was a visible stall.
+ */
+export function paintWaterTile(prep: WaterPrep, tx: number, ty: number, px: Uint8ClampedArray, rowFrom = 0, rowTo = TILE_PX): boolean {
   const f = fieldOf(prep), n = prep.cells;
-  const c = document.createElement('canvas'); c.width = c.height = TILE_PX;
-  const g = c.getContext('2d')!;
-  const img = g.createImageData(TILE_PX, TILE_PX), px = img.data;
-  const out = [0, 0, 0], x0 = tx * TILE - SKIRT, y0 = ty * TILE - SKIRT;
+  const x0 = tx * TILE - SKIRT, y0 = ty * TILE - SKIRT;
   let wetPx = false;
-  for (let j = 0; j < TILE_PX; j++) for (let i = 0; i < TILE_PX; i++) {
+  for (let j = rowFrom; j < rowTo; j++) for (let i = 0; i < TILE_PX; i++) {
     const wx = x0 + i + 0.5, wy = y0 + j + 0.5;
-    sample(f, n, wx, wy, out);
-    const sd = out[0]!;
+    // Bilinear samples of the distance field: signed shore distance, distance to land, distance to hull, all in world px.
+    const u = Math.min(n - 1.001, Math.max(0, wx / TEXEL - 0.5)), v = Math.min(n - 1.001, Math.max(0, wy / TEXEL - 0.5));
+    const i0 = u | 0, j0 = v | 0, sx = u - i0, sy = v - j0;
+    const a = (j0 * n + i0) * 4, b = a + 4, c = a + n * 4, e = c + 4;
+    const w00 = (1 - sx) * (1 - sy), w10 = sx * (1 - sy), w01 = (1 - sx) * sy, w11 = sx * sy;
+    const sd = ((f[a]! * w00 + f[b]! * w10 + f[c]! * w01 + f[e]! * w11) / 255 - 0.5) * 2 * MAXD;
     const o = (j * TILE_PX + i) * 4;
     if (sd < -1) continue;
+    const land = ((f[a + 1]! * w00 + f[b + 1]! * w10 + f[c + 1]! * w01 + f[e + 1]! * w11) / 255) * SHORE_MAX;
+    const hd = ((f[a + 2]! * w00 + f[b + 2]! * w10 + f[c + 2]! * w01 + f[e + 2]! * w11) / 255) * HULL_MAX;
     // Cel depth: distance from the nearest shore, or from a hull (which is a shore of its own).
-    const wob = Math.sin(wy * 0.05 + wx * 0.03) * 1.4 + (vnoise(wx * 0.06, wy * 0.06) - 0.5) * 4;
-    const d = Math.min(out[1]!, out[2]! * 1.15 + 14);
+    const wob = Math.sin(wy * 0.05 + wx * 0.03) * 1.4 + (NOISE.wob(wx * 0.06, wy * 0.06) - 0.5) * 4;
+    const d = Math.min(land, hd * 1.15 + 14);
     let band = 0; while (band < BAND_EDGES.length && d > BAND_EDGES[band]!) band++;
     // Swell mottling in three cel tones (static here; the shader animates it).
-    const sw = vnoise(wx * 0.02 + 40, wy * 0.02) * 0.6 + vnoise(wx * 0.055, wy * 0.055 + 9) * 0.4;
+    const sw = NOISE.swA(wx * 0.02 + 40, wy * 0.02) * 0.6 + NOISE.swB(wx * 0.055, wy * 0.055 + 9) * 0.4;
     const lk = sw > 0.64 ? 1.14 : sw > 0.52 ? 1.05 : 0.95;
     const bc = BAND_RGB[band]!;
-    let col: readonly number[] = [Math.min(255, bc[0]! * lk), Math.min(255, bc[1]! * lk), Math.min(255, bc[2]! * lk)];
+    let r = Math.min(255, bc[0]! * lk), g = Math.min(255, bc[1]! * lk), bl = Math.min(255, bc[2]! * lk);
     // A fine darker seam where one band meets the next, so the steps read as cel steps.
-    let seam = 0; for (const e of BAND_EDGES) { const k = Math.abs(d - e); if (k < 1.6) seam = Math.max(seam, 1 - k / 1.6); }
-    if (seam > 0) col = [col[0]! * (1 - 0.18 * seam), col[1]! * (1 - 0.14 * seam), col[2]! * (1 - 0.1 * seam)];
+    let seam = 0; for (const edge of BAND_EDGES) { const k = Math.abs(d - edge); if (k < 1.6) seam = Math.max(seam, 1 - k / 1.6); }
+    if (seam > 0) { r *= 1 - 0.18 * seam; g *= 1 - 0.14 * seam; bl *= 1 - 0.1 * seam; }
     // Foam: one unbroken bright line on the water's edge, a second thinner one behind it with a few long gaps, both wobbling gently.
     const fd = sd + wob;
     const a1 = Math.min(1, Math.max(0, (6.5 - fd) / 1.4));
-    const gap = vnoise(wx * 0.017, wy * 0.017) > 0.3 ? 1 : 0.0;
+    const gap = NOISE.gap(wx * 0.017, wy * 0.017) > 0.3 ? 1 : 0.0;
     const a2 = Math.min(1, Math.max(0, 1 - (Math.abs(fd - 18) - 1.4) / 1.2)) * gap;
-    if (a2 > 0) col = [col[0]! + (FOAM_LO_RGB[0] - col[0]!) * a2 * 0.85, col[1]! + (FOAM_LO_RGB[1] - col[1]!) * a2 * 0.85, col[2]! + (FOAM_LO_RGB[2] - col[2]!) * a2 * 0.85];
+    if (a2 > 0) { const k = a2 * 0.85; r += (LO_R - r) * k; g += (LO_G - g) * k; bl += (LO_B - bl) * k; }
     // The foam round a hull: a line close in and one further out.
-    const hd = out[2]!;
     if (hd < 22) {
-      const h1 = Math.min(1, Math.max(0, (5 - hd) / 1.4)), h2 = Math.min(1, Math.max(0, 1 - (Math.abs(hd - 15) - 1.2) / 1.2)) * (vnoise(wx * 0.03, wy * 0.03) > 0.38 ? 1 : 0);
-      col = [col[0]! + (FOAM_LO_RGB[0] - col[0]!) * h2 * 0.8, col[1]! + (FOAM_LO_RGB[1] - col[1]!) * h2 * 0.8, col[2]! + (FOAM_LO_RGB[2] - col[2]!) * h2 * 0.8];
-      col = [col[0]! + (FOAM_RGB[0] - col[0]!) * h1, col[1]! + (FOAM_RGB[1] - col[1]!) * h1, col[2]! + (FOAM_RGB[2] - col[2]!) * h1];
+      const h1 = Math.min(1, Math.max(0, (5 - hd) / 1.4)), h2 = Math.min(1, Math.max(0, 1 - (Math.abs(hd - 15) - 1.2) / 1.2)) * (NOISE.hull(wx * 0.03, wy * 0.03) > 0.38 ? 1 : 0);
+      const k = h2 * 0.8;
+      r += (LO_R - r) * k; g += (LO_G - g) * k; bl += (LO_B - bl) * k;
+      r += (FOAM_R - r) * h1; g += (FOAM_G - g) * h1; bl += (FOAM_B - bl) * h1;
     }
-    col = [col[0]! + (FOAM_RGB[0] - col[0]!) * a1, col[1]! + (FOAM_RGB[1] - col[1]!) * a1, col[2]! + (FOAM_RGB[2] - col[2]!) * a1];
+    r += (FOAM_R - r) * a1; g += (FOAM_G - g) * a1; bl += (FOAM_B - bl) * a1;
     const al = Math.min(1, Math.max(0, (sd + 0.9) / 1.8));
-    px[o] = col[0]!; px[o + 1] = col[1]!; px[o + 2] = col[2]!; px[o + 3] = al * 255;
+    px[o] = r; px[o + 1] = g; px[o + 2] = bl; px[o + 3] = al * 255;
     if (al > 0) wetPx = true;
   }
-  if (!wetPx) return false;
-  g.putImageData(img, 0, 0);
-  return c;
+  return wetPx;
 }
 
-let bakedThisFrame = 0;
+/**
+ * The tile being painted: a whole tile is ~100 ms of work on a fast machine, so it is painted a band of rows at a time within
+ * `BAKE_MS` a frame (one tile at a time, into one reused buffer) and lands once its last row is done. Until then the tile shows
+ * the deep tone, so the picture only ever sharpens and no frame stalls.
+ */
+let job: { key: string; prep: WaterPrep; tx: number; ty: number; row: number; wet: boolean } | null = null;
+let tilePixels: Uint8ClampedArray | null = null;
+const BAKE_MS = 4;
+const BAKE_ROWS = 12;
+
+/** Paints more of the tile in progress until `BAKE_MS` have gone; done, it is filed with the others. */
+function advanceBake(now: () => number = () => performance.now()): void {
+  if (!job) return;
+  const end = now() + BAKE_MS;
+  tilePixels ??= new Uint8ClampedArray(TILE_PX * TILE_PX * 4);
+  if (job.row === 0) tilePixels.fill(0);
+  while (job.row < TILE_PX && now() < end) {
+    const to = Math.min(TILE_PX, job.row + BAKE_ROWS);
+    if (paintWaterTile(job.prep, job.tx, job.ty, tilePixels, job.row, to)) job.wet = true;
+    job.row = to;
+  }
+  if (job.row < TILE_PX) return;
+  let tile: HTMLCanvasElement | false = false;
+  if (job.wet) {
+    tile = document.createElement('canvas'); tile.width = tile.height = TILE_PX;
+    const g = tile.getContext('2d')!;
+    const img = g.createImageData(TILE_PX, TILE_PX);
+    img.data.set(tilePixels);
+    g.putImageData(img, 0, 0);
+  }
+  tiles.set(job.key, tile);
+  if (tiles.size > TILE_LIMIT) tiles.delete(tiles.keys().next().value as string);
+  job = null;
+}
+
+/** The baked tile, `false` for one with no water, or null while it is still being painted (the first one asked for starts). */
 function tileFor(prep: WaterPrep, tx: number, ty: number): HTMLCanvasElement | false | null {
   const key = `${prepId(prep)}:${tx},${ty}`;
   const hit = tiles.get(key);
   if (hit !== undefined) { tiles.delete(key); tiles.set(key, hit); return hit; }
-  if (bakedThisFrame >= 2) return null;
-  bakedThisFrame++;
-  const c = bakeTile(prep, tx, ty);
-  tiles.set(key, c);
-  if (tiles.size > TILE_LIMIT) tiles.delete(tiles.keys().next().value as string);
-  return c;
+  job ??= { key, prep, tx, ty, row: 0, wet: false };
+  return null;
 }
 
 /** Is this world point open water, a little way off the shore? */
@@ -518,16 +558,22 @@ function wet(prep: WaterPrep, x: number, y: number, margin: number): boolean {
 
 function drawPlain(g: CanvasRenderingContext2D, now: number, view: { x0: number; y0: number; x1: number; y1: number }, prep: WaterPrep, lights: readonly WaterLight[]): void {
   const t = clock(now) * 0.001;
-  bakedThisFrame = 0;
   const tx0 = Math.max(0, Math.floor(view.x0 / TILE)), tx1 = Math.min(Math.ceil(prep.size / TILE) - 1, Math.floor(view.x1 / TILE));
   const ty0 = Math.max(0, Math.floor(view.y0 / TILE)), ty1 = Math.min(Math.ceil(prep.size / TILE) - 1, Math.floor(view.y1 / TILE));
+  let unbaked = 0;
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
     const c = tileFor(prep, tx, ty);
     if (c !== null) { if (c) g.drawImage(c, tx * TILE - SKIRT, ty * TILE - SKIRT); continue; }
-    // Not baked yet: the deep tone, so the picture only ever sharpens.
-    g.save(); g.beginPath(); for (const pts of prep.polys) pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.clip();
-    g.fillStyle = BAND_COLORS[4]!; g.fillRect(tx * TILE, ty * TILE, TILE, TILE); g.restore();
+    unbaked++;
   }
+  if (unbaked) {
+    // Not baked yet: the deep tone, so the picture only ever sharpens. One clip to the water for all of them.
+    g.save(); g.beginPath(); for (const pts of prep.polys) pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.clip();
+    g.fillStyle = BAND_COLORS[4]!;
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) if (!tiles.has(`${prepId(prep)}:${tx},${ty}`)) g.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+    g.restore();
+  }
+  advanceBake();
   // Wavelets: short arcs, a few to a screen, each rising, drifting and fading over about five seconds. Never near an edge.
   const CELL = 210;
   g.lineCap = 'round'; g.lineWidth = 3;

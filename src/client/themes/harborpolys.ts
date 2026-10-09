@@ -7,6 +7,7 @@ import { LIGHT } from '../tilt.ts';
 import { BOX_PAINT, C, LINES, TAU, hash2, hexA, mix, rrect, sprite, stamp, trace, type Sprite } from './harborkit.ts';
 import { bobOf, kitHulls, liveryOf } from './harborships.ts';
 import { claimShadows } from '../vehicleshadow.ts';
+import { onMapChange } from '../mapscope.ts';
 
 /**
  * Every solid of the harbour, painted once into a sprite and stamped each frame: containers in faded paint with corrugated sides,
@@ -464,7 +465,8 @@ function paintOne(g: G, poly: MapPoly, pts: Pt[]): void {
 
 /* -- the set-piece hook ------------------------------------------------------------------------------------------ */
 
-const sprites = new WeakMap<MapPoly, Sprite>();
+let sprites = new WeakMap<MapPoly, Sprite>();
+onMapChange(() => { sprites = new WeakMap(); });
 
 function spriteOf(poly: MapPoly): Sprite {
   let s = sprites.get(poly);

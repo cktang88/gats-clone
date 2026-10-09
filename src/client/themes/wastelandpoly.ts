@@ -4,6 +4,7 @@ import { drawExtruded, type PolyLook } from '../geoart.ts';
 import { drawVehicle, vehicleSprite } from '../vehicleart.ts';
 import type { GeoInfo } from '../geoart.ts';
 import { C, TAU, bake, baseId, boundsOf, hash, hashStr, inPoly, isTwin, southEdges, trace, wound, wreckPlacement, type Sprite } from './wastelandkit.ts';
+import { onMapChange } from '../mapscope.ts';
 
 /**
  * Polygon art: every poly and roof is baked once into a sprite (the engine calls these hooks every frame) and doors are
@@ -21,7 +22,8 @@ const look = (top: string): PolyLook => ({ top, front: mix(top, 0, 0.42), lit: m
 
 /* ---------------------------------------------------------------- polygons */
 
-const sprites = new WeakMap<MapPoly, { s: Sprite; pad: number }>();
+let sprites = new WeakMap<MapPoly, { s: Sprite; pad: number }>();
+onMapChange(() => { sprites = new WeakMap(); roofSprites.clear(); });
 
 /** A crack as a chunk: a tapering wedge cut into the surface, dark with a lit lip on its low side. */
 function wedgeCut(g: G, x: number, y: number, ang: number, len: number, w: number, seed: number) {

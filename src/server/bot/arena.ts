@@ -165,6 +165,9 @@ const shutDoors = (map: MapId): Rect[] => mapDoors(map).filter((d) => d.locked |
 const LAYOUTS = new Map<string, { nav: NavGrid; cover: CoverIndex }>();
 const LAYOUTS_KEPT = 48;
 
+/** How many map layouts are kept (dev measurement). */
+export const layoutCount = (): number => LAYOUTS.size;
+
 function mapLayout(size: number, walls: readonly Wall[], crates: readonly Crate[], map: MapId): Layout {
   // Keyed by the geometry itself, not just the map: a test or the range may lay walls of its own on a map.
   const key = `${map}|${walls.map((r) => `${r.x},${r.y},${r.w},${r.h},${r.pts?.join(',') ?? ''},${r.nb ? 1 : 0}${r.ns ? 1 : 0}`).join(';')}|${crates.map((c) => `${c.x},${c.y},${c.size}`).join(';')}`;

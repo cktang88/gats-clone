@@ -42,6 +42,7 @@ import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
 import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
 import { bodyColor, drawBackdrop, drawWorld, nightAmount } from './render.ts';
+import { enterMap } from './mapscope.ts';
 import { drawLightingDev } from './lightdev.ts';
 import { initPostfx, processFrame, pulse as fxPulse } from './postfx.ts';
 import { recordTrail, TRAIL } from './trails.ts';
@@ -292,6 +293,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
     } else if (msg.t === 'welcome') {
       const resumed = state.phase === 'reconnecting' ? state.s : null;
       const s = newSession(ws, pending.rejoin, msg);
+      enterMap(msg.map);
       void checkAnniversary(msg.account);
       if (resumed) s.chat = [...resumed.chat, { from: '', text: 'Reconnected.', team: null, at: now }];
       setState({ phase: 'playing', s });
@@ -304,7 +306,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
   routeServerMsg(msg, {
     snap: (m) => { const snap = fillSnapshot(m, newestSnap(s.snaps)); if (snap) onSnap(s, snap, now); },
     radio: (m) => onRoomRadio(m.station, now),
-    walls: (m) => { s.walls = m.walls; s.worldSize = m.worldSize; s.mapId = m.map; },
+    walls: (m) => { s.walls = m.walls; s.worldSize = m.worldSize; s.mapId = m.map; enterMap(m.map); },
     chat: (m) => { s.chat.push({ from: m.from, text: m.text, team: m.team, at: now }); if (isUnrecordedNotice(m.from, m.text)) noteStakes({ unrecorded: true }); },
     emote: (m) => { noteEmote(m.pid, m.id, now); const at = newestSnap(s.snaps), pop = at && emoteCue(at, m.pid); if (pop) playCues(s, [pop], at.self.viewRadius || WORLD.viewRadius); },
     badge: (m) => {
@@ -313,7 +315,7 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       s.moments = addCareerToast(s.moments, m.badge, m.score, now); playCues(s, [{ id: 'fanfare', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius);
     },
     error: (m) => { s.chat.push({ from: '', text: m.message, team: null, at: now }); },
-    welcome: (m) => { s.myId = m.id; s.walls = m.walls; s.worldSize = m.worldSize; s.mapId = m.map; },
+    welcome: (m) => { s.myId = m.id; s.walls = m.walls; s.worldSize = m.worldSize; s.mapId = m.map; enterMap(m.map); },
     progress: (m) => onProgress(m),
     equipped: (m) => wardrobe.onEquipped(m.equipped),
   });

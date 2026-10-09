@@ -6,6 +6,7 @@ import { INK } from '../palette.ts';
 import { drawVehicle, vehicleSprite } from '../vehicleart.ts';
 import { paintDome, paintGable } from './summitroof.ts';
 import { C, SIZE, TAU, baseId, ell, hash, hexA, isTwin, shade, type G } from './summitkit.ts';
+import { onMapChange } from '../mapscope.ts';
 
 /**
  * Summit's polygons, doors and roofs. Every polygon is painted once into a small sprite and blitted; the pine groves are
@@ -21,7 +22,8 @@ const centroid = (pts: readonly Pt[]): Pt => { let x = 0, y = 0; for (const p of
 const scaled = (pts: readonly Pt[], k: number, dx = 0, dy = 0): Pt[] => { const c = centroid(pts); return pts.map((p) => ({ x: c.x + (p.x - c.x) * k + dx, y: c.y + (p.y - c.y) * k + dy })); };
 
 const PAD = 40;
-const sprites = new WeakMap<object, { c: HTMLCanvasElement; x: number; y: number }>();
+let sprites = new WeakMap<object, { c: HTMLCanvasElement; x: number; y: number }>();
+onMapChange(() => { sprites = new WeakMap(); });
 /** Paints `draw` once into a canvas covering `pts` (plus a front face and a margin) and blits it from then on. */
 function cached(g: G, key: object, pts: readonly Pt[], extraH: number, draw: (g: G) => void) {
   let s = sprites.get(key);
