@@ -194,7 +194,8 @@ type ForcedVitals = { self?: Partial<Snapshot['self']>; me?: Partial<PlayerView>
 let forcedVitals: ForcedVitals | null = null;
 export const forceVitals = (f: ForcedVitals | null): void => { forcedVitals = f; };
 
-export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: Camera, snap: Snapshot, s: Session, now: number, screenCrosshair: Point, spread: number | null, fullBoard = false) {
+/** `top`, on a desktop, is the crosshair's own layer above every DOM overlay (cursorlayer.ts): the reticle is drawn there instead. */
+export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: Camera, snap: Snapshot, s: Session, now: number, screenCrosshair: Point, spread: number | null, fullBoard = false, top?: { hud(k: number): CanvasRenderingContext2D }) {
   if (forcedVitals) {
     const f = forcedVitals;
     snap = { ...snap, self: { ...snap.self, ...f.self }, players: snap.players.map((p) => (p.id === s.myId ? { ...p, ...f.me } : p)) };
@@ -249,7 +250,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
   drawCallouts(hud);
   trackAbility(snap.self, now);
   stepRaise(hud);
-  if (spread !== null) drawReticle(hud, crosshair, spread);
+  if (spread !== null) drawReticle(top ? { ...hud, ctx: top.hud(k) } : hud, crosshair, spread);
   drawHitmarker(hud, crosshair);
   drawAssist(hud, crosshair);
 }

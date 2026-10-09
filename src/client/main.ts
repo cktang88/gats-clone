@@ -22,6 +22,7 @@ import { freshLog, loadBests, logSnapshot, recapOf, saveBests } from './records.
 import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawnPhoneLayout, drawSticks, hudScaleFor, noteAbilityDenied, noteTopup, phoneBoardTap, setHudInsets } from './hud.ts';
 import { applyPhoneHud } from './phonehud.ts';
 import { createAutoFullscreen, requestFullscreen } from './fullscreen.ts';
+import { crosshairShown, installCursorLayer } from './cursorlayer.ts';
 import { dismissHomeScreenHint, installTouchGuards, measureLayout, shouldShowHomeScreenHint } from './viewport.ts';
 import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
 import { actionForKey, assembleInput, keyRepeats, perkSlotForKey, type Action } from './input.ts';
@@ -703,6 +704,8 @@ function frame(now: number) {
 function drawFrame(realNow: number) {
   // A hit-stop holds what is drawn on one instant for a few ms; the snapshots, inputs and sounds keep the real clock.
   const now = stepClock(stopClock, realNow);
+  // The crosshair rides its own layer above every DOM overlay (cursorlayer.ts); a touch screen keeps its reticle on the canvas.
+  const top = touchScreen ? undefined : cursorLayer.frame(mouse, crosshairShown({ phase: state.phase, touch: touchScreen, mouseAiming, paused: pause.isOpen(), rangeOpen: rangeUi.isOpen() }), state.phase !== 'menu');
   musicUpdate(state, realNow, firing);
   radioUpdate(state, realNow, sendRadio);
   const s = drawnSessionOf(state);
@@ -786,10 +789,10 @@ function drawFrame(realNow: number) {
   // The crosshair's hit marker is killfx's, so the HUD is handed a feedback without one.
   const fb = s.feedback;
   s.feedback = { ...fb, hitmarker: null };
-  drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard);
+  drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard, top);
   drawLightingDev(ctx, view.dpr);
   s.feedback = fb;
-  if (state.phase === 'playing') drawHitMarker(ctx, mouse, fb.hitmarker, realNow);
+  if (state.phase === 'playing') drawHitMarker(top?.ctx ?? ctx, top ? top.local(mouse) : mouse, fb.hitmarker, realNow);
   if (state.phase === 'playing') drawSticks(ctx, sticks, view.dpr, view.w, view.h, touchScreen);
   medalToasts(state.phase === 'menu' ? [] : s.moments.medals, now);
   xpCard.update(realNow);
@@ -1165,6 +1168,7 @@ const plock = installPointerLock(canvas, {
   origin: () => mouse,
   onUserExit: () => { if (state.phase === 'playing' && !pause.isOpen()) pause.open(); },
 }, () => view);
+const cursorLayer = installCursorLayer(document);
 /** A phone's emote button: taps the wheel open, and a plate sends. */
 const emoteButton = document.createElement('button');
 emoteButton.type = 'button';
