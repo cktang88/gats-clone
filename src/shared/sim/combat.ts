@@ -407,7 +407,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
           apply: (x: number, y: number) => damagePlayer(w, p, b.damage * fell(x, y), { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y, gun: b.gun, volley: b.volley, dirX: b.vx, dirY: b.vy }),
         }] : [];
       }),
-    ...targetHits(w, b, dx, dy, owner, view.at),
+    ...targetHits(w, b, dx, dy, owner, view.at, fell),
     // Zombies are judged where they stand now, even for a rewound shot: they are slow, and they keep no pose history.
     ...w.zombies
       .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)

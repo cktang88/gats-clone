@@ -26,6 +26,7 @@ import { NO_STICKS, dragStick, pressStick, releaseStick, stickVector, touchAim, 
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { notePropEvents } from './propfx.ts';
 import { layoutOf, noteTargetEvents, releaseTargetFx, resetTargetArt } from './targetart.ts';
+import { resetRangeLine } from './rangeline.ts';
 import { createRangeUi, openRangeRoom, renderRangeCard } from './rangeui.ts';
 import { frameStep, resyncNet } from './resync.ts';
 import { nextInputDue, pullsInput } from './inputclock.ts';
@@ -189,6 +190,7 @@ function setState(next: ClientState) {
     pause.reset();
     rangeUi.hide();
     resetTargetArt();
+    resetRangeLine();
     xpCard.reset();
     if (was.phase !== 'menu') { void wardrobe.refresh(nameInput.value); flow.go('modes', { focus: false }); }
     if (chatterOpenArmory) { const slot = chatterOpenArmory; chatterOpenArmory = null; queueMicrotask(() => { showTab('tab-armory'); armory.open(slot); }); }

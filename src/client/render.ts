@@ -18,6 +18,7 @@ import { drawRadioOverlay, drawRadios } from './radio.ts';
 import { drawGains, drawPickupOverlay } from './pickups.ts';
 import { drawZoneFloor, drawZoneOverlay, zonesOf } from './zoneart.ts';
 import { drawRangeFloor, drawTargets, layoutOf } from './targetart.ts';
+import { drawReachFloor, drawReachOverlay, reachOf } from './rangeline.ts';
 import { drawBarrels, drawArenaLight, drawBeacon, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
 import { drawHeldGun, heldHands, muzzleTip } from './gunart.ts';
 import { cosLook, RARITY_INK } from './cosmeticlook.ts';
@@ -115,8 +116,12 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   // Every doorway's sill, worn passage and doormat (doorwayart.ts), baked per doorway.
   { const m0 = mapOf(snap.match.map); if (m0) drawDoorwayFloors(ctx, m0, view); }
 
-  if (snap.targets) { const layout = layoutOf(snap.match.map); if (layout) drawRangeFloor(ctx, layout, s.worldSize, view); }
   const mine = snap.players.find((p) => p.id === s.myId);
+  // The range only: its floor paint, then the reach of the gun you hold (rangeline.ts), measured from where you stand.
+  const rangeLayout = snap.targets ? layoutOf(snap.match.map) : undefined;
+  const reach = rangeLayout && mine?.alive ? reachOf(mine.gun, snap.self.perks) : null;
+  if (rangeLayout) drawRangeFloor(ctx, rangeLayout, s.worldSize, view);
+  if (rangeLayout && reach && mine) drawReachFloor(ctx, rangeLayout, s.worldSize, view, mine, reach, now);
   // The squad shares one team, so each squadmate wears their own color instead.
   const colorOf = (p: PlayerView) => (snap.run ? COLORS[p.color] : bodyColor(p));
   const zones = zonesOf(snap.zones);
@@ -189,6 +194,10 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawVignette(ctx, cam.w, cam.h, dpr, 0.36 + 0.2 * dark);
   ctx.setTransform(k, 0, 0, k, dpr * (cam.w / 2 - cam.x * cam.scale), dpr * (cam.h / 2 - cam.y * cam.scale));
   drawRadioOverlay(ctx, now, reducedMotion());
+  if (rangeLayout && reach && mine && snap.targets) {
+    const at = serverNow(s.snaps, now);
+    drawReachOverlay(ctx, rangeLayout, s.worldSize, snap.targets, at === null ? 0 : at - INTERP_DELAY_MS, { x0: tl.x, y0: tl.y, x1: br.x, y1: br.y }, cam.scale, mine, reach, now);
+  }
   // Zone flags, capture edges and chevrons stand over the night so a point reads from across the screen.
   for (const [i, z] of zones.entries()) if (inView(view, z.x - z.r * 1.5, z.y - z.r * 1.5, z.r * 3, z.r * 3)) drawZoneOverlay(ctx, z, i, now, dark, reducedMotion());
   const clockNow = snap.royale ? serverNow(s.snaps, now) : null;

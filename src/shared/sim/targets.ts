@@ -108,19 +108,20 @@ function standUp(w: World, t: Target) {
   w.events.push({ e: 'target', i: t.id - RANGE.idBase, k: 'up', by: null, x: t.x, y: t.y });
 }
 
-/** The hits a round flying from (`b.x`, `b.y`) by (`dx`, `dy`) would make on standing targets, as `moveBullet` weighs them; `at` is the time the shooter saw, for a sliding target. */
+/** The hits a round flying from (`b.x`, `b.y`) by (`dx`, `dy`) would make on standing targets, as `moveBullet` weighs them; `at` is the time the shooter saw, for a sliding target, and `fell` what the round keeps of its damage at the hit point (its gun's falloff, as a body takes it). */
 export function targetHits(
   w: World, b: { x: number; y: number; damage: number; label: string; volley?: number; passed: readonly number[] }, dx: number, dy: number, owner: Player | null, at: number = w.now,
-): { t: number | null; victim: { id: number }; apply: () => void }[] {
+  fell: (x: number, y: number) => number = () => 1,
+): { t: number | null; victim: { id: number }; apply: (x: number, y: number) => void }[] {
   const r = w.range;
   if (!r) return [];
-  const out: { t: number | null; victim: { id: number }; apply: () => void }[] = [];
+  const out: { t: number | null; victim: { id: number }; apply: (x: number, y: number) => void }[] = [];
   for (const t of r.targets) {
     if (!standing(t) || b.passed.includes(t.id)) continue;
     const p = targetPos(t.def, at);
     const hit = segmentEntersCircleAt(b.x, b.y, dx, dy, p.x, p.y, TARGETS[t.def.kind].r);
     if (hit === null) continue;
-    out.push({ t: hit, victim: { id: t.id }, apply: () => damageTarget(w, t, b.damage, { attacker: owner, label: b.label, ...(b.volley !== undefined && { volley: b.volley }) }, p) });
+    out.push({ t: hit, victim: { id: t.id }, apply: (x: number, y: number) => damageTarget(w, t, b.damage * fell(x, y), { attacker: owner, label: b.label, ...(b.volley !== undefined && { volley: b.volley }) }, p) });
   }
   return out;
 }
