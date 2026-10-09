@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { Loadout } from '../src/shared/protocol.ts';
-import { compactDeath, deathAct, deathBox, deathGist, deathPrimaryBox, deathView, DEATH_FOOT_H, firstStep, quickRespawn, stepFor, touchControlsShown, type DeathCtx, type DeathStep } from '../src/client/deathflow.ts';
+import { compactDeath, deathAct, deathBox, deathGist, deathPrimaryBox, deathView, deathXpBox, DEATH_BODY_PAD_X, DEATH_FOOT_H, firstStep, XP_CARD_MIN_W, quickRespawn, stepFor, touchControlsShown, type DeathCtx, type DeathStep } from '../src/client/deathflow.ts';
 import { overlaps, phoneLayout, type Box, type Insets } from '../src/client/phonelayout.ts';
 import type { Recap } from '../src/client/records.ts';
 
@@ -103,7 +103,7 @@ test('the in-match touch controls show only while playing, and the stylesheet fo
   const css = readFileSync(new URL('../public/style.css', import.meta.url), 'utf8');
   const rule = css.match(/\.hud\.no-touch-controls :is\(([^)]*)\)\s*\{\s*display:\s*none !important;/);
   assert.ok(rule, 'a rule hides the touch controls under .hud.no-touch-controls');
-  for (const sel of ['.touch-buttons', '.touch-emote', '.touch-radio']) assert.ok(rule[1]!.includes(sel), `${sel} is folded away`);
+  for (const sel of ['.touch-buttons', '.touch-emote', '.touch-radio', '.chat-pip']) assert.ok(rule[1]!.includes(sel), `${sel} is folded away`);
   const main = readFileSync(new URL('../src/client/main.ts', import.meta.url), 'utf8');
   assert.match(main, /classList\.toggle\('no-touch-controls', !touchControlsShown\(next\.phase\)\)/, 'every state change sets the class from the phase');
 });
@@ -131,8 +131,30 @@ for (const [w, h, phoneIns] of SCREENS) for (const ins of phoneIns === NONE ? [N
     const primary = deathPrimaryBox(card);
     assert.ok(within(primary, w, h, ins), `the primary button ${JSON.stringify(primary)} is on screen`);
     assert.ok(primary.h >= 44 && primary.w >= 120, 'a thumb-sized button');
+    // The XP card sits in the card's More, inside the card's edges and wide enough for its report.
+    const xp = deathXpBox(card);
+    assert.ok(xp.x >= card.x && xp.x + xp.w <= card.x + card.w && xp.y >= card.y && xp.y + xp.h <= card.y + card.h, `the XP card ${JSON.stringify(xp)} stays inside the card ${JSON.stringify(card)}`);
+    assert.ok(xp.w >= XP_CARD_MIN_W, `the XP card has room to lay out (${xp.w} px)`);
+    assert.ok(!overlaps(xp, phoneLayout(w, h, ins).cog), 'and leaves the cog clear');
   });
 }
+
+test('phone: the XP card folds into More on every step instead of floating over the card, and the stylesheet docks it there', () => {
+  for (const step of ['stats', 'loadout'] as const) for (const more of [false, true]) {
+    assert.equal(deathView(step, phone(2), more).xpInMore, true, `${step} step${more ? ' with More open' : ''}`);
+  }
+  assert.equal(deathView('stats', { compact: true, run: true, wait: 0 }, false).xpInMore, true, 'out till dawn on a phone too');
+  for (const run of [false, true]) assert.equal(deathView('all', { compact: false, run, wait: 0 }, false).xpInMore, false, 'a desktop keeps it docked at the side');
+  const css = readFileSync(new URL('../public/style.css', import.meta.url), 'utf8');
+  const docked = css.match(/\.death-more > \.xp-card \{([^}]*)\}/);
+  assert.ok(docked, 'a rule lays the XP card out inside More');
+  for (const decl of ['position: static', 'width: auto', 'max-width: 100%', 'max-height: none']) assert.ok(docked[1]!.includes(decl), `docked: ${decl}`);
+  const body = css.match(/\.death\.compact \.death-body \{ padding: \d+px (\d+)px/);
+  assert.equal(Number(body?.[1]), DEATH_BODY_PAD_X, 'the body padding the XP card sits inside');
+  const overlays = readFileSync(new URL('../src/client/overlays.ts', import.meta.url), 'utf8');
+  assert.match(overlays, /view\.xpInMore/, 'the overlay moves the card where the view says');
+  assert.match(overlays, /deathMore\.insertBefore\(xpCardEl/, 'into More');
+});
 
 test('a desktop window, a tablet or a phone held upright keeps the full card', () => {
   assert.equal(compactDeath(1600, 900, false), false);

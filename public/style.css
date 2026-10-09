@@ -1145,7 +1145,7 @@ body.phone-hud .medal-score { font-size: 14px; animation: none; }
  * and Try again (More opens the tiles, records and nemesis); Loadout is weapon, color and armor as three labelled rows of
  * touch-sized chips, with Respawn always in view under them. The touch controls fold away while you are dead.
  */
-.hud.no-touch-controls :is(.touch-buttons, .touch-emote, .touch-radio) { display: none !important; }
+.hud.no-touch-controls :is(.touch-buttons, .touch-emote, .touch-radio, .chat-pip) { display: none !important; }
 .death.compact { padding: 0; align-items: center; justify-content: center; background: rgba(12, 13, 16, 0.55); box-shadow: 0 0 0 100vmax rgba(12, 13, 16, 0.55); }
 .death.compact .death-card { width: 100%; --cut: 10px; }
 .death.compact .death-body { padding: 14px 16px 2px; }
@@ -1168,6 +1168,21 @@ body.phone-hud .medal-score { font-size: 14px; animation: none; }
 .death.compact .recap-nemesis { padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .death.compact .death-lost { margin-top: 6px; }
 .death.compact .death-enlist { margin-top: 6px; font-size: 13px; }
+/* The XP card folds into More here (deathflow.ts `xpInMore`): a plate in the column, as wide as the body, never over the card's edge. */
+.death-more > .xp-card {
+  position: static; width: auto; max-width: 100%; min-height: 0; max-height: none; overflow: visible; margin-top: var(--s3);
+  padding: 8px 12px 10px; background: var(--well); box-shadow: none; animation: none;
+}
+.death-more > .xp-card .xp-close { display: none; }
+/* With an unlock, the report and the reveal sit side by side, so More stays one short scroll. */
+.death-more > .xp-card:has(.xp-reveal) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 14px; align-items: start; }
+.death-more > .xp-card > :not(.xp-reveal) { grid-column: 1; }
+.death-more > .xp-card > .xp-reveal { grid-column: 2; grid-row: 1 / span 4; margin-top: 0; padding-top: 0; border-top: 0; }
+.death-more > .xp-card .xp-head b { font-size: 18px; }
+/* While it waits behind More, a gold diamond on the toggle says there is a report to read. */
+.death-more-toggle.has-xp::after {
+  content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 7px; vertical-align: 2px; background: var(--gold); transform: rotate(45deg);
+}
 /* Loadout: a narrow label column, then the chips. */
 .death.compact[data-step="loadout"] .death-body { padding-top: 10px; }
 .death.compact #loadout-death { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 8px 8px; align-items: center; }

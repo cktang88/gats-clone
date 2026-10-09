@@ -36,6 +36,11 @@ export type DeathView = {
   /** The sentence under the recap (timer and hints); the button carries the countdown on a phone. */
   sub: boolean;
   loadout: boolean;
+  /**
+   * Compact only: the XP card (xpcard.ts) folds into the card's More instead of floating over its corner, so the first step
+   * stays the killer, one line and Try again, and the field report waits one tap away. It shows wherever More shows.
+   */
+  xpInMore: boolean;
   primary: DeathButton | null;
   secondary: DeathButton | null;
 };
@@ -51,19 +56,19 @@ const respawnButton = (wait: number): DeathButton => ({ label: wait > 0 ? `Respa
 export function deathView(step: DeathStep, ctx: DeathCtx, moreOpen: boolean): DeathView {
   const s = stepFor(step, ctx.compact);
   if (ctx.run) {
-    return { step: s, title: true, gist: false, recap: false, more: false, moreOpen: false, sub: true, loadout: false, primary: null, secondary: null };
+    return { step: s, title: true, gist: false, recap: false, more: false, moreOpen: false, sub: true, loadout: false, xpInMore: ctx.compact, primary: null, secondary: null };
   }
   if (s === 'all') {
-    return { step: s, title: true, gist: false, recap: true, more: false, moreOpen: false, sub: true, loadout: true, primary: respawnButton(ctx.wait), secondary: null };
+    return { step: s, title: true, gist: false, recap: true, more: false, moreOpen: false, sub: true, loadout: true, xpInMore: false, primary: respawnButton(ctx.wait), secondary: null };
   }
   if (s === 'stats') {
     return {
-      step: s, title: true, gist: !moreOpen, recap: moreOpen, more: true, moreOpen, sub: false, loadout: false,
+      step: s, title: true, gist: !moreOpen, recap: moreOpen, more: true, moreOpen, sub: false, loadout: false, xpInMore: true,
       primary: { label: 'Try again', act: 'loadout', disabled: false }, secondary: null,
     };
   }
   return {
-    step: s, title: false, gist: false, recap: false, more: false, moreOpen: false, sub: false, loadout: true,
+    step: s, title: false, gist: false, recap: false, more: false, moreOpen: false, sub: false, loadout: true, xpInMore: true,
     primary: respawnButton(ctx.wait), secondary: { label: 'Stats', act: 'stats', disabled: false },
   };
 }
@@ -113,6 +118,16 @@ export function deathBox(w: number, h: number, ins: Insets, k = 0.9): Box {
 export function deathPrimaryBox(card: Box): Box {
   const pad = 10, bw = Math.min(260, card.w * 0.55);
   return { x: card.x + card.w - pad - bw, y: card.y + card.h - pad - (DEATH_FOOT_H - 8), w: bw, h: DEATH_FOOT_H - 8 };
+}
+
+/** The compact card body's side padding (`.death.compact .death-body` in style.css), which the XP card sits inside in More. */
+export const DEATH_BODY_PAD_X = 16;
+/** The narrowest the XP card lays out cleanly: its width as a floating card on a phone. */
+export const XP_CARD_MIN_W = 236;
+
+/** The XP card's box when it sits in the compact card's More: the body's full width inside its padding. */
+export function deathXpBox(card: Box): Box {
+  return { x: card.x + DEATH_BODY_PAD_X, y: card.y, w: card.w - 2 * DEATH_BODY_PAD_X, h: card.h - DEATH_FOOT_H };
 }
 
 export const compactDeath = (w: number, h: number, touch: boolean): boolean => isPhoneLandscape(w, h, touch);

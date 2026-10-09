@@ -36,6 +36,7 @@ export function createXpCard(root: HTMLElement, deps: Deps) {
   let shownAt = 0;
   let hideAt = 0;
   let hovering = false;
+  let wasDocked = false;
   let runId = 0;
   root.hidden = true;
   root.addEventListener('pointerenter', () => { hovering = true; });
@@ -207,11 +208,14 @@ export function createXpCard(root: HTMLElement, deps: Deps) {
     },
     /** Called every frame: shows a waiting card once nothing else owns the screen, and hides a finished one. */
     update(now: number) {
+      // Folded into a phone death card's More (overlays.ts), the card waits there until you respawn, then lingers a moment.
+      const docked = !!root.closest('.death-more');
+      if (docked !== wasDocked) { wasDocked = docked; if (!docked) hideAt = Math.max(hideAt, now + 4000); }
       if (pending && last && !deps.blocked()) {
         const card = pending;
         pending = null;
         present(card, last);
-      } else if (!root.hidden && !hovering && hideAt > 0 && now > hideAt) hide();
+      } else if (!root.hidden && !hovering && !docked && hideAt > 0 && now > hideAt) hide();
     },
     reset() { pending = null; last = null; hide(); },
     get visible() { return !root.hidden; },

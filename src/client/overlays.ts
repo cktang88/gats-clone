@@ -48,6 +48,9 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
   const deathMore = $('death-more');
   const moreToggle = $<HTMLButtonElement>('death-more-toggle');
   const deathBack = $<HTMLButtonElement>('death-back');
+  // The XP card's home in the HUD, to put it back after it sat in the compact card's More.
+  const xpCardEl = $('xp-card');
+  const xpHome = xpCardEl.parentElement, xpHomeNext = xpCardEl.nextElementSibling;
   let recapShown: Recap | null = null;
   let recapCompact = false;
   const respawn = $<HTMLButtonElement>('respawn');
@@ -321,6 +324,13 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
     const run = snap.run;
     ctx = { compact, run: !!run, wait };
     const view = deathView(step, ctx, moreOpen);
+    // On a phone the XP card folds into More (deathflow.ts `xpInMore`), under the tiles; More wears a gold pip while it waits there.
+    const xpDocked = dead && !snap.royale && view.xpInMore;
+    if (xpDocked !== (xpCardEl.parentElement === deathMore)) {
+      if (xpDocked) deathMore.insertBefore(xpCardEl, deathMore.querySelector('.death-enlist'));
+      else xpHome?.insertBefore(xpCardEl, xpHomeNext);
+    }
+    moreToggle.classList.toggle('has-xp', xpDocked && !xpCardEl.hidden && !moreOpen);
     const key = dead ? `${state.kill?.killer}|${state.kill?.weapon}|${wait}|${run?.phase}|${run?.waveLeft}|${view.step}|${moreOpen}|${compact}` : '';
     if (key === keys.death) return;
     keys.death = key;
