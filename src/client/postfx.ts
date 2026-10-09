@@ -2,6 +2,7 @@ import { addPulse, decayPulse, decideFx, gradeFor, lightGovernor, vignetteReach,
 import { currentMood } from './mood.ts';
 import { createLightGL, type LightGL } from './lightgl.ts';
 import { addLight, addShockwave, ambientFor, liveShocks, pushOut, resolveLights, selectLights, setLightingEnabled, TIERS, type Occluder, type ViewRect } from './lighting.ts';
+import { fitCanvas, layerBox } from './canvasfit.ts';
 
 /**
  * The shader pass. The 2D world is uploaded as a texture once a frame and composited into a WebGL canvas that sits under
@@ -376,7 +377,9 @@ export function processFrame(source: HTMLCanvasElement, c: Context, now: number,
   if (gl.isContextLost()) { disable('context lost'); return false; }
   const t0 = performance.now();
   const g = gl, w = source.width, h = source.height;
-  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  // The same backing store AND the same CSS box as the canvas it shows: index.html's 100vw x 100vh is only a fallback until the first
+  // frame, since iOS Safari's vh outgrows the visible area while its toolbar shows and would stretch the world under the HUD.
+  fitCanvas(canvas, layerBox(source, cssW, cssH));
   if (!shown) { canvas.hidden = false; shown = true; }
   resizeTargets(w, h);
   const grade: Grade = gradeFor(c);

@@ -24,6 +24,7 @@ import { applyPhoneHud } from './phonehud.ts';
 import { createAutoFullscreen, requestFullscreen } from './fullscreen.ts';
 import { crosshairShown, installCursorLayer } from './cursorlayer.ts';
 import { dismissHomeScreenHint, installTouchGuards, measureLayout, shouldShowHomeScreenHint } from './viewport.ts';
+import { canvasBox, fitCanvas } from './canvasfit.ts';
 import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
 import { actionForKey, assembleInput, keyRepeats, perkSlotForKey, type Action } from './input.ts';
 import { NO_STICKS, dragStick, pressStick, releaseStick, stickVector, touchAim, touchMoves, type Sticks } from './touch.ts';
@@ -691,11 +692,9 @@ function sendFromDeath(msg: ClientMsg) {
 function resize() {
   const { w, h, dpr, safe } = measureLayout();
   view = { w, h, dpr };
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  // Sized in CSS px from the visual viewport, so iOS Safari's moving toolbars never leave a strip the canvas does not cover.
-  canvas.style.width = `${w}px`;
-  canvas.style.height = `${h}px`;
+  // Sized in CSS px from the visual viewport, so iOS Safari's moving toolbars never leave a strip the canvas does not cover; the
+  // shader pass's canvas takes the same box each frame (postfx.ts), so the world it shows lines up with the HUD drawn here.
+  fitCanvas(canvas, canvasBox(w, h, dpr));
   setHudInsets(safe);
   applyPhoneHud(hudEl, w, h, safe, touchScreen, hudScaleFor(w, h, touchScreen));
   overlays.setCompact(compactDeath(w, h, touchScreen));

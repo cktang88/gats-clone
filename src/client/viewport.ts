@@ -1,5 +1,6 @@
 import { knobs } from './quality.ts';
 import { canFullscreen } from './fullscreen.ts';
+import { visibleSize } from './canvasfit.ts';
 /** Everything about the physical screen: its size (as the browser really shows it) and the notch and home-bar insets. */
 
 export type Insets = { l: number; t: number; r: number; b: number };
@@ -25,9 +26,7 @@ export function readSafeInsets(): Insets {
 
 /** The visible area. iOS Safari's toolbars move, and visualViewport tracks them where innerHeight can lag. */
 export function measureLayout(): Layout {
-  const vv = window.visualViewport;
-  const w = Math.round(vv && vv.scale === 1 ? vv.width : window.innerWidth);
-  const h = Math.round(vv && vv.scale === 1 ? vv.height : window.innerHeight);
+  const { w, h } = visibleSize(window);
   return { w, h, dpr: Math.min(window.devicePixelRatio || 1, MAX_DPR, knobs().dprCap), safe: readSafeInsets() };
 }
 
