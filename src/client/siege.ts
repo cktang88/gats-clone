@@ -13,7 +13,7 @@ import type { Effect } from './state.ts';
 import { buildingSolid, drawSolids, LIGHT, standsUp } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
 import type { Rect } from '../shared/sim/movement.ts';
-import { drawPips, drawTurret, drawTurretLit } from './turretart.ts';
+import { bakedSprite, char, dent, drawEmbers, drawPips, drawTurret, drawTurretLit, lampStutters, seeded, streaks, wearStage, type Wear } from './turretart.ts';
 import { drawRangeRings, rangeRings } from './turretrange.ts';
 
 const TAU = Math.PI * 2;
@@ -89,12 +89,16 @@ function box3d(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h
   ctx.strokeRect(x, y + h, w, depth);
 }
 
-/** An ammo depot: two olive ammo crates, one stacked on the other, with an orange band and a stencilled round on the front. */
-function drawDepot(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number) {
+/** An ammo depot: two olive ammo crates, one stacked on the other, with an orange band and a stencilled round on the front. Badly damaged, the top crate is knocked askew. */
+function drawDepot(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number, wear: Wear = 0) {
   box3d(ctx, cx - 17, cy - 7, 24, 14, 8, '#6c7356', '#4f5640');
   ctx.fillStyle = '#e0661f';
-  ctx.fillRect(cx - 17, cy + 8, 24, 3);
+  ctx.fillRect(cx - 17, cy + 8, wear === 2 ? 9 : 24, 3);
+  if (wear === 2) ctx.fillRect(cx - 4, cy + 8, 7, 3);
+  ctx.save();
+  if (wear === 2) { ctx.translate(cx + 9, cy - 9); ctx.rotate(0.22); ctx.translate(-cx - 9 + 2, -cy + 9 + 1); }
   box3d(ctx, cx + 1, cy - 15, 17, 11, 6, '#7a8262', '#59614a');
+  ctx.restore();
   ctx.fillStyle = 'rgba(20, 22, 26, 0.75)';
   ctx.beginPath();
   ctx.roundRect(cx - 7, cy - 4, 4, 9, 2);
@@ -106,8 +110,11 @@ function drawDepot(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: nu
   if (lv >= 3) box3d(ctx, cx + 9, cy + 6, 12, 7, 4, '#6c7356', '#4f5640');
 }
 
-/** A repair post: a gunmetal locker with a green cross plate, an antenna and a lamp that blinks green, a bigger cross at each level. */
-function drawPost(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number, now: number) {
+/** Where a post's lamp sits on its antenna, from the cell centre. */
+const postLamp = (lv: number) => ({ x: (22 + 2 * lv) / 2 - 5, y: -(16 + 2 * lv) / 2 - 13 });
+
+/** A repair post: a gunmetal locker with a green cross plate, an antenna and its lamp's housing (lit live, `drawPostLamp`), a bigger cross at each level. Badly damaged, the antenna is bent over. */
+function drawPost(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number, wear: Wear = 0) {
   const w = 22 + 2 * lv, h = 16 + 2 * lv;
   box3d(ctx, cx - w / 2, cy - h / 2 - 3, w, h, 9, '#4f5560', '#383d46');
   const fy = cy - h / 2 - 3 + h;
@@ -121,12 +128,8 @@ function drawPost(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: num
   ctx.strokeRect(cx - 6, fy + 1.2, 12, 6.6);
   ctx.beginPath();
   ctx.moveTo(cx + w / 2 - 5, cy - h / 2 - 3);
-  ctx.lineTo(cx + w / 2 - 5, cy - h / 2 - 12);
-  ctx.stroke();
-  ctx.fillStyle = Math.floor(now / 500) % 2 ? '#8ff0c4' : '#2f7a58';
-  ctx.beginPath();
-  ctx.arc(cx + w / 2 - 5, cy - h / 2 - 13, 2.6, 0, TAU);
-  ctx.fill();
+  if (wear === 2) { ctx.lineTo(cx + w / 2 - 5, cy - h / 2 - 7); ctx.lineTo(cx + w / 2 + 2, cy - h / 2 - 9); }
+  else ctx.lineTo(cx + w / 2 - 5, cy - h / 2 - 12);
   ctx.stroke();
   // The cross plate on top, white on green, lit when the post is in the middle of a mend.
   ctx.fillStyle = '#2f9e6f';
@@ -136,12 +139,58 @@ function drawPost(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: num
   ctx.fillRect(cx - w / 2 + 4, cy - h / 2 + 1.8, 5, 1.4);
 }
 
+const UTILITY_HALF = 34;
+
+/**
+ * A depot or post baked once per level and state, like the turrets: worn, soot-streaked, dented and pocked; badly damaged,
+ * charred black with chunks out of it as well.
+ */
+function utilitySprite(kind: 'depot' | 'post', lv: number, wear: Wear, pxPerUnit: number) {
+  return bakedSprite(`u|${kind}|${lv}|${wear}`, UTILITY_HALF, pxPerUnit, (g) => {
+    const rnd = seeded(lv * 17 + wear * 5 + kind.length);
+    if (wear > 0) streaks(g, rnd, wear === 2 ? 9 : 5, 12, wear === 2 ? 32 : 27, wear === 2 ? 3.4 : 2.4, wear === 2 ? 'rgba(18, 15, 13, 0.62)' : 'rgba(24, 20, 17, 0.5)');
+    if (kind === 'depot') drawDepot(g, 0, 0, lv, wear);
+    else drawPost(g, 0, 0, lv, wear);
+    if (!wear) return;
+    dent(g, -9, -3, 2.6);
+    dent(g, 8, -10, 2.2);
+    if (wear === 2) dent(g, -2, 4, 2.4);
+    g.fillStyle = INK;
+    g.beginPath();
+    for (let i = 0; i < (wear === 2 ? 9 : 5); i++) { const x = (rnd() - 0.5) * 30, y = (rnd() - 0.5) * 24; g.moveTo(x + 0.95, y); g.arc(x, y, 0.95, 0, TAU); }
+    g.fill();
+    if (wear === 2) {
+      char(g, rnd, 0.42, 5, 20);
+      g.fillStyle = INK;
+      g.beginPath();
+      g.moveTo(-17, 2); g.lineTo(-12, 7); g.lineTo(-17, 8); g.closePath();
+      g.moveTo(5, -7); g.lineTo(9, -7); g.lineTo(7, -3.6); g.closePath();
+      g.fill();
+    }
+  });
+}
+
+/** A post's lamp, blinking green; a battered one's stutters, and a badly damaged one's is dead. */
+function drawPostLamp(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number, wear: Wear, now: number) {
+  if (wear === 2) return;
+  const at = postLamp(lv);
+  const on = Math.floor(now / 500) % 2 === 1 && !lampStutters(cx * 3 + cy, now, wear);
+  ctx.fillStyle = on ? '#8ff0c4' : '#2f7a58';
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(cx + at.x, cy + at.y, 2.6, 0, TAU);
+  ctx.fill();
+  ctx.stroke();
+}
+
 /** What stands on a cell, drawn over its pad (centred on `cx`, `cy`): a turret's emplacement and gun turned to `angle` (turretart.ts), a coil, a depot's crates or a post's locker. */
 function drawHead(ctx: CanvasRenderingContext2D, b: { kind: BuildingKind; lv?: number; hp: number }, cx: number, cy: number, angle: number, sinceShot: number, now: number, pxPerUnit: number) {
   const lv = levelOf(b);
-  if (b.kind === 'depot') drawDepot(ctx, cx, cy, lv);
-  else if (b.kind === 'post') drawPost(ctx, cx, cy, lv, now);
-  else if (isTurretKind(b.kind)) drawTurret(ctx, { kind: b.kind, lv, hp: b.hp, x: cx, y: cy, angle, sinceShot }, pxPerUnit);
+  if (b.kind === 'depot' || b.kind === 'post') {
+    ctx.drawImage(utilitySprite(b.kind, lv, wearStage(b.hp), pxPerUnit), cx - UTILITY_HALF, cy - UTILITY_HALF, UTILITY_HALF * 2, UTILITY_HALF * 2);
+    if (b.kind === 'post') drawPostLamp(ctx, cx, cy, lv, wearStage(b.hp), now);
+  } else if (isTurretKind(b.kind)) drawTurret(ctx, { kind: b.kind, lv, hp: b.hp, x: cx, y: cy, angle, sinceShot }, pxPerUnit);
 }
 
 /** A spike strip: a steel rail with a row of spikes standing up from it, ink-edged, lit on one side and shaded on the other, fewer of them as it is trampled. */
@@ -243,8 +292,10 @@ export function drawSiegeLights(ctx: CanvasRenderingContext2D, l: SiegeLights) {
   const rings = rangeRings({ ghost: l.ghost, buildings: l.all, day: l.day, cursor: l.cursor, upgrade: l.upgrade, squad: l.squadRings });
   if (rings.length) drawRangeRings(ctx, rings, coverOf(l.walls, l.crates), l.scale, l.now, l.reduced);
   for (const b of l.buildings) {
-    if (b.kind === 'wall') continue;
     const { x, y, w, h } = cellRect(b.cx, b.cy);
+    // A badly damaged wall, depot or post smoulders (a turret's embers come with its lights).
+    if (!('ammo' in b) && wearStage(b.hp) === 2) drawEmbers(ctx, x + w / 2, y + h / 2, l.now, l.pxPerUnit, l.reduced, 1);
+    if (b.kind === 'wall') continue;
     if ('ammo' in b) {
       const aim = l.aims.get(`${b.cx},${b.cy}`);
       const angle = !aim ? awayFromCore(b, l.core) : b.kind === 'tesla' ? 0 : aim.drawn;

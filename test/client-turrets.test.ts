@@ -165,7 +165,7 @@ test('a shot kicks the gun back at once and eases it home; wear shows in three s
     assert.ok(kickOf(kind, 0) > 0 && kickOf(kind, 0) > kickOf(kind, 30) && kickOf(kind, 1000) === 0, kind);
   }
   assert.ok(kickOf('cannon', 0) > kickOf('sentry', 0), 'the cannon kicks hardest');
-  assert.deepEqual([10, 6, 5, 3, 2, 1].map(wearStage), [0, 0, 1, 1, 2, 2]);
+  assert.deepEqual([10, 6, 5, 4, 3, 2, 1].map(wearStage), [0, 0, 1, 1, 2, 2, 2]);
   assert.equal(onPad({ kind: 'sentry', cx: 0, cy: 0, hp: 10, ammo: 10 } as BuildingView), false);
   assert.equal(onPad({ kind: 'depot', cx: 0, cy: 0, hp: 10 } as BuildingView), true);
   assert.equal(onPad({ kind: 'spikes', cx: 0, cy: 0, hp: 10 } as BuildingView), false);

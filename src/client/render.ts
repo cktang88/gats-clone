@@ -11,6 +11,7 @@ import { INTERP_DELAY_MS } from '../shared/protocol.ts';
 import { drawHordeEyes } from './zombieart.ts';
 import { drawCoreGlow, drawCoreTop, drawDowned, drawFloorItems, drawGhost, drawSiegeLights, drawSiegeTops, drawZombies, onPad, wallFlashes } from './siege.ts';
 import { drawSiegeFx } from './siegefx.ts';
+import { drawWrecks, wrecks } from './wrecks.ts';
 import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from './bodies.ts';
 import { stepCarry, swingMsOf } from './raise.ts';
 import { drawProps, drawPropTops, drawFireSlick } from './propfx.ts';
@@ -133,6 +134,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   if (snap.run) drawCoreGlow(ctx, snap.run, now);
   if (snap.run && snap.buildings) drawFloorItems(ctx, snap.buildings.filter((b) => !standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), now);
   drawScorches(ctx, now, view);
+  // What the horde brought down lies on the floor as a charred heap of junk (wrecks.ts); its smoke and embers come in the siege's late pass.
+  if (snap.run && wrecks.list.length) drawWrecks(ctx, wrecks.list, view, now, k);
 
   const crates = snap.crates.map(crateSolid).filter((c) => solidInView(view, c));
   drawLooseShadows(ctx, [...crates, ...wallSolids(s.walls.filter((w) => w.built)).filter((w) => solidInView(view, w))]);
@@ -266,7 +269,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawParticles(ctx, s.particles, now);
   if (theme?.over && themeMap) theme.over(ctx, now, view, themeMap, alive);
   drawMotionAbove(ctx, now);
-  drawSiegeFx(ctx, snap, view, now, dark, k, s.coreHitAt);
+  drawSiegeFx(ctx, snap, view, now, dark, k, s.coreHitAt, undefined, undefined, { reduced: reducedMotion(), wrecks: wrecks.list });
   drawGunTop(ctx, gunFxOf(s), now, view);
   // Roofs hang over everything and thin out above you and your squad; they hide nothing the light has not already hidden.
   if (geo?.map.roofs?.length) drawRoofs(ctx, geo, [s.lastSelf, ...snap.players.filter((p) => p.alive && p.id !== s.myId && mine?.team && p.team === mine.team)]);

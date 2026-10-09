@@ -10,20 +10,20 @@ export type ParticleShape = 'chip' | 'spark' | 'ember' | 'smoke' | 'casing';
 /**
  * Launch conditions only: position at any time follows from them, so redrawing a frame never advances anything.
  * `rise` is a steady climb up the screen in px/s (smoke and embers float up out of the top-down view), `spin` turns a chip
- * in radians per px travelled.
+ * in radians per px travelled, `wind` a steady drift in px/s (x, then y) that carries smoke off on the breeze.
  */
 export type Particle = {
   x: number; y: number; vx: number; vy: number;
   drag: number; born: number; life: number;
   size: number; grow: number; color: string; shape: ParticleShape;
-  rise?: number; spin?: number;
+  rise?: number; spin?: number; wind?: readonly [number, number];
 };
 
 export type ParticlePool = { readonly slots: readonly Particle[]; next: number };
 
 const PARTICLE_CAP = 500;
 
-const deadParticle = (): Particle => ({ x: 0, y: 0, vx: 0, vy: 0, drag: 0, born: -Infinity, life: 0, size: 0, grow: 0, color: '', shape: 'chip', rise: 0, spin: 0 });
+const deadParticle = (): Particle => ({ x: 0, y: 0, vx: 0, vy: 0, drag: 0, born: -Infinity, life: 0, size: 0, grow: 0, color: '', shape: 'chip', rise: 0, spin: 0, wind: undefined });
 
 export function createPool(capacity = PARTICLE_CAP): ParticlePool {
   // The graphics preset sizes the pool a match starts with.
@@ -36,6 +36,7 @@ export function emit(pool: ParticlePool, p: Particle) {
   Object.assign(slot, p);
   if (p.rise === undefined) slot.rise = 0;
   if (p.spin === undefined) slot.spin = 0;
+  if (p.wind === undefined) slot.wind = undefined;
   pool.next = (pool.next + 1) % pool.slots.length;
 }
 
@@ -47,12 +48,13 @@ export const liveCount = (pool: ParticlePool, now: number) => pool.slots.reduce(
 export function particleAt(p: Particle, now: number): { x: number; y: number; k: number } {
   const t = (now - p.born) / 1000;
   const travel = p.drag > 0 ? (1 - Math.exp(-p.drag * t)) / p.drag : t;
-  return { x: p.x + p.vx * travel, y: p.y + p.vy * travel - (p.rise ?? 0) * t, k: (now - p.born) / p.life };
+  const wx = p.wind ? p.wind[0] * t : 0, wy = p.wind ? p.wind[1] * t : 0;
+  return { x: p.x + p.vx * travel + wx, y: p.y + p.vy * travel - (p.rise ?? 0) * t + wy, k: (now - p.born) / p.life };
 }
 
 export type BurstKind =
   | 'spark' | 'rubble' | 'debris' | 'smoke' | 'puff' | 'gore' | 'casing'
-  | 'hotSparks' | 'zap' | 'chips' | 'plume' | 'embers' | 'dust' | 'bone' | 'muzzleSmoke' | 'mend';
+  | 'hotSparks' | 'zap' | 'chips' | 'plume' | 'embers' | 'dust' | 'bone' | 'muzzleSmoke' | 'mend' | 'pall' | 'wisp';
 
 type BurstSpec = {
   count: number; speed: [number, number]; life: [number, number]; size: [number, number];
@@ -85,6 +87,10 @@ export const BURSTS: Record<BurstKind, BurstSpec> = {
   /** A zombie coming apart: pale bone flecks to go with the gore. */
   bone: { count: 5, speed: [160, 420], life: [300, 560], size: [2.4, 4.2], grow: 0, drag: 7, spread: Math.PI, colors: ['#e8dfc8', '#cfc4a8'], shape: 'chip', spin: 0.12 },
   muzzleSmoke: { count: 2, speed: [30, 90], life: [380, 620], size: [4, 7], grow: 1.3, drag: 4, spread: 0.5, colors: ['#bdb9b1', '#a7a39c'], shape: 'smoke', rise: [8, 20] },
+  /** A wreck's smoke: big, slow, near-black puffs that swell a long way and climb, so a few of them stack into a thick column. */
+  pall: { count: 1, speed: [4, 18], life: [2600, 3800], size: [9, 14], grow: 2.2, drag: 1, spread: Math.PI, colors: ['#2e2b28', '#3f3c38', '#8c8984'], shape: 'smoke', rise: [22, 38] },
+  /** A battered gun's light wisps: small pale puffs that thin fast. */
+  wisp: { count: 1, speed: [4, 14], life: [1100, 1700], size: [3, 5], grow: 1.6, drag: 1.5, spread: Math.PI, colors: ['#a7a39c', '#8c8984'], shape: 'smoke', rise: [16, 28] },
   /** Repair: cool motes lifting off a mended surface. */
   mend: { count: 4, speed: [20, 70], life: [500, 900], size: [1.6, 2.6], grow: 0, drag: 2, spread: Math.PI, colors: ['#8ff0c4', '#e8fdff', '#8ff0c4'], shape: 'ember', rise: [30, 60] },
 };
@@ -92,7 +98,7 @@ export const BURSTS: Record<BurstKind, BurstSpec> = {
 const between = ([lo, hi]: [number, number], r: number) => lo + (hi - lo) * r;
 
 /** `scale` multiplies the count (rounded, at least one when above zero), so a busy scene can thin its bursts. */
-export function burst(pool: ParticlePool, kind: BurstKind, x: number, y: number, angle: number, now: number, rand: () => number = Math.random, tint?: string, scale = 1) {
+export function burst(pool: ParticlePool, kind: BurstKind, x: number, y: number, angle: number, now: number, rand: () => number = Math.random, tint?: string, scale = 1, wind?: readonly [number, number]) {
   const b = BURSTS[kind];
   const count = scale === 1 ? b.count : scale <= 0 ? 0 : Math.max(1, Math.round(b.count * scale));
   for (let i = 0; i < count; i++) {
@@ -101,7 +107,7 @@ export function burst(pool: ParticlePool, kind: BurstKind, x: number, y: number,
     emit(pool, {
       x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, drag: b.drag, born: now, life: between(b.life, rand()),
       size: between(b.size, rand()), grow: b.grow, color: tint && i % 3 !== 2 ? tint : b.colors[i % b.colors.length]!, shape: b.shape,
-      rise: b.rise ? between(b.rise, rand()) : 0, spin: b.spin ? b.spin * (rand() < 0.5 ? -1 : 1) : 0,
+      rise: b.rise ? between(b.rise, rand()) : 0, spin: b.spin ? b.spin * (rand() < 0.5 ? -1 : 1) : 0, ...(wind && { wind }),
     });
   }
 }

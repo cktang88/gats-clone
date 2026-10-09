@@ -5,6 +5,8 @@ import { coreCracks, coreStage, drawCoreLight, glowSprite } from './coreart.ts';
 import { drawParticles } from './effects.ts';
 import { burst, createBudget, createPool, take, type Budget, type ParticlePool } from './particles.ts';
 import type { Strike } from './zombieart.ts';
+import { wearStage } from './turretart.ts';
+import { drawWreckGlow, WRECK, wreckHeat, type Wreck } from './wrecks.ts';
 
 const TAU = Math.PI * 2;
 const HALF = ZOM.coreHalf;
@@ -15,6 +17,12 @@ const HEAL_MS = 900;
 const PUFF_MS = 220;
 const PUFF_CAP = 48;
 const LAMP = '#ffb347';
+/** The yard's breeze, px/s: every column of smoke leans off the same way, so a burning base reads as one weather. */
+export const BREEZE: readonly [number, number] = [11, -2];
+/** Wreck smoke a second across every wreck at most, so a base full of wrecks stays cheap; past it each one thins. */
+export const WRECK_SMOKE_PER_SEC = 36;
+const WRECK_EMBER_MS = WRECK.emberMs;
+const SMOKE_DARK = '#2e2b28', SMOKE = '#3f3c38', STEAM = '#77716a';
 
 type Puff = { x: number; y: number; angle: number; size: number; born: number };
 type View = { x0: number; y0: number; x1: number; y1: number };
@@ -29,11 +37,16 @@ export type SiegeFx = {
   emit: Map<string, number>; at: number; sparkAt: number;
   /** When the core last flashed: a horde biting all night would otherwise hold it white. */
   flashAt: number;
+  /** The wreck smoke's budget, and the newest wreck already thrown apart. */
+  wreckSmoke: Budget; lastWreck: number;
+  /** Which wreck draws on the budget first this frame: it turns each frame, so when the budget runs short every wreck thins alike. */
+  wreckTurn: number;
 };
 
 export const createSiegeFx = (): SiegeFx => ({
   pool: createPool(SIEGE_CAP), strikes: createBudget(24, 12), puffs: [], nextPuff: 0,
   coreHp: null, healAt: -Infinity, lastCoreStrike: null, emit: new Map(), at: -Infinity, sparkAt: -Infinity, flashAt: -Infinity,
+  wreckSmoke: createBudget(WRECK_SMOKE_PER_SEC, WRECK_SMOKE_PER_SEC), lastWreck: 0, wreckTurn: 0,
 });
 
 export const siege = createSiegeFx();
@@ -139,20 +152,72 @@ function updateCore(fx: SiegeFx, run: RunView, now: number, dt: number, rand: ()
   }
 }
 
-/** Worn buildings smoke, and badly worn ones smoulder: embers off walls, sparks off turrets. */
-function updateBuildings(fx: SiegeFx, buildings: readonly BuildingView[], view: View, now: number, dt: number, rand: () => number) {
+/**
+ * Battered buildings show it in motion (the state itself is baked into their art, turretart.ts): a worn one lets off light
+ * wisps from its gun or top; a badly damaged one pours a steady dark plume that leans on the breeze, with embers, and spits
+ * a few sparks now and then. Reduced motion flies none of it; the art and the steady ember glow carry the state.
+ */
+export function updateBuildings(fx: SiegeFx, buildings: readonly BuildingView[], view: View, now: number, dt: number, rand: () => number, reduced = false, night = 0) {
+  if (reduced) return;
   for (const b of buildings) {
-    if (b.hp > 5) continue;
+    const wear = wearStage(b.hp);
+    if (!wear || b.kind === 'spikes') continue;
     const r = cellRect(b.cx, b.cy);
     if (r.x > view.x1 || r.x + r.w < view.x0 || r.y > view.y1 || r.y + r.h < view.y0) continue;
     const key = `${b.cx},${b.cy}`;
-    const bad = b.hp <= 2;
-    const n = due(fx, key, bad ? 4 : 1.6, dt);
-    for (let i = 0; i < n; i++) {
-      burst(fx.pool, 'plume', r.x + r.w * (0.3 + rand() * 0.4), r.y + r.h * (0.3 + rand() * 0.4), 0, now, rand, bad ? '#3f3c38' : '#5a5550', bad ? 1.2 : 0.8);
-      if (bad && rand() < 0.5) burst(fx.pool, b.kind === 'wall' ? 'embers' : 'hotSparks', r.x + r.w / 2, r.y + r.h / 2, rand() * TAU, now, rand, undefined, 0.5);
+    const x = r.x + r.w / 2, y = r.y + r.h / 2 - 6;
+    if (wear === 1) {
+      for (let i = due(fx, key, 1.4, dt); i > 0; i--) burst(fx.pool, 'wisp', x + (rand() - 0.5) * 8, y + (rand() - 0.5) * 6, 0, now, rand, undefined, 1, BREEZE);
+      continue;
     }
+    for (let i = due(fx, key, 4, dt); i > 0; i--) burst(fx.pool, 'plume', x + (rand() - 0.5) * 8, y + (rand() - 0.5) * 6, 0, now, rand, night > 0.5 ? (rand() < 0.5 ? SMOKE : '#5a5550') : rand() < 0.5 ? SMOKE_DARK : SMOKE, 1.3, BREEZE);
+    for (let i = due(fx, `${key}e`, 1.5, dt); i > 0; i--) burst(fx.pool, 'embers', x, y + 4, 0, now, rand, undefined, 0.5, BREEZE);
+    // Sparks come in a spit now and then, not a stream.
+    if (due(fx, `${key}s`, 0.7, dt)) burst(fx.pool, 'hotSparks', x + (rand() - 0.5) * 10, y, -Math.PI / 2 + (rand() - 0.5) * 1.6, now, rand, undefined, 0.7);
   }
+}
+
+/**
+ * Wrecks: a new one is thrown apart once (twisted plate, grit, sparks and a black puff), then smokes thick, a steaming
+ * column of black and grey that leans on the breeze, thinning as it cools over `WRECK.smokeMs`, with embers early on.
+ * Every wreck draws on one budget, so a base full of them stays cheap.
+ */
+export function updateWrecks(fx: SiegeFx, list: readonly Wreck[], view: View, now: number, dt: number, rand: () => number, reduced = false, night = 0) {
+  // After dark the column is drawn from the ramp's lighter end, so it still stands out of the navy floor; by day it is near black.
+  const dark = night > 0.5;
+  const first = list.length ? fx.wreckTurn++ % list.length : 0, seenUpTo = fx.lastWreck;
+  // Each wreck's share: when all of them together would pour more than the budget, every one thins by the same factor.
+  const inView = (w: Wreck) => { const x = (w.cx + 0.5) * ZOM.cell, y = (w.cy + 0.5) * ZOM.cell; return x + 60 >= view.x0 && x - 60 <= view.x1 && y + 60 >= view.y0 && y - 60 <= view.y1; };
+  const rateOf = (w: Wreck) => { const heat = wreckHeat(w, now); return heat > 0 ? 1.5 + 10 * heat : 0; };
+  let demand = 0;
+  if (!reduced) for (const w of list) if (inView(w)) demand += rateOf(w);
+  const share = demand > WRECK_SMOKE_PER_SEC ? WRECK_SMOKE_PER_SEC / demand : 1;
+  for (let j = 0; j < list.length; j++) {
+    const w = list[(first + j) % list.length]!;
+    const x = (w.cx + 0.5) * ZOM.cell, y = (w.cy + 0.5) * ZOM.cell;
+    const fresh = w.id > seenUpTo;
+    if (fresh) fx.lastWreck = Math.max(fx.lastWreck, w.id);
+    if (reduced || !inView(w)) continue;
+    if (fresh) {
+      for (let i = 0; i < 4; i++) burst(fx.pool, 'chips', x, y, (i / 4) * TAU, now, rand, undefined, 2);
+      burst(fx.pool, 'hotSparks', x, y, -Math.PI / 2, now, rand, undefined, 1.6);
+      burst(fx.pool, 'dust', x, y, 0, now, rand, undefined, 2);
+      burst(fx.pool, 'smoke', x, y, 0, now, rand, SMOKE_DARK);
+    }
+    const heat = wreckHeat(w, now);
+    if (heat <= 0) continue;
+    // The budget is the hard cap; the share above keeps the wrecks from racing each other for it.
+    const n = take(fx.wreckSmoke, now, due(fx, `w${w.id}`, rateOf(w) * share, dt));
+    for (let i = 0; i < n; i++) {
+      const roll = rand(), tone = dark ? (roll < 0.3 ? STEAM : roll < 0.7 ? '#5a5550' : SMOKE) : roll < 0.14 ? STEAM : roll < 0.55 ? SMOKE : SMOKE_DARK;
+      burst(fx.pool, 'pall', x + (rand() - 0.5) * 18, y + (rand() - 0.5) * 12, 0, now, rand, tone, 1, BREEZE);
+    }
+    const hot = wreckHeat(w, now, WRECK_EMBER_MS);
+    for (let i = due(fx, `w${w.id}e`, 3 * hot, dt); i > 0; i--) burst(fx.pool, 'embers', x + (rand() - 0.5) * 20, y + (rand() - 0.5) * 14, 0, now, rand, undefined, 0.5, BREEZE);
+    if (heat > 0.5 && due(fx, `w${w.id}s`, 0.5, dt)) burst(fx.pool, 'hotSparks', x + (rand() - 0.5) * 16, y, -Math.PI / 2, now, rand, undefined, 0.5);
+  }
+  // Emission debts of wrecks that are gone are dropped, so the map does not grow over a long run.
+  if (fx.emit.size > 400) for (const k of fx.emit.keys()) if (k.startsWith('w') && !list.some((w) => k === `w${w.id}` || k === `w${w.id}e` || k === `w${w.id}s`)) fx.emit.delete(k);
 }
 
 /** The small white hit puff where a blow lands: a burst of short strokes and a ring, gone in a blink. */
@@ -195,7 +260,11 @@ function drawPuffs(ctx: CanvasRenderingContext2D, fx: SiegeFx, now: number, pxPe
  * The siege's late pass, over the night's shade: the core's light, then the siege's smoke, sparks and embers, then the hit
  * puffs. Advances the emitters by the time since the last frame.
  */
-export function drawSiegeFx(ctx: CanvasRenderingContext2D, snap: Snapshot, view: View, now: number, night: number, pxPerUnit: number, coreHitAt: number, fx: SiegeFx = siege, rand: () => number = Math.random) {
+export function drawSiegeFx(
+  ctx: CanvasRenderingContext2D, snap: Snapshot, view: View, now: number, night: number, pxPerUnit: number, coreHitAt: number, fx: SiegeFx = siege, rand: () => number = Math.random,
+  opts: { reduced?: boolean; wrecks?: readonly Wreck[] } = {},
+) {
+  const reduced = opts.reduced ?? false, wreckList = opts.wrecks ?? [];
   const run = snap.run;
   if (!run) { fx.coreHp = null; fx.at = now; return; }
   const dt = fx.at === -Infinity ? 0 : Math.max(0, Math.min(100, now - fx.at));
@@ -203,7 +272,9 @@ export function drawSiegeFx(ctx: CanvasRenderingContext2D, snap: Snapshot, view:
   const core = coreRectAt(run.core);
   const coreSeen = core.x - 200 < view.x1 && core.x + core.w + 200 > view.x0 && core.y - 200 < view.y1 && core.y + core.h + 200 > view.y0;
   updateCore(fx, run, now, coreSeen ? dt : 0, rand);
-  updateBuildings(fx, snap.buildings ?? [], view, now, dt, rand);
+  updateBuildings(fx, snap.buildings ?? [], view, now, dt, rand, reduced, night);
+  updateWrecks(fx, wreckList, view, now, dt, rand, reduced, night);
+  drawWreckGlow(ctx, wreckList, view, now, pxPerUnit, reduced);
   if (coreSeen) {
     const hit = coreFlash(fx, coreHitAt, now);
     drawCoreLight(ctx, run, now, hit, Math.max(0, 1 - (now - fx.healAt) / HEAL_MS), night, pxPerUnit);

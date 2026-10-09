@@ -72,6 +72,7 @@ import { addKick, addTrauma, decay, offset, settleKick, traumaFor, type Kick } f
 import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } from './reconnect.ts';
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
 import { aimTurrets, nextCoreHitAt } from './siege.ts';
+import { noteWrecks, wrecks } from './wrecks.ts';
 import { addCorpse, addZombieCorpse, explosiveDeath } from './corpses.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, lineGhostAt, nextTier, squadFromSearch, stepItem, upgradeTarget, withSquad, type BuildChip, type Ghost } from './zombies.ts';
 import { trackRootScale } from './uiscale.ts';
@@ -423,6 +424,7 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   }
   s.coreHitAt = nextCoreHitAt(prev?.run, snap.run, now, s.coreHitAt);
   aimTurrets(s.turretAims, snap, now);
+  wrecks.list = noteWrecks(wrecks.list, prev, snap, now);
   if (s.building && (snap.run?.phase !== 'day' || !snap.self.alive)) s.building = false;
   if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 
