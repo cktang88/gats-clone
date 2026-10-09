@@ -323,15 +323,24 @@ const MARK_Y = -R - 8;
 /** Where a soldier's bubble tail points: above the head, clear of the stage marks and the hunted plate, which sit higher. */
 export const tailOffset = (stage: number): number => MARK_Y - 10 - (stage ? 12 + 6 * stage + 14 : 0);
 
+/** A phone on its side: one small bubble at a time, gone sooner, so talk never covers the fight. */
+export const CHATTER_PHONE = { scale: 0.7, holdMs: 1800, max: 1 } as const;
+let compactBubbles = false;
+export const setChatterCompact = (on: boolean): void => { compactBubbles = on; };
+
 /**
  * Draws the live bubbles over `players` (world coordinates). `ui` is the UI scale and `zoom` the camera's scale, so a bubble keeps the
  * same size on screen however the camera zooms; `reduced` skips the pop and only fades.
  */
 export function drawChatter(ctx: CanvasRenderingContext2D, players: readonly PlayerView[], now: number, dark: number, zoom: number, ui: number, reduced: boolean, emoting?: (pid: number) => boolean) {
+  let shown = 0;
   for (const b of chatter.bubbles) {
     const p = players.find((q) => q.id === b.pid);
     const ms = now - b.at;
-    if (!p || p.hidden || !p.alive || ms < 0 || ms >= b.holdMs + CHATTER.fadeMs || emoting?.(p.id)) continue;
+    const holdMs = compactBubbles ? Math.min(b.holdMs, CHATTER_PHONE.holdMs) : b.holdMs;
+    if (!p || p.hidden || !p.alive || ms < 0 || ms >= holdMs + CHATTER.fadeMs || emoting?.(p.id)) continue;
+    if (compactBubbles && shown >= CHATTER_PHONE.max) continue;
+    shown++;
     ctx.save();
     ctx.font = FONT;
     if (!b.lines) {
@@ -339,8 +348,8 @@ export function drawChatter(ctx: CanvasRenderingContext2D, players: readonly Pla
       b.w = Math.ceil(Math.max(...b.lines.map((t) => ctx.measureText(t).width))) + 22;
     }
     const lh = FONT_PX + 2, w = b.w!, h = 12 + b.lines.length * lh, cut = 7;
-    const fade = ms > b.holdMs ? 1 - (ms - b.holdMs) / CHATTER.fadeMs : reduced ? easeOut(ms / 160) : 1;
-    const k = (ui / zoom) * (reduced ? 1 : popScale(ms));
+    const fade = ms > holdMs ? 1 - (ms - holdMs) / CHATTER.fadeMs : reduced ? easeOut(ms / 160) : 1;
+    const k = (ui / zoom) * (reduced ? 1 : popScale(ms)) * (compactBubbles ? CHATTER_PHONE.scale : 1);
     ctx.translate(p.x, p.y + tailOffset(GUNS[p.gun].stage));
     ctx.scale(k, k);
     ctx.globalAlpha = Math.max(0, fade) * (b.own ? 1 : 0.94);

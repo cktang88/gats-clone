@@ -18,7 +18,9 @@ import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addCareerToast, addMoments, NO_MOMENTS } from './moments.ts';
 import { createMedalToasts } from './medaltoasts.ts';
 import { freshLog, loadBests, logSnapshot, recapOf, saveBests } from './records.ts';
-import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawSticks, noteAbilityDenied, noteTopup, setHudInsets } from './hud.ts';
+import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawnPhoneLayout, drawSticks, hudScaleFor, noteAbilityDenied, noteTopup, phoneBoardTap, setHudInsets } from './hud.ts';
+import { applyPhoneHud } from './phonehud.ts';
+import { createAutoFullscreen, requestFullscreen } from './fullscreen.ts';
 import { dismissHomeScreenHint, installTouchGuards, measureLayout, shouldShowHomeScreenHint } from './viewport.ts';
 import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
 import { actionForKey, assembleInput, keyRepeats, perkSlotForKey, type Action } from './input.ts';
@@ -145,6 +147,8 @@ const audio = createAudio();
 // Sounds that do not come from a snapshot (celebration, slow-motion, killcam) arrive here.
 setSfxSink({ cues: (cues) => { if (state.phase !== 'menu') playCues(state.s, cues, WORLD.viewRadius); }, muffle: (on) => audio.muffle(on) });
 const touchScreen = matchMedia('(pointer: coarse)').matches;
+/** The first tap in each match asks for fullscreen where the page can have it (fullscreen.ts); an iPhone cannot, see the menu's tip. */
+const autoFullscreen = createAutoFullscreen(document, document.documentElement, { touch: () => touchScreen, lock: () => lockLandscape() });
 let trauma = 0;
 /** A Space press is sent with the next input even if the key was already let go, so a quick tap is never lost between input ticks. */
 let abilityTapped = false;
@@ -174,6 +178,8 @@ function setState(next: ClientState) {
   menuEl.hidden = next.phase !== 'menu';
   flow.setVisible(next.phase === 'menu');
   if (next.phase !== was.phase) {
+    if (next.phase === 'menu') autoFullscreen.matchEnded();
+    else if (was.phase === 'menu') autoFullscreen.matchStarted();
     const room = next.phase === 'menu' ? null : next.s.rejoin.room;
     renderSquadChip(squadChip, room === squad ? squad : null, squad && inviteLink(location.href, squad));
   }
@@ -642,6 +648,7 @@ function resize() {
   canvas.style.width = `${w}px`;
   canvas.style.height = `${h}px`;
   setHudInsets(safe);
+  applyPhoneHud(hudEl, w, h, safe, touchScreen, hudScaleFor(w, h, touchScreen));
   clearTimeout(viewTimer);
   viewTimer = setTimeout(() => {
     const s = sessionOf(state);
@@ -913,6 +920,9 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'touch') return;
   // Suppresses the emulated mousedown so a thumb on the move stick does not also fire.
   e.preventDefault();
+  autoFullscreen.tap();
+  // On a phone a tap on the folded scoreboard opens it instead of starting a stick.
+  if (phoneBoardTap(e.clientX, e.clientY, performance.now())) return;
   // In build mode a tap on one of the build bar's chips presses it instead of starting a stick.
   const building = state.phase === 'playing' && state.s.building ? state.s : null;
   const chip = building && buildChipAt(e.clientX, e.clientY);
@@ -935,6 +945,7 @@ for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'relo
   const button = $(id);
   button.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    autoFullscreen.tap();
     held.add(action);
     if (action !== 'ability') return;
     abilityTapped = true;
@@ -1146,6 +1157,7 @@ if (params.has('dev')) {
 }
 const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { if (!reducedMotion() && shakeScale() > 0) kick = addKick(kick, gun, angle, shakeScale()); } });
 installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
+if (params.has('dev')) Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { phone: { layout: () => drawnPhoneLayout(), fullscreenArmed: () => autoFullscreen.armed() } });
 if (params.has('dev')) Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { pause: { open: () => pause.open(), close: () => pause.close(), isOpen: () => pause.isOpen(), probe: () => pause.probe(), quality: () => qualityProbe(), held: () => [...held], firing: () => firing }, music: musicProbe });
 renderMuted($('muted'), muted, toggleMuted);
 const account = mountAccount($('account'), (a) => { if (a && !nameInput.value) nameInput.value = a.name; void wardrobe.refresh(nameInput.value); syncAcct(); });
@@ -1235,12 +1247,11 @@ void COSMETIC_BY_ID;
  * On a phone, Play also asks for fullscreen and a landscape lock, inside the tap that allows them. Browsers that refuse (an
  * iPhone has no page fullscreen) keep the page as it is, and the rotate hint asks the player to turn the phone instead.
  */
+const lockLandscape = () => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> } | undefined)?.lock?.('landscape').catch(() => {});
 function fullLandscape() {
   if (!matchMedia('(pointer: coarse)').matches) return;
-  const root = document.documentElement;
-  const lock = () => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape').catch(() => {});
-  if (!document.fullscreenElement && root.requestFullscreen) root.requestFullscreen({ navigationUI: 'hide' }).then(lock, () => {});
-  else void lock();
+  if (!document.fullscreenElement) void requestFullscreen(document, document.documentElement, lockLandscape);
+  else void lockLandscape();
 }
 
 const a2hs = $('a2hs');

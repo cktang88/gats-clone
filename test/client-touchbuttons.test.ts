@@ -21,8 +21,10 @@ test('the ability button shows a lock and the unlocking score, then the ability 
 });
 
 test('the reload button fills as the reload runs and flags an empty mag', () => {
-  assert.deepEqual(buttonFaces(self({ reloading: true, reloadFrac: 0.4, ammo: 0 }), 40).reload, { sweep: 0.4, empty: false });
-  assert.deepEqual(buttonFaces(self({ ammo: 0 }), 40).reload, { sweep: 0, empty: true });
+  assert.deepEqual(buttonFaces(self({ reloading: true, reloadFrac: 0.4, ammo: 0 }), 40).reload, { sweep: 0.4, empty: false, ammo: '', low: false });
+  assert.deepEqual(buttonFaces(self({ ammo: 0 }), 40).reload, { sweep: 0, empty: true, ammo: '0', low: true });
+  assert.deepEqual(buttonFaces(self({ ammo: 9 }), 40).reload, { sweep: 0, empty: false, ammo: '9', low: false }, 'a phone reads the mag on the reload button');
+  assert.equal(buttonFaces(self({ ammo: 3 }), 40).reload.low, true, 'a quarter of the mag or less is low');
 });
 
 test('a touch screen HUD never shrinks below 90%, so its text stays readable on a phone', () => {

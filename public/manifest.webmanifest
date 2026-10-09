@@ -1,10 +1,20 @@
 {
+  "id": "/",
   "name": "Tinwar",
   "short_name": "Tinwar",
+  "description": "A top-down multiplayer arena shooter. Toy soldiers, real firefights.",
   "start_url": "/",
+  "scope": "/",
   "display": "fullscreen",
   "display_override": ["fullscreen", "standalone"],
   "orientation": "landscape",
   "background_color": "#121419",
-  "theme_color": "#121419"
+  "theme_color": "#121419",
+  "categories": ["games"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
 }

@@ -1,4 +1,5 @@
 import { knobs } from './quality.ts';
+import { canFullscreen } from './fullscreen.ts';
 /** Everything about the physical screen: its size (as the browser really shows it) and the notch and home-bar insets. */
 
 export type Insets = { l: number; t: number; r: number; b: number };
@@ -47,9 +48,12 @@ export function installTouchGuards(surface: HTMLElement): void {
 }
 
 const HINT_KEY = 'skirmish.a2hsHint';
-/** One-time nudge for iOS Safari players: only the home-screen app can hide Safari's toolbars (iOS has no page fullscreen). */
+/**
+ * The menu's full-screen tip, for an iPhone in Safari: it has no page fullscreen, so only the home-screen app hides Safari's bars.
+ * An iPad (and Android) can go fullscreen in the browser (fullscreen.ts), so it gets no tip; nor does the installed app.
+ */
 export function shouldShowHomeScreenHint(): boolean {
-  if (!isIos() || isStandalone() || !window.matchMedia('(pointer: coarse)').matches) return false;
+  if (!isIos() || isStandalone() || !window.matchMedia('(pointer: coarse)').matches || canFullscreen(document, document.documentElement)) return false;
   try { return localStorage.getItem(HINT_KEY) === null; } catch { return false; }
 }
 export function dismissHomeScreenHint(): void {

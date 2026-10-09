@@ -22,6 +22,7 @@ import { drawFlashOverlay } from './flashsmoke.ts';
 import type { Session } from './state.ts';
 import { uiScaleFor } from './uiscale.ts';
 import { crosshairLook } from './settings.ts';
+import { isPhoneLandscape, phoneLayout, STICK_REST, type Box, type PhoneLayout } from './phonelayout.ts';
 
 /** The kit's condensed face (style.css), with the system face standing in until it loads. */
 const HUD_FONT = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif';
@@ -90,7 +91,8 @@ function vignette(w: number, h: number): HTMLCanvasElement {
   return image;
 }
 
-type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number; dt: number; cam: Camera; selfAt: Point; on: OnWorld };
+/** `P` is the phone layout (phonelayout.ts) in HUD units on a phone on its side, else null. */
+type Hud = { ctx: CanvasRenderingContext2D; w: number; h: number; snap: Snapshot; s: Session; me: PlayerView | null; now: number; dt: number; cam: Camera; selfAt: Point; on: OnWorld; P: PhoneLayout | null };
 
 const GUN_BY_NAME = new Map<string, GunId>(GUN_IDS.map((id) => [GUNS[id].name, id]));
 const PERK_BY_NAME = new Map<string, PerkId>(Object.entries(PERK_INFO).map(([id, info]) => [info.name, id as PerkId]));
@@ -99,14 +101,22 @@ const PERK_BY_NAME = new Map<string, PerkId>(Object.entries(PERK_INFO).map(([id,
  * Where an idle stick's guide ring sits, in px in from its bottom-left (move) or bottom-right (aim) corner, where the touch buttons arc above it (style.css),
  * and how faint it is before and after the player has first used that stick.
  */
-const STICK_GUIDE = { inset: 96, aimRight: 150, alpha: 0.24, usedAlpha: 0.1 } as const;
+const STICK_GUIDE = { inset: 96, aimRight: 150, alpha: 0.24, usedAlpha: 0.1, labelMs: 5000, labelFadeMs: 600 } as const;
 const sticksUsed = { move: false, aim: false };
+/** When the guides were first drawn this match (a gap in drawing starts a new one): their labels show only for the first few seconds. */
+const guideClock = { since: 0, last: -1e9 };
 
 /** Touch screens draw a faint ring where each stick goes while no thumb is on it, so players know the sticks are there. */
 function drawStickGuides(ctx: CanvasRenderingContext2D, sticks: Sticks, w: number, h: number) {
+  const now = performance.now();
+  if (now - guideClock.last > 2000) guideClock.since = now;
+  guideClock.last = now;
+  const labelAlpha = Math.max(0, Math.min(1, (STICK_GUIDE.labelMs - (now - guideClock.since)) / STICK_GUIDE.labelFadeMs));
+  // On a phone on its side the reload and ability buttons stand in a column at the right edge, so the aim ring rests a little further out.
+  const aimRight = isPhoneLandscape(w, h, true) ? STICK_REST.aimX : STICK_GUIDE.aimRight;
   const guides = [
     { key: 'move', active: sticks.move, x: STICK_GUIDE.inset + safe.l, label: 'MOVE' },
-    { key: 'aim', active: sticks.aim, x: w - STICK_GUIDE.aimRight - safe.r, label: 'AIM · FIRE' },
+    { key: 'aim', active: sticks.aim, x: w - aimRight - safe.r, label: 'AIM · FIRE' },
   ] as const;
   for (const g of guides) {
     if (g.active) { sticksUsed[g.key] = true; continue; }
@@ -121,11 +131,14 @@ function drawStickGuides(ctx: CanvasRenderingContext2D, sticks: Sticks, w: numbe
     ctx.beginPath();
     ctx.arc(g.x, y, STICK_RADIUS * 0.42, 0, Math.PI * 2);
     ctx.fill();
+    if (labelAlpha <= 0) continue;
+    ctx.globalAlpha *= labelAlpha;
     ctx.font = '700 15px "Barlow Condensed", system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(g.label, g.x, y + STICK_RADIUS + 12);
   }
+  ctx.globalAlpha = 1;
 }
 
 export function drawSticks(ctx: CanvasRenderingContext2D, sticks: Sticks, dpr: number, w: number, h: number, touchScreen: boolean) {
@@ -188,7 +201,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
   const { w, h } = cam;
   const me = snap.players.find((p) => p.id === s.myId) ?? null;
   const on = nightAmount() > 0.5 || shownSuppression > SUPPRESS_EDGE.readable ? ON_WORLD.night : ON_WORLD.day;
-  const hud: Hud = { ctx, w, h, snap, s, me, now, dt: Math.min(100, Math.max(0, now - lastHudAt)), cam, selfAt: worldToScreen(cam, s.lastSelf), on };
+  const P = phoneBoxes(screenCam.w, screenCam.h, k);
+  const hud: Hud = { ctx, w, h, snap, s, me, now, dt: Math.min(100, Math.max(0, now - lastHudAt)), cam, selfAt: worldToScreen(cam, s.lastSelf), on, P };
   lastHudAt = now;
   rememberPlayers(snap);
   hudCrosshair = crosshair;
@@ -200,14 +214,16 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
   drawFlashOverlay(ctx, w, h, snap.self.flash ?? 0, now);
   drawHurtVignette(hud);
   drawHurtArcs(hud);
-  const boardBottom = drawLeaderboard(hud, compact, fullBoard);
-  drawMinimap(hud, compact ? 96 : 160);
+  const boardBottom = P ? drawBoardChip(hud, P, fullBoard) : drawLeaderboard(hud, compact, fullBoard);
+  drawMinimap(hud, P ? P.minimap.w - 16 : compact ? 96 : 160);
   const below = drawPill(hud, compact);
-  // On a phone the right column is the leaderboard above the thumbs' buttons, so a short feed (two rows) goes top centre under the timer.
-  if (touchScreen && compact) drawKillFeed(hud, below + SPACE.sm, 2, w / 2 + 120);
+  // On a phone on its side the feed keeps a line or two under the top-right row (hidden while the board is open over it);
+  // on another small touch screen the right column is the leaderboard, so a short feed goes top centre under the timer.
+  if (P) { if (boardBottom <= P.board.y + P.board.h) drawKillFeed(hud, P.feed.y, Math.max(1, Math.floor(P.feed.h / FEED_ROW + 0.01)), P.feed.x + P.feed.w, P.feed); }
+  else if (touchScreen && compact) drawKillFeed(hud, below + SPACE.sm, 2, w / 2 + 120);
   else drawKillFeed(hud, boardBottom + SPACE.sm, compact ? 3 : 5);
   ctx.globalAlpha = 1;
-  const siegeTop = drawObjectiveLine(hud, below, fullBoard);
+  const siegeTop = P ? drawPhoneLine(hud, P) : drawObjectiveLine(hud, below, fullBoard);
   if (me?.alive) drawVitals(hud, compact);
   if (snap.run) drawSiege(hud, snap.run, siegeTop, compact);
   if (snap.royale) drawRoyale(hud, snap.royale, siegeTop);
@@ -331,12 +347,14 @@ function drawScorePopups({ ctx, s, now, cam, selfAt }: Hud) {
 
 const CALLOUT_GAP = 70;
 
-function drawCallouts({ ctx, w, h, s, now, selfAt }: Hud) {
+function drawCallouts({ ctx, w, h, s, now, selfAt, P }: Hud) {
   let row = 0;
   for (const c of s.moments.callouts) {
     const age = now - c.born;
     if (age < 0 || age >= CALLOUT_MS) continue;
     if (c.ring && age < RING_MS) drawRingBurst(ctx, selfAt, c.color, age);
+    // A phone shows the callout briefly in its slim top line (drawPhoneLine) instead of a plate over the fight.
+    if (P) continue;
     const pop = 1 + 0.25 * Math.max(0, 1 - age / 160);
     ctx.globalAlpha = Math.min(1, age / 90, (CALLOUT_MS - age) / 450);
     const y = h * 0.24 + row * CALLOUT_GAP;
@@ -678,8 +696,11 @@ function lifeLine(f: Extract<Snapshot['events'][number], { e: 'life' }>, by: str
 }
 
 /** `rightEdge` is where each row ends; rows right-align there (the screen's right edge by default). */
-function drawKillFeed(hud: Hud, top: number, rows: number, rightEdge?: number) {
-  const { ctx, w, s, now } = hud;
+function drawKillFeed(hud: Hud, top: number, rows: number, rightEdge?: number, clip?: Box) {
+  const { ctx, w, now } = hud;
+  // A phone's feed keeps to its box: names are cut short, and anything still too wide is clipped at the box's left edge.
+  const s = clip ? { ...hud.s, feed: hud.s.feed.map((f) => (f.e === 'kill' ? { ...f, killer: f.killer && shortName(f.killer), victim: shortName(f.victim) } : f)) } : hud.s;
+  if (clip) { ctx.save(); ctx.beginPath(); ctx.rect(clip.x, clip.y, clip.w, clip.h); ctx.clip(); }
   const lines = s.feed.filter((f) => now - f.at < FEED_MS).slice(-rows);
   const right = rightEdge ?? w - EDGE - inset().r;
   const drawRow = (f: (typeof lines)[number], i: number) => {
@@ -771,7 +792,9 @@ function drawKillFeed(hud: Hud, top: number, rows: number, rightEdge?: number) {
     ctx.translate(-slide * 150, 0);
   });
   feedAge = 1e9;
+  if (clip) ctx.restore();
 }
+const shortName = (name: string): string => (name.length > 9 ? `${name.slice(0, 8)}…` : name);
 
 const FEED_IN_MS = 320;
 const FEED_FLASH_MS = 620;
@@ -816,13 +839,13 @@ const BOARD = { w: 196, compactW: 162, row: 26, pad: 10, touchTop: 3 } as const;
 let boardYs = new Map<number, number>();
 const boardMine = { place: null as number | null, climbAt: -1e9 };
 
-function drawLeaderboard(hud: Hud, compact: boolean, full: boolean): number {
+function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right: number; top: number; rows: number }): number {
   const { ctx, w, h, snap, s, me } = hud;
-  const rows = boardRows(snap.leaderboard, s.myId, full ? (compact || h < 760 ? 6 : 12) : null, touchScreen && compact ? BOARD.touchTop : undefined);
+  const rows = boardRows(snap.leaderboard, s.myId, full ? at?.rows ?? (compact || h < 760 ? 6 : 12) : null, touchScreen && compact ? BOARD.touchTop : undefined);
   const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM' || snap.match.mode === 'BR';
   const ffaTarget = snap.match.mode === 'FFA' ? WORLD.ffaWinKills : 0;
   const pw = compact ? BOARD.compactW : BOARD.w;
-  const x = w - pw - EDGE - inset().r, top = EDGE + inset().t;
+  const x = at ? at.right - pw : w - pw - EDGE - inset().r, top = at ? at.top : EDGE + inset().t;
   const split = rows.length > 1 && rows.at(-1)!.place - rows.at(-2)!.place > 1;
   const head = full ? 22 : 0;
   const ph = BOARD.pad * 2 + rows.length * BOARD.row + head + (split ? 5 : 0);
@@ -921,7 +944,8 @@ function drawMinimap(hud: Hud, size: number) {
   const k = size / s.worldSize;
   const pad = 8;
   // On a touch screen the bottom right is the aiming thumb's, so the minimap sits top left under the vitals, as in mobile shooters.
-  const x0 = touchScreen ? EDGE + inset().l : w - EDGE - inset().r - size - pad * 2, y0 = touchScreen ? EDGE + inset().t + VITALS.height + 8 : h - EDGE - inset().b - size - pad * 2;
+  const x0 = hud.P ? hud.P.minimap.x : touchScreen ? EDGE + inset().l : w - EDGE - inset().r - size - pad * 2;
+  const y0 = hud.P ? hud.P.minimap.y : touchScreen ? EDGE + inset().t + VITALS.height + 8 : h - EDGE - inset().b - size - pad * 2;
   const base = fadePanel(hud, 'minimap', x0, y0, size + pad * 2, size + pad * 2);
   panel(ctx, x0, y0, size + pad * 2, size + pad * 2, MINIMAP.bg);
   const x = x0 + pad, y = y0 + pad;
@@ -1031,7 +1055,9 @@ function drawMinimap(hud: Hud, size: number) {
     drawRingMap(ctx, snap.royale, clockNow, hud.now, x, y, k, size);
     ctx.globalAlpha = base;
     const lines = [ringLine(snap.royale, clockNow), ...(snap.royale.redeploys ? [] : ['Last lives'])];
-    lines.forEach((line, i) => platedLine(ctx, line, x0 + (size + pad * 2) / 2, y0 - 16 - (lines.length - 1 - i) * 28, TYPE.label + 1, i === 0 ? PANEL_INK : PALETTE.lossOnDark, 700));
+    // Above the minimap, or on a phone (where the vitals sit above it) beside it, clear of the play area.
+    const beside = (line: string) => { setFont(ctx, 700, TYPE.label + 1); return x0 + size + pad * 2 + 8 + (ctx.measureText(line).width + (TYPE.label + 1) * 1.4) / 2; };
+    lines.forEach((line, i) => platedLine(ctx, line, hud.P ? beside(line) : x0 + (size + pad * 2) / 2, hud.P ? y0 + 14 + i * 28 : y0 - 16 - (lines.length - 1 - i) * 28, TYPE.label + 1, i === 0 ? PANEL_INK : PALETTE.lossOnDark, 700));
   }
   const self = me ?? s.lastSelf;
   ctx.fillStyle = '#ffffff';
@@ -1043,7 +1069,7 @@ function drawMinimap(hud: Hud, size: number) {
 
 function drawPill(hud: Hud, compact: boolean): number {
   const { ctx, w, snap, me, s, now } = hud;
-  const ph = compact ? 24 : 28, y = EDGE + inset().t;
+  const ph = compact ? 24 : 28, y = hud.P ? hud.P.topChip.y : EDGE + inset().t;
   const side = compact ? 40 : 48, mid = compact ? 56 : 66;
   const big = compact ? 14 : 16;
   const left = timeLeft(hud);
@@ -1123,6 +1149,7 @@ function drawObjectiveLine(hud: Hud, top: number, full: boolean): number {
 }
 
 function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, compact: boolean) {
+  if (hud.P) return drawPhoneSiege(hud, hud.P, run);
   const { ctx, w, h, s, me, now } = hud;
   const y = top + 17;
   const cx = w / 2;
@@ -1203,6 +1230,7 @@ function drawDownedSelf({ ctx, w, h, s, now }: Hud, downed: NonNullable<PlayerVi
 }
 
 function drawRoyale(hud: Hud, royale: NonNullable<Snapshot['royale']>, top: number) {
+  if (hud.P) return drawPhoneRoyale(hud, hud.P, royale);
   const { ctx, w, h, snap, s, me, now } = hud;
   const mine = me?.team ?? null;
   const box = trackerSize(royale.squads.length);
@@ -1418,7 +1446,7 @@ const hpColor = (frac: number): string => (frac > 0.5 ? PALETTE.hpGood : frac > 
  * critical (15%); a hit flashes the fill pale and pops the figure, a heal glows green, and a shield rings it blue. Flat shapes,
  * an ink outline and one hard shadow, like the rest of the kit.
  */
-export const HEALTH = { size: 104, compactSize: 84, arm: 0.48, figure: 46, compactFigure: 38, low: 0.35, critical: 0.15, flashMs: 280, healMs: 480 } as const;
+export const HEALTH = { size: 104, compactSize: 84, phoneSize: 52, arm: 0.48, figure: 46, compactFigure: 38, phoneFigure: 25, low: 0.35, critical: 0.15, flashMs: 280, healMs: 480 } as const;
 export type HealthState = 'ok' | 'hurt' | 'low' | 'critical';
 export type HealthLook = { figure: string; frac: number; state: HealthState; tone: string; flash: number; heal: number; pulse: number };
 
@@ -1490,7 +1518,7 @@ function drawHealthCross(ctx: CanvasRenderingContext2D, x: number, y: number, s:
   ctx.strokeStyle = CEL.ink;
   crossPath(ctx, x, y, s);
   ctx.stroke();
-  const size = (s === HEALTH.size ? HEALTH.figure : HEALTH.compactFigure) * (1 + 0.12 * look.flash);
+  const size = (s === HEALTH.size ? HEALTH.figure : s === HEALTH.phoneSize ? HEALTH.phoneFigure : HEALTH.compactFigure) * (1 + 0.12 * look.flash);
   const ink = look.heal > 0 ? mixHex('#ffffff', HEAL, look.heal) : look.state === 'critical' || look.state === 'low' ? mixHex('#ffffff', '#ffb3b3', look.pulse) : '#ffffff';
   inked(ctx, look.figure, x + s / 2, y + s / 2 + 1, size, ink, 800, 'center');
 }
@@ -1880,7 +1908,8 @@ function drawVitals(hud: Hud, compact: boolean) {
   if (!me) return;
   const self = snap.self;
   const ins = inset();
-  const X0 = EDGE + ins.l, Y0 = EDGE + ins.t;
+  const P = hud.P;
+  const X0 = P ? P.vitals.x : EDGE + ins.l, Y0 = P ? P.vitals.y : EDGE + ins.t;
   vitalsAt.x = X0;
   vitalsAt.y = Y0;
   const lp = levelProgress(me.level, me.score);
@@ -1897,7 +1926,7 @@ function drawVitals(hud: Hud, compact: boolean) {
     ctx.globalAlpha = 1;
   }
   // The health cross, with the armor chip and the health statuses (shield, rush) beside it.
-  const S = compact || touchScreen ? HEALTH.compactSize : HEALTH.size;
+  const S = P ? HEALTH.phoneSize : compact || touchScreen ? HEALTH.compactSize : HEALTH.size;
   const bx = X0, by = touchScreen ? Y0 : h - EDGE - ins.b - S;
   const shield = me.spawnShield ? 'spawn' : me.shield ? 'perk' : null;
   drawHealthCross(ctx, bx, by, S, look, colorHexOf(snap, me.id, me.team), shield, now);
@@ -1907,18 +1936,19 @@ function drawVitals(hud: Hud, compact: boolean) {
   if (shield) healthTabs.push([shield === 'spawn' ? 'SPAWN' : 'SHIELD', STATUS.shield, PERK_ICONS.shield]);
   if (me.rush) healthTabs.push(self.perks[2] === 'secondWind' ? ['WIND', STATUS.rush, PERK_ICONS.secondWind] : ['RUSH', STATUS.rush, PERK_ICONS.adrenaline]);
   // The corner kit: ability medal, then level and perks; beside the cross on a touch screen.
-  const kitX = touchScreen ? X0 + S + 16 : X0;
-  const rowY = Y0 + 22;
-  drawMedalToken(ctx, kitX + 18, rowY, self, now);
-  const kitW = drawRankRow(ctx, kitX + 98, rowY, lp, owned, now);
-  panels.push({ x: kitX, y: rowY - 20, w: 98 + kitW, h: 52 });
+  const kitX = P ? X0 + S + 12 : touchScreen ? X0 + S + 16 : X0;
+  const rowY = P ? Y0 + 13 : Y0 + 22;
+  // On a phone the ability lives on its touch button, so the kit beside the small cross is just the level ring and score.
+  if (!P) drawMedalToken(ctx, kitX + 18, rowY, self, now);
+  const kitW = drawRankRow(ctx, P ? kitX : kitX + 98, rowY, lp, P ? [] : owned, now);
+  panels.push(P ? { x: kitX, y: rowY - 14, w: kitW, h: 28 } : { x: kitX, y: rowY - 20, w: 98 + kitW, h: 52 });
   // Tabs while in effect, in a row under the kit; on a desktop the health ones sit by the cross instead.
   let cx = kitX;
-  let sy = rowY + 40;
-  // Each tab goes on the row, wrapping before it would reach `limit`: on a phone that is the chat's left edge at the top centre.
-  const limit = touchScreen ? w / 2 - Math.min(360, 0.44 * w * hudScale) / 2 / hudScale - 6 : Infinity;
+  let sy = P ? rowY + 26 : rowY + 40;
+  // Each tab goes on the row, wrapping before it would reach `limit`: on a phone, the vitals box's edge (one row only; the rest wait).
+  const limit = P ? P.vitals.x + P.vitals.w : touchScreen ? w / 2 - Math.min(360, 0.44 * w * hudScale) / 2 / hudScale - 6 : Infinity;
   const put = (width: number, draw: (x: number, y: number) => void) => {
-    if (cx > kitX && cx + width > limit) { cx = kitX; sy += 24; }
+    if (cx > kitX && cx + width > limit) { if (P) return; cx = kitX; sy += 24; }
     draw(cx, sy);
     cx += width + 6;
   };
@@ -1935,6 +1965,8 @@ function drawVitals(hud: Hud, compact: boolean) {
   if (self.sprint === true) put(tabWidth('SPRINT'), (x, y) => statusTab(ctx, x, y, 'SPRINT', STATUS.sprint, PERK_ICONS.marathon));
   if (me.hunted) put(huntedBadgeWidth(ctx), (x, y) => drawHuntedBadge(ctx, x, y));
   if (self.streak >= 2) put(streakBadgeWidth(ctx, self.streak), (x, y) => drawStreakBadge(ctx, x, y, self.streak, now));
+  // A phone shows the ammo count on its reload button (touchbuttons.ts), off the fight.
+  if (P) { drawSparks(ctx, now); return; }
   // Ammo: beside the reticle, or your soldier on a touch screen; mirrored when it would run off the right edge.
   const near = touchScreen || spreadOff;
   const reach = WORLD.playerRadius * cam.scale;
@@ -2229,6 +2261,8 @@ function drawTeamBanner(hud: Hud, y: number, compact: boolean, left: number | nu
   ctx.fillStyle = '#ece6d6';
   ctx.fillRect(bx + half - 1, cy - 9, 2, 18);
   let bottom = y + ph;
+  // A phone carries the clock and the zones in its slim top line instead (drawPhoneLine).
+  if (hud.P) return bottom;
   if (left !== null) bottom = drawTimerToken(hud, y + ph + 4, left, true, false);
   if (dom && snap.zones.length) {
     const zs = [...snap.zones].sort((a, b) => a.id - b.id);
@@ -2243,4 +2277,245 @@ function drawTeamBanner(hud: Hud, y: number, compact: boolean, left: number | nu
     bottom = zy + r + 16;
   }
   return bottom;
+}
+
+
+/* ---------------------------------------------------------------------------------------------------------------------------
+ * The phone on its side (phonelayout.ts): the same kit, condensed into the corners so nothing sits on the fight. The scoreboard
+ * folds to a chip (your place and score) that a tap opens for a few seconds; banners and callouts flash for two seconds in one
+ * slim line under the clock chip, which then goes back to the mode's own status; hints and the downed plate keep to one line low
+ * between the sticks.
+ * ------------------------------------------------------------------------------------------------------------------------- */
+const PHONE = { boardOpenMs: 4500, calloutMs: 2000, introMs: 2600, fadeMs: 260 } as const;
+let phoneShown: PhoneLayout | null = null;
+const boardChip = { rect: null as Rect | null, openUntil: 0 };
+
+/** The phone layout in HUD units (the HUD draws at 1 / scale), or null when this is not a phone on its side. */
+function phoneBoxes(w: number, h: number, k: number): PhoneLayout | null {
+  if (!isPhoneLandscape(w, h, touchScreen)) { phoneShown = null; return null; }
+  const css = phoneLayout(w, h, safe, k);
+  const out = {} as Record<string, Box>;
+  for (const [key, b] of Object.entries(css)) out[key] = { x: b.x / k, y: b.y / k, w: b.w / k, h: b.h / k };
+  phoneShown = out as PhoneLayout;
+  return phoneShown;
+}
+
+/** Dev probe: the phone layout's boxes as drawn last frame, in CSS px, or null off a phone. */
+export const drawnPhoneLayout = (): PhoneLayout | null => phoneShown && (Object.fromEntries(Object.entries(phoneShown).map(([key, b]) => [key, { x: b.x * hudScale, y: b.y * hudScale, w: b.w * hudScale, h: b.h * hudScale }])) as PhoneLayout);
+
+/** A tap at (sx, sy) CSS px on the scoreboard chip opens the full board for a few seconds (or folds it); true when it took the tap. */
+export function phoneBoardTap(sx: number, sy: number, now: number): boolean {
+  const r = boardChip.rect;
+  if (!phoneShown || !r) return false;
+  const x = sx / hudScale, y = sy / hudScale, slack = 8;
+  if (x < r.x - slack || x > r.x + r.w + slack || y < r.y - slack || y > r.y + r.h + slack) return false;
+  boardChip.openUntil = now < boardChip.openUntil ? 0 : now + PHONE.boardOpenMs;
+  return true;
+}
+
+/** The folded scoreboard: your helmet, your place and your score, with a caret that says it opens. Returns the bottom of what it drew. */
+function drawBoardChip(hud: Hud, P: PhoneLayout, full: boolean): number {
+  const { ctx, snap, s, me, now } = hud;
+  const b = P.board;
+  boardChip.rect = b;
+  if (full || now < boardChip.openUntil) {
+    // Open, it drops from the chip down to the reload button, as many rows as fit (your own row always among them).
+    const top = b.y + b.h + 6;
+    return drawLeaderboard(hud, true, true, { right: P.cog.x + P.cog.w, top, rows: Math.max(3, Math.floor((P.reload.y - 6 - top - BOARD.pad * 2 - 22 - 5) / BOARD.row)) });
+  }
+  const rows = boardRows(snap.leaderboard, s.myId, null);
+  const mine = rows.find((r) => r.row.id === s.myId);
+  fadePanel(hud, 'board', b.x, b.y, b.w, b.h);
+  panel(ctx, b.x, b.y, b.w, b.h);
+  const cy = b.y + b.h / 2;
+  const teams = snap.match.mode === 'TDM' || snap.match.mode === 'DOM' || snap.match.mode === 'BR';
+  helmet(ctx, b.x + 15, cy - 1, 7.5, colorHexOf(snap, s.myId, teams ? me?.team ?? null : null));
+  text(ctx, mine ? `#${mine.place}` : '–', b.x + 28, cy, TYPE.title, PANEL_INK, 'left', 800);
+  text(ctx, String(mine?.row.kills ?? 0), b.x + b.w - 24, cy, TYPE.title, PALETTE.gold, 'right', 800);
+  ctx.fillStyle = PANEL_MUTED;
+  ctx.beginPath();
+  ctx.moveTo(b.x + b.w - 17, cy - 2);
+  ctx.lineTo(b.x + b.w - 9, cy - 2);
+  ctx.lineTo(b.x + b.w - 13, cy + 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  return b.y + b.h;
+}
+
+/** One line on a plate, title in its colour and the rest in ink, cut with an ellipsis to fit `maxW`; fades in and out over `life`. */
+function phoneLine(ctx: CanvasRenderingContext2D, title: string, line: string, color: string, box: Box, age: number, life: number) {
+  const fade = Math.max(0, Math.min(1, age / 120, (life - age) / PHONE.fadeMs));
+  if (fade <= 0) return;
+  setFont(ctx, 800, TYPE.label + 1, true);
+  const tw = title ? ctx.measureText(title).width + 8 : 0;
+  setFont(ctx, 650, TYPE.label);
+  let rest = line;
+  const room = box.w - 20 - tw;
+  if (ctx.measureText(rest).width > room) {
+    while (rest.length > 1 && ctx.measureText(`${rest}…`).width > room) rest = rest.slice(0, -1);
+    rest = `${rest.trimEnd()}…`;
+  }
+  const pw = Math.min(box.w, tw + ctx.measureText(rest).width + 20), x = box.x + box.w / 2 - pw / 2, cy = box.y + box.h / 2;
+  ctx.globalAlpha = fade;
+  panel(ctx, x, box.y, pw, box.h);
+  ctx.fillStyle = color;
+  ctx.fillRect(x, box.y + box.h - 2, pw - PANEL_CUT, 2);
+  if (title) {
+    setFont(ctx, 800, TYPE.label + 1, true);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = color;
+    ctx.fillText(title, x + 10, cy + 1);
+  }
+  text(ctx, rest, x + 10 + tw, cy + 1, TYPE.label, PANEL_INK, 'left', 650);
+  ctx.globalAlpha = 1;
+}
+
+/**
+ * The slim line under the phone's clock chip: a callout (night falls, a streak, a medal) for two seconds, else the round's
+ * objective for its first seconds, else a map notice, else the mode's own compact status (the siege's scrap, core and survivors,
+ * the Last Squad tracker, or the kills an FFA round is played to). Returns the line's bottom.
+ */
+function drawPhoneLine(hud: Hud, P: PhoneLayout): number {
+  const { ctx, snap, s, now, me } = hud;
+  const box = P.topLine, bottom = box.y + box.h;
+  const c = [...s.moments.callouts].reverse().find((x) => now - x.born >= 0 && now - x.born < PHONE.calloutMs);
+  if (c) { phoneLine(ctx, c.title, c.line, c.color, box, now - c.born, PHONE.calloutMs); return bottom; }
+  if (!me) return bottom;
+  const key = `${snap.match.mode}|${snap.match.map}`;
+  if (objectiveSeen.key !== key) { objectiveSeen.key = key; objectiveSeen.at = now; }
+  const intro = now - objectiveSeen.at;
+  if (intro < PHONE.introMs) {
+    phoneLine(ctx, snap.match.map, objectiveFor(snap.match.mode, me.team, timeLeft(hud)).line, me.team && !snap.run ? TEAM_COLORS[me.team] : ACCENT, box, intro, PHONE.introMs);
+    if (intro < PHONE.introMs - PHONE.fadeMs) return bottom;
+  }
+  const notice = mapNotice(snap.match);
+  if (notice) { phoneLine(ctx, '', notice, PALETTE.gold, box, 1e6, 2e6); return bottom; }
+  const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+  if (snap.run) {
+    const run = snap.run;
+    const frac = run.core.hp / run.core.maxHp;
+    const alert = now - s.coreHitAt < CORE_ALERT_MS;
+    const coreColor = alert && Math.floor(now / 200) % 2 ? PALETTE.hunted : frac > 0.5 ? PALETTE.hpGood : frac > 0.25 ? PALETTE.gold : PALETTE.hpBad;
+    const mourned = run.phase === 'night' && run.lost > 0 ? `−${run.lost}` : '';
+    setFont(ctx, 750, TYPE.body);
+    const scrapW = ctx.measureText(`${run.scrap}`).width, peopleW = ctx.measureText(`${run.survivors}`).width;
+    setFont(ctx, 500, TYPE.micro);
+    const labelW = ctx.measureText('survivors').width;
+    setFont(ctx, 700, TYPE.label);
+    const mournedW = mourned ? ctx.measureText(mourned).width + 6 : 0;
+    const barW = 54;
+    const total = 15 + scrapW + 12 + 15 + barW + 12 + peopleW + 4 + labelW + mournedW;
+    let x = cx - total / 2;
+    panel(ctx, x - 9, box.y, total + 18, box.h);
+    strokeIcon(ctx, UI_ICONS.scrap, x + 5, cy, 12, PALETTE.gold, 2.2);
+    text(ctx, `${run.scrap}`, x + 15, cy + 1, TYPE.body, PANEL_INK, 'left', 750);
+    x += 15 + scrapW + 12;
+    strokeIcon(ctx, UI_ICONS.core, x + 5, cy, 12, coreColor, 2.2);
+    bar(ctx, x + 15, cy - 3, barW, 6, frac, coreColor, 'rgba(255, 255, 255, 0.18)');
+    x += 15 + barW + 12;
+    text(ctx, `${run.survivors}`, x, cy + 1, TYPE.body, alert ? coreColor : PANEL_INK, 'left', 750);
+    text(ctx, 'survivors', x + peopleW + 4, cy + 1, TYPE.micro, PANEL_MUTED, 'left', 500);
+    if (mourned) text(ctx, mourned, x + peopleW + 4 + labelW + 6, cy + 1, TYPE.label, PALETTE.lossOnDark, 'left', 700);
+    return bottom;
+  }
+  if (snap.royale) {
+    const size = trackerSize(snap.royale.squads.length);
+    const k = Math.min(1, (box.h - 4) / size.h, (box.w - 12) / size.w);
+    panel(ctx, cx - (size.w * k) / 2 - 6, box.y, size.w * k + 12, box.h);
+    ctx.save();
+    ctx.translate(cx - (size.w * k) / 2, cy - (size.h * k) / 2);
+    ctx.scale(k, k);
+    drawTracker(ctx, snap.royale, me.team ?? null, 0, 0);
+    ctx.restore();
+    return bottom;
+  }
+  if (snap.match.mode === 'TDM' || snap.match.mode === 'DOM') {
+    // The round's clock, and in Domination the three zones as small pins in their owners' colours.
+    const left = timeLeft(hud), label = clock(left ?? MAP_MS[snap.match.mode]);
+    const zs = snap.match.mode === 'DOM' ? [...snap.zones].sort((a, b) => a.id - b.id) : [];
+    const PIN = { k: 0.56, step: 30 } as const;
+    setFont(ctx, 800, TYPE.body);
+    const tw = ctx.measureText(label).width, cw = 26 + tw + (zs.length ? 10 + zs.length * PIN.step : 10), x = cx - cw / 2;
+    const urgent = left !== null && left > 0 && left <= 30000;
+    panel(ctx, x, box.y, cw, box.h, urgent ? mixHex(CEL.body, '#a63a12', 0.6) : undefined);
+    strokeIcon(ctx, UI_ICONS.clock, x + 13, cy, 11, urgent ? ACCENT : PANEL_INK, 2.4);
+    text(ctx, label, x + 23, cy + 1, TYPE.body, PANEL_INK, 'left', 800);
+    zs.forEach((z, i) => {
+      const on = me.alive && Math.hypot(me.x - z.x, me.y - z.y) <= z.r;
+      ctx.save();
+      ctx.translate(x + 26 + tw + 10 + PIN.step * (i + 0.4), cy);
+      ctx.scale(PIN.k, PIN.k);
+      drawZonePin(ctx, 0, 0, 12, z, zoneLetter(i), now, on);
+      ctx.restore();
+    });
+    return bottom;
+  }
+  if (snap.match.mode === 'FFA') {
+    setFont(ctx, 800, TYPE.title);
+    const nw = ctx.measureText(String(WORLD.ffaWinKills)).width;
+    setFont(ctx, 800, TYPE.micro);
+    const cw = 34 + nw + 6 + ctx.measureText('KILLS').width + 12, x = cx - cw / 2;
+    panel(ctx, x, box.y, cw, box.h);
+    pin(ctx, x + 17, cy - 1, 7, ACCENT);
+    strokeIcon(ctx, UI_ICONS.target, x + 17, cy - 1, 10, CEL.ink, 2.6);
+    text(ctx, String(WORLD.ffaWinKills), x + 31, cy + 1, TYPE.title, PANEL_INK, 'left', 800);
+    text(ctx, 'KILLS', x + 37 + nw, cy + 3, TYPE.micro, PANEL_MUTED, 'left', 800);
+  }
+  return bottom;
+}
+
+/** One line low between the sticks (hints, the revive prompt), unless the level-up pill holds that spot. */
+function phoneBottom(hud: Hud, P: PhoneLayout, line: string, color: string, accent: string | null = ACCENT) {
+  if (hud.snap.self.pending) return;
+  platedLine(hud.ctx, line, P.bottom.x + P.bottom.w / 2, P.bottom.y + P.bottom.h / 2, TYPE.label + 1, color, 750, accent);
+}
+
+/** You're down, on a phone: the plate's title and time on one line, with the revive bar under it. */
+function drawPhoneDowned(hud: Hud, P: PhoneLayout, downed: NonNullable<PlayerView['downed']>) {
+  const { ctx, s, now } = hud;
+  const cx = P.bottom.x + P.bottom.w / 2, cy = P.bottom.y + P.bottom.h / 2 - 2;
+  platedLine(ctx, `You're down · ${downedLine(downed, serverNow(s.snaps, now))}`, cx, cy, TYPE.label + 1, PALETTE.hunted, 800, PALETTE.hunted);
+  ctx.globalAlpha = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(now / 260));
+  bar(ctx, cx - 60, cy + 13, 120, 4, downed.revive, PALETTE.hpGood, ON_PANEL.track);
+  ctx.globalAlpha = 1;
+}
+
+/** The siege on a phone: its status rides the top line (drawPhoneLine), so this keeps the core's arrow, your downed plate and the use prompt. */
+function drawPhoneSiege(hud: Hud, P: PhoneLayout, run: NonNullable<Snapshot['run']>) {
+  const { ctx, w, s, me, now, cam, selfAt, h } = hud;
+  if (now - s.coreHitAt < CORE_ALERT_MS) {
+    const at = edgePoint(selfAt, worldToScreen(cam, run.core), w, h, EDGE_INSET + 10);
+    if (at) {
+      const clear = clearOfRects(selfAt, at, panels, ARROW_CLEARANCE);
+      edgeArrow(ctx, clear, at.angle, 1.1, 1);
+      strokeIcon(ctx, UI_ICONS.core, clear.x - Math.cos(at.angle) * 22, clear.y - Math.sin(at.angle) * 22, 14, PALETTE.hunted, 2.4);
+    }
+  }
+  if (run.phase === 'over') return;
+  if (me?.downed) return drawPhoneDowned(hud, P, me.downed);
+  if (!me?.alive) return;
+  // Build mode needs a keyboard (B), so its bars only come up on a phone with one attached; they keep to the bottom.
+  if (s.building) {
+    const row = P.bottom.y + P.bottom.h / 2;
+    const rows = buildRows();
+    rows.forEach((r, i) => hintBar(ctx, s, r.chips, w / 2, row - 30 * (rows.length - i), r.label));
+    hintBar(ctx, s, BUILD_CONTROLS, w / 2, row, 'BUILD');
+    return;
+  }
+  const use = useHint(hud.snap, s.lastSelf);
+  if (use) phoneBottom(hud, P, use, PALETTE.gold);
+}
+
+/** Last Squad on a phone: the tracker rides the top line; this keeps your downed plate, the revive prompt and who you watch. */
+function drawPhoneRoyale(hud: Hud, P: PhoneLayout, royale: NonNullable<Snapshot['royale']>) {
+  const { snap, s, me, now } = hud;
+  if (me?.downed) return drawPhoneDowned(hud, P, me.downed);
+  const revive = reviveHint(snap, me);
+  if (revive) return phoneBottom(hud, P, revive, PALETTE.gold);
+  if (me?.alive) return;
+  const clockNow = serverNow(s.snaps, now);
+  if (clockNow === null) return;
+  phoneBottom(hud, P, spectateLines(snap, royale, clockNow).title, PANEL_INK);
 }

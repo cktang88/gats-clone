@@ -8,6 +8,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Tinwar">
   <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
   <meta name="theme-color" content="#121419">
   <title>Tinwar</title>
   <meta name="description" content="Tinwar: a top-down multiplayer arena shooter for the browser. Toy soldiers, real firefights.">
@@ -62,6 +64,11 @@
           <dl id="controls" class="controls"></dl>
         </details>
       </aside>
+      <aside id="a2hs" class="a2hs" hidden aria-label="Play full screen">
+        <svg class="a2hs-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M8 10H5v11h14V10h-3"/></svg>
+        <p><b>Play full screen</b> Tap <span class="a2hs-key">Share</span> then <span class="a2hs-key">Add to Home Screen</span>, and play from the Tinwar icon: no Safari bars. <small>No install? Hide the tab bar in Settings &#8250; Apps &#8250; Safari &#8250; Landscape Tab Bar.</small></p>
+        <button id="a2hs-close" type="button" aria-label="Dismiss tip">Got it</button>
+      </aside>
       <div id="deploy-panel" class="deploy">
         <p id="menu-status" class="status menu-status" role="status"></p>
         <ol class="steps" aria-label="Deploy steps">
@@ -112,7 +119,6 @@
       </div>
       <section id="armory" class="panel armory" hidden aria-label="Armory"></section>
       <section id="challenges" class="panel challenges" hidden aria-label="Challenges"></section>
-      <p id="a2hs" class="hint" hidden>Tip: tap Share, then Add to Home Screen, to play Tinwar fullscreen without Safari's bars. <button id="a2hs-close" type="button" aria-label="Dismiss tip">Got it</button></p>
       <footer class="menu-footer"><a href="profile.html">Look up a player</a> · <a href="privacy.html">Privacy</a></footer>
     </div>
   </main>

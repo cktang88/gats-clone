@@ -1038,15 +1038,45 @@ a.wordmark { text-decoration: none; }
 
 #profile-level { margin-bottom: var(--s2); }
 .xp-lines.folded { display: none; }
-/* One-time iOS tip: Safari has no page fullscreen, so the home-screen app is the way to lose its bars. */
-.hint {
-  margin: var(--s4) auto 0;
-  max-width: 560px;
-  padding: var(--s3);
-  background: var(--panel);
-  border-top: 2px solid var(--accent);
-  color: var(--ink);
-  font-size: var(--t-label);
-  text-align: center;
+/*
+ * The full-screen tip, top of the menu wherever the page cannot go fullscreen itself (an iPhone in Safari, viewport.ts): only the
+ * home-screen app loses Safari's bars there. It stays until dismissed, so it is there each time a player comes back from a match.
+ */
+.a2hs {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--s3);
+  margin: 0 0 var(--s3); padding: 8px 10px 8px 12px;
+  background: var(--panel-3); border: 2px solid #1c1f26; border-left: 4px solid var(--accent); border-radius: 6px;
+  box-shadow: 3px 4px 0 rgba(5, 6, 9, 0.55); color: var(--ink); font: 600 var(--t-label)/1.3 var(--text);
 }
-.hint button { margin-left: var(--s2); min-height: 44px; padding: 0 var(--s4); }
+.a2hs[hidden] { display: none; }
+.a2hs-icon { width: 30px; height: 30px; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.a2hs p { margin: 0; }
+.a2hs b { display: block; font: 800 16px/1.1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.a2hs-key { padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 4px; font-weight: 700; white-space: nowrap; }
+.a2hs small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+.a2hs button { min-height: 44px; padding: 0 var(--s4); }
+
+/*
+ * A phone on its side (phonehud.ts places the buttons, the cog and the chat from phonelayout.ts; hud.ts draws the rest): the
+ * objective banner folds into the canvas's slim top line, the squad chip's invite link waits in the pause menu, the chat keeps
+ * its last line or two in a slim strip between the sticks, and the reload button carries the rounds left in the mag.
+ */
+body.phone-hud #objective, body.phone-hud #squad-chip { display: none !important; }
+body.phone-hud .chat-log { margin: 0; gap: 2px; font-size: 13px; justify-items: center; }
+body.phone-hud .chat-log li { padding: 1px 7px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+body.phone-hud .chat-log li:not(:nth-last-child(-n + 2)), body.phone-hud .chat[data-lines="1"] .chat-log li:not(:last-child) { display: none; }
+.touch-ammo { display: none; }
+body.phone-hud #touch-reload .touch-icon { grid-area: 1 / 1; width: 19px; height: 19px; align-self: start; margin-top: 7px; opacity: 0.8; }
+body.phone-hud .touch-ammo {
+  display: block; grid-area: 1 / 1; align-self: end; margin-bottom: 6px; position: relative;
+  font: 800 19px/1 var(--display); font-variant-numeric: tabular-nums; color: #f0dfa8;
+}
+body.phone-hud #touch-reload.low .touch-ammo { color: var(--accent-hot); }
+body.phone-hud #touch-reload.empty .touch-ammo { color: #ffd5d9; }
+body.phone-hud #touch-reload.busy .touch-icon { width: 26px; height: 26px; align-self: center; margin: 0; opacity: 1; }
+body.phone-hud .touch-emote { font-size: 14px !important; }
+/* The range's readout stands low between the sticks on a phone: the last hit and DPS, and accuracy and time to kill where it is wide enough. */
+body.phone-hud .rs-body { gap: 10px; padding: 3px 10px; }
+body.phone-hud .rs span { white-space: nowrap; }
+body.phone-hud .rs b { font-size: 17px; }
+@media (max-width: 899px) { body.phone-hud .rs:nth-child(n + 3) { display: none; } body.phone-hud .rs-grid { grid-template-columns: repeat(2, auto); } }
