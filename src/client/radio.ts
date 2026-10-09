@@ -11,6 +11,7 @@ import { getMapTrack, getPersonalStation, getRoomStation, getStation, musicPrefe
 import { songLabel, synthFor } from './musicstream.ts';
 import { drawRadio, drawRadioPrompt, drawRadioToast, drawTuneRings } from './radioart.ts';
 import { TRACKS } from './musictracks.ts';
+import { isPhoneLandscape } from './phonelayout.ts';
 import type { ClientState, Session } from './state.ts';
 
 const SAVED_KEY = 'skirmish.radio.station';
@@ -177,11 +178,27 @@ export function drawRadios(ctx: CanvasRenderingContext2D, now: number, view: { x
 
 /** The prompt and toast, drawn over everything else in the world (after the night shade), so they stay readable. */
 export function drawRadioOverlay(ctx: CanvasRenderingContext2D, now: number, reduced: boolean) {
-  if (near) drawRadioPrompt(ctx, near.x, near.y - 62 * scaleOf(near) - 14, now, promptLabel(), touchScreen ? 'TAP' : 'E', reduced, 1.45);
+  if (near && promptWanted(now)) drawRadioPrompt(ctx, near.x, near.y - 62 * scaleOf(near) - 14, now, promptLabel(), touchScreen ? 'TAP' : 'E', reduced, 1.45);
   toasts = toasts.filter((t) => now - t.at < TOAST_MS);
   for (const t of toasts) drawRadioToast(ctx, t.x, t.y - 62 * 1.5 - 52 - t.row * 34, t.text, Math.max(0, (now - t.at) / TOAST_MS), t.tone, 1.45);
 }
 
+
+/**
+ * A phone has its RADIO button beside the aim stick, so the prompt over the radio is a hint it shows once: after a few seconds
+ * of it on this device it stays away (phonefocus.ts's rule for hints). Elsewhere the prompt shows whenever you are near.
+ */
+const HINT_KEY = 'skirmish.radioHint';
+const HINT_MS = 4000;
+const hint = { seen: (() => { try { return localStorage.getItem(HINT_KEY) === 'seen'; } catch { return false; } })(), shownMs: 0, lastAt: 0 };
+function promptWanted(now: number): boolean {
+  if (typeof innerWidth !== 'number' || !isPhoneLandscape(innerWidth, innerHeight, touchScreen)) return true;
+  if (hint.seen) return false;
+  hint.shownMs += Math.min(100, Math.max(0, now - hint.lastAt));
+  hint.lastAt = now;
+  if (hint.shownMs >= HINT_MS) { hint.seen = true; try { localStorage.setItem(HINT_KEY, 'seen'); } catch { /* a private window forgets */ } }
+  return true;
+}
 
 /** The phone's tap target for the prompt: a button that shows only while near a radio. */
 export function mountRadioButton(parent: HTMLElement, press: () => void) {

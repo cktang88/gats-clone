@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { isPhoneLandscape, overlaps, phoneLayout, type Box, type Insets } from '../src/client/phonelayout.ts';
+import { isPhoneLandscape, ON_DEMAND, overlaps, phoneLayout, type Box, type Insets } from '../src/client/phonelayout.ts';
 
 /**
  * A phone on its side: iPhone 14/15 Pro Max (932x430), iPhone 14/15 (844x390), a 13 mini (812x375) and an iPhone SE (667x375), each at full screen
@@ -19,7 +19,19 @@ const within = (b: Box, w: number, h: number, ins: Insets) => b.x >= ins.l - 0.0
 for (const [w, h, phoneIns] of SCREENS) for (const [label, ins] of INSETS(phoneIns)) for (const k of SCALES) {
   test(`phone HUD at ${w}x${h}, ${label}, scale ${k}: no element overlaps another or the central play area`, () => {
     const { safe, ...boxes } = phoneLayout(w, h, ins, k);
-    const entries = Object.entries(boxes);
+    const all = Object.entries(boxes);
+    // The on-demand boxes (the opened minimap, a medal's chip) come and go: they may cover each other (and the opened minimap its
+    // own folded self), but never an always-on box, the play area or the screen's edges.
+    const onDemand = new Set<string>(ON_DEMAND);
+    const entries = all.filter(([name]) => !onDemand.has(name));
+    for (const [name, b] of all.filter(([n]) => onDemand.has(n))) {
+      assert.ok(within(b, w, h, ins), `${name} ${JSON.stringify(b)} stays on screen`);
+      assert.ok(!overlaps(b, safe), `${name} ${JSON.stringify(b)} stays out of the central play area`);
+      for (const [other, o] of entries) if (!(name === 'minimapOpen' && other === 'minimap')) assert.ok(!overlaps(b, o), `${name} ${JSON.stringify(b)} overlaps ${other} ${JSON.stringify(o)}`);
+    }
+    assert.ok(boxes.minimapOpen.w > boxes.minimap.w, 'a tap opens the minimap bigger than its folded size');
+    assert.ok(boxes.minimapOpen.x === boxes.minimap.x && boxes.minimapOpen.y === boxes.minimap.y, 'it opens from the same corner');
+    assert.ok(boxes.medal.w >= 80 && boxes.medal.h >= 26, `a medal's chip has room for its name (${Math.round(boxes.medal.w)} px)`);
     for (const [name, b] of entries) {
       assert.ok(b.w > 0 && b.h > 0, `${name} has a size`);
       assert.ok(within(b, w, h, ins), `${name} ${JSON.stringify(b)} stays on screen, inside the notch and home-bar insets`);
@@ -30,8 +42,8 @@ for (const [w, h, phoneIns] of SCREENS) for (const [label, ins] of INSETS(phoneI
       assert.ok(!overlaps(a, b), `${an} ${JSON.stringify(a)} overlaps ${bn} ${JSON.stringify(b)}`);
     }
     // Touch targets stay at least 40 px, and the minimap stays big enough to read.
-    for (const name of ['ability', 'reload', 'emote', 'cog', 'context'] as const) assert.ok(Math.min(boxes[name].w, boxes[name].h) >= 40, `${name} is a thumb-sized target`);
-    assert.ok(boxes.minimap.w >= 48, 'the minimap stays readable');
+    for (const name of ['ability', 'reload', 'emote', 'cog', 'context', 'chatPip'] as const) assert.ok(Math.min(boxes[name].w, boxes[name].h) >= 40, `${name} is a thumb-sized target`);
+    assert.ok(boxes.minimap.w >= 48 && boxes.minimap.w <= 80 * (k / 0.9) + 0.01, `the folded minimap stays readable but small (${Math.round(boxes.minimap.w)} px)`);
     // The central play area is a real share of the screen, not a sliver.
     assert.ok(safe.w >= 0.4 * w - 0.01 && safe.h >= 0.5 * h, 'the central play area is the middle 40% by half the height');
   });

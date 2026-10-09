@@ -120,7 +120,8 @@ button {
   letter-spacing: 0.04em;
   transition: border-color 0.12s, background 0.12s, color 0.12s, transform 0.06s;
 }
-button:hover:not(:disabled) { border-color: var(--line-strong); background: var(--panel-3); }
+/* Hover looks only where a pointer can hover: a touch screen would keep them stuck on after a tap. */
+@media (hover: hover) { button:hover:not(:disabled) { border-color: var(--line-strong); background: var(--panel-3); } }
 button:active:not(:disabled) { transform: translateY(1px); }
 button:disabled { opacity: 0.5; cursor: default; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -151,7 +152,7 @@ button.primary::after {
   opacity: 0.45;
   transition: right 0.18s, opacity 0.18s;
 }
-button.primary:hover:not(:disabled) { background: var(--accent-hot); }
+@media (hover: hover) { button.primary:hover:not(:disabled) { background: var(--accent-hot); } }
 /* A glint crosses the Deploy plate every few seconds; pressing it sinks the plate and flashes it. */
 button.primary { isolation: isolate; }
 button.primary::before {
@@ -163,7 +164,7 @@ button.primary:disabled::before { display: none; }
 button.primary { transition: transform 0.08s, background 0.12s, filter 0.12s; }
 button.primary:active:not(:disabled) { transform: translateY(2px) scale(0.985); filter: brightness(1.1); }
 @keyframes deploy-glint { 0% { left: -40%; } 24%, 100% { left: 125%; } }
-button.primary:hover:not(:disabled)::after { right: 14px; opacity: 0.9; }
+@media (hover: hover) { button.primary:hover:not(:disabled)::after { right: 14px; opacity: 0.9; } }
 button.secondary { background: transparent; }
 button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; font: inherit; letter-spacing: 0; }
 
@@ -291,7 +292,7 @@ kbd {
 .tile[aria-pressed="true"] b { color: var(--accent); }
 .weapon { background: var(--panel-2); transition: transform 0.16s cubic-bezier(.2, 1.4, .4, 1), background 0.12s, box-shadow 0.16s, border-color 0.12s; }
 /* Cards lift toward you and take a warm light from the top edge; a chosen one keeps its glow. */
-.tile:hover:not(:disabled) { transform: translateY(-3px); box-shadow: inset 0 2px 0 rgba(255, 179, 71, 0.55), inset 0 18px 24px -14px rgba(255, 90, 31, 0.3); }
+@media (hover: hover) { .tile:hover:not(:disabled) { transform: translateY(-3px); box-shadow: inset 0 2px 0 rgba(255, 179, 71, 0.55), inset 0 18px 24px -14px rgba(255, 90, 31, 0.3); } }
 .tile:active:not(:disabled) { transform: translateY(0) scale(0.98); }
 .tile[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--accent), inset 0 16px 26px -14px rgba(255, 90, 31, 0.4); }
 .tile[aria-pressed="true"]:not(:hover) { animation: tile-settle 0.3s cubic-bezier(.2, 1.5, .4, 1); }
@@ -313,7 +314,7 @@ kbd {
   border: 3px solid var(--panel-solid);
   box-shadow: 0 0 0 1px var(--line-strong);
 }
-.swatch:hover:not(:disabled) { background: var(--swatch); box-shadow: 0 0 0 1px var(--ink); }
+@media (hover: hover) { .swatch:hover:not(:disabled) { background: var(--swatch); box-shadow: 0 0 0 1px var(--ink); } }
 .swatch[aria-pressed="true"] { background: var(--swatch); border-color: var(--panel-solid); box-shadow: 0 0 0 2px var(--accent); }
 
 .armors { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s2); }
@@ -421,10 +422,10 @@ a.wordmark { text-decoration: none; }
 }
 @keyframes perk-in { from { transform: translateY(18px) scale(0.85); opacity: 0; } }
 @keyframes perk-shimmer { from { left: -60%; } to { left: 130%; } }
-.perk:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-wash); }
+@media (hover: hover) { .perk:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-wash); } }
 .perk kbd { justify-self: start; min-width: 0; padding: 0 4px; font-size: 11px; border-bottom-width: 2px; }
 .perk-icon { width: 22px; height: 22px; fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.perk:hover:not(:disabled) .perk-icon { stroke: var(--accent); }
+@media (hover: hover) { .perk:hover:not(:disabled) .perk-icon { stroke: var(--accent); } }
 .perk b { max-width: 100%; font: 700 12px/1.1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .perk-desc { margin: 0 2px 6px; min-height: 1.3em; font-size: 13px; color: var(--muted); }
 .perk-desc strong { color: var(--accent); }
@@ -929,7 +930,7 @@ a.wordmark { text-decoration: none; }
   background: var(--panel-2); border: 1px solid var(--line); border-top: 3px solid var(--rc, var(--line)); border-radius: 0;
   clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
 }
-.cos-card:hover:not(:disabled) { background: var(--panel-3); border-color: var(--line-strong); border-top-color: var(--rc); }
+@media (hover: hover) { .cos-card:hover:not(:disabled) { background: var(--panel-3); border-color: var(--line-strong); border-top-color: var(--rc); } }
 .cos-card b { font: 700 15px/1.1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cos-card small { font: 700 11px/1.2 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--rc); }
 .cos-card.worn { border-color: var(--accent); background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent); border-top-color: var(--accent); }
@@ -1095,6 +1096,42 @@ body.phone-hud .rs b { font-size: 17px; }
 @media (max-width: 899px) { body.phone-hud .rs:nth-child(n + 3) { display: none; } body.phone-hud .rs-grid { grid-template-columns: repeat(2, auto); } }
 
 /*
+ * What a phone shows when (phonefocus.ts; phonehud.ts flags the page): the chat folds to a pip while there is something to read
+ * and a tap shows its lines; the emote (GG) button comes up only as a round nears its end; the range's readout keeps its last
+ * hit until tapped open; medals land as a small chip beside the minimap for a moment.
+ */
+.chat-pip { display: none; }
+body.phone-hud:not(.phone-chat-open) .chat { visibility: hidden; }
+body.phone-hud:is(.phone-chat-pip, .phone-chat-open) .chat-pip {
+  position: absolute; z-index: 12; display: grid; place-items: center; padding: 0; min-height: 0;
+  background: rgba(19, 21, 25, 0.72); border: 2px solid rgba(236, 230, 214, 0.35); border-radius: 50%; touch-action: none;
+}
+body.phone-hud .chat-pip svg { width: 18px; height: 18px; fill: var(--ink); }
+body.phone-hud .chat-pip b {
+  position: absolute; top: -3px; right: -3px; min-width: 16px; padding: 1px 4px; border-radius: 8px;
+  background: var(--accent); color: #1c1f26; font: 800 12px/14px var(--display); text-align: center;
+}
+body.phone-hud .chat-pip b:empty, body.phone-hud.phone-chat-open .chat-pip b { display: none; }
+body.phone-hud.phone-chat-open .chat-pip { border-color: var(--accent); }
+body.phone-hud:not(.phone-gg) .touch-emote { display: none !important; }
+body.phone-hud:not(.phone-range-full) :is(.rs-head, .rs:nth-child(n + 2)) { display: none; }
+body.phone-hud .rs-grid { cursor: pointer; }
+body.phone-hud .medals { transform: none; flex-direction: column; align-items: flex-start; gap: 6px; }
+body.phone-hud .medal-toast {
+  display: flex; align-items: center; gap: 6px; width: auto; max-width: 100%; height: 30px; padding: 0 10px 0 3px;
+  background: var(--panel-3); border: 2px solid #1c1f26; border-left: 3px solid var(--gold); border-radius: 6px; box-shadow: 3px 4px 0 rgba(5, 6, 9, 0.55);
+  animation: medal-chip-in 0.18s cubic-bezier(.2, 1.5, .4, 1) both, medal-out 0.3s ease-in 1.5s both;
+}
+body.phone-hud .medal-toast.career { width: auto; }
+body.phone-hud .medal-art, body.phone-hud .medal-toast.career .medal-art { flex: none; width: 26px; height: 26px; filter: none; animation: none; }
+body.phone-hud .medal-art svg { width: 26px; height: 26px; }
+body.phone-hud :is(.medal-rays, .medal-ring, .medal-spark, .medal-shine, .medal-banner) { display: none; }
+body.phone-hud .medal-art::after { display: none; }
+body.phone-hud .medal-name, body.phone-hud .medal-toast.career .medal-name { min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: none; }
+body.phone-hud .medal-score { font-size: 14px; animation: none; }
+@keyframes medal-chip-in { from { transform: translateX(-12px) scale(0.9); opacity: 0; } }
+
+/*
  * The death card on a phone on its side (deathflow.ts): phonehud.ts sizes #death to the visible screen inside the insets and
  * clear of the cog, and the card shows one step at a time with only what matters. Stats is the killer, the gun, one gold line
  * and Try again (More opens the tiles, records and nemesis); Loadout is weapon, color and armor as three labelled rows of
@@ -1106,8 +1143,11 @@ body.phone-hud .rs b { font-size: 17px; }
 .death.compact .death-body { padding: 14px 16px 2px; }
 .death.compact .death-foot { padding: 8px 10px 10px; gap: var(--s2); min-height: 52px; }
 .death.compact .death-foot button { min-height: 44px; }
-.death.compact .death-foot #respawn { flex: 0 1 260px; margin-left: auto; font-size: 20px; }
+.death.compact .death-foot #respawn { flex: 0 1 260px; margin: 0 0 0 auto; font-size: 20px; }
 .death.compact .death-body > h2:first-child { font-size: 24px; line-height: 1.05; overflow-wrap: anywhere; }
+/* Stats is three short lines: the buttons sit right under them, with no strip between. */
+.death.compact[data-step="stats"] .death-body { flex: 0 1 auto; padding-bottom: 0; }
+.death.compact[data-step="stats"] .death-foot { padding-top: 4px; min-height: 0; }
 .death.compact .death-cause { font-size: 15px; }
 .death.compact .death-gist { font-size: 14px; }
 .death.compact .recap { margin-top: var(--s3); }
