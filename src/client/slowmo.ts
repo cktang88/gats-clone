@@ -15,6 +15,9 @@ export const SLOWMO = {
   maxLagMs: 780,
 } as const;
 
+/** The timeline's shape, so another moment (the menu's attract mode) can slow down by its own numbers. */
+export type SlowShape = { readonly rate: number; readonly rampInMs: number; readonly durationMs: number; readonly rampOutMs: number };
+
 /** The medals big enough to stop the clock for. */
 export const SLOWMO_MEDALS: ReadonlySet<MedalId> = new Set<MedalId>(['quadKill', 'massacre', 'reaper']);
 
@@ -33,7 +36,7 @@ export type Warp = {
 export const IDLE_WARP: Warp = { lag: 0, startedAt: null, focus: null, pending: null, lastAt: -Infinity };
 
 /** Playback speed t ms into the slow part: 1 before it, `rate` through the hold, back to 1 at the end. */
-export function speedAt(t: number, s = SLOWMO): number {
+export function speedAt(t: number, s: SlowShape = SLOWMO): number {
   if (t <= 0) return 1;
   if (t < s.rampInMs) return 1 + (s.rate - 1) * (t / s.rampInMs);
   const out = s.durationMs - s.rampOutMs;
@@ -43,7 +46,7 @@ export function speedAt(t: number, s = SLOWMO): number {
 }
 
 /** The lag the whole slow part builds up: what the speed curve gives away relative to real time. Used to check it fits `maxLagMs`. */
-export function totalLag(s = SLOWMO): number {
+export function totalLag(s: SlowShape = SLOWMO): number {
   const dt = 5;
   let lag = 0;
   for (let t = 0; t < s.durationMs; t += dt) lag += (1 - speedAt(t + dt / 2, s)) * dt;
@@ -53,7 +56,7 @@ export function totalLag(s = SLOWMO): number {
 const easeOut = (x: number) => 1 - (1 - Math.min(1, Math.max(0, x))) ** 3;
 
 /** How far into the cinematic look (zoom, bars) the slow part is, 0 to 1: eased in with the ramp, eased out with the last stretch. */
-export function intensityAt(t: number | null, s = SLOWMO): number {
+export function intensityAt(t: number | null, s: SlowShape = SLOWMO): number {
   if (t === null || t < 0 || t >= s.durationMs) return 0;
   return Math.min(easeOut(t / s.rampInMs), easeOut((s.durationMs - t) / s.rampOutMs));
 }

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/client/main.ts --bundle --format=esm --outfile=public/game.js --sourcemap && esbuild src/client/profile.ts --bundle --format=esm --outfile=public/profile.js --sourcemap && esbuild src/client/vehicleworker.ts --bundle --format=esm --outfile=public/vehicles.js --sourcemap && esbuild src/client/reset.ts --bundle --format=esm --outfile=public/reset.js --sourcemap",
+    "build": "esbuild src/client/main.ts --bundle --format=esm --outfile=public/game.js --sourcemap && esbuild src/client/profile.ts --bundle --format=esm --outfile=public/profile.js --sourcemap && esbuild src/client/vehicleworker.ts --bundle --format=esm --outfile=public/vehicles.js --sourcemap && esbuild src/client/attractworker.ts --bundle --format=esm --outfile=public/attract.js --sourcemap && esbuild src/client/reset.ts --bundle --format=esm --outfile=public/reset.js --sourcemap",
     "start": "npm run build && node src/server/main.ts",
     "test": "node --test 'test/**/*.test.ts'",
     "typecheck": "tsc --noEmit"

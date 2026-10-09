@@ -101,6 +101,9 @@ export function frameTick(frameMs: number, now: number, inMatch: boolean): void 
   notify?.(`Graphics lowered to ${PRESET_INFO[lower].name}: the frame rate stayed low. Change it in Pause, Settings.`);
 }
 
+/** Whether Auto is still timing the first frames: the menu's attract mode waits for it, so its frames never weigh on the pick. */
+export const probing = (): boolean => !probed;
+
 export type QualityReadout = { setting: string; preset: PresetId; autoWhy: string; fps: number | null; ms: number | null; worst: number | null; renderer: string | null };
 
 export function qualityState(): QualityReadout {

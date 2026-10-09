@@ -81,10 +81,10 @@ export function replayView(frame: Snapshot, now: number, myId: number, fallback:
   return { clockOffset: serverMs(frame) - now, self: me ? { x: me.x, y: me.y } : fallback };
 }
 
-/** Draws one replayed frame through the normal world renderer. */
-export function drawStage(ctx: CanvasRenderingContext2D, stage: Stage, snap: Snapshot, cam: Camera, dpr: number, now: number, killerId: number | null): void {
+/** Draws one replayed frame through the normal world renderer; `bare` draws only the world, with no names, bars or marks (attract.ts). */
+export function drawStage(ctx: CanvasRenderingContext2D, stage: Stage, snap: Snapshot, cam: Camera, dpr: number, now: number, killerId: number | null, bare = false): void {
   const v = replayView(snap, now, stage.shadow.myId, stage.shadow.lastSelf);
   stage.shadow.snaps = { snaps: stage.shadow.snaps.snaps, serverClockOffset: v.clockOffset };
   stage.shadow.lastSelf = v.self;
-  drawWorld(ctx, { snap, s: stage.shadow, cam, dpr, now, selfAngle: null, killerId });
+  drawWorld(ctx, { snap, s: stage.shadow, cam, dpr, now, selfAngle: null, killerId, bare });
 }

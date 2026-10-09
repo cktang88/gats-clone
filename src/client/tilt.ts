@@ -322,7 +322,9 @@ export function createGroundCache() {
     layer = { canvas: out, x: -LAYER_PAD, y: -LAYER_PAD, scale: LAYER_SCALE };
     return layer;
   };
-  return { get, bakes: () => bakes };
+  /** Lets the layer go; the next `get` bakes afresh. */
+  const clear = () => { layout = null; size = 0; floor = hard = null; movingKey = null; layer = null; };
+  return { get, bakes: () => bakes, clear };
 }
 
 export function drawGround(ctx: CanvasRenderingContext2D, layer: GroundLayer, x0: number, y0: number, x1: number, y1: number) {

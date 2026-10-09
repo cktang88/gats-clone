@@ -1,6 +1,8 @@
 node_modules
 public/game.js
 public/game.js.map
+public/attract.js
+public/attract.js.map
 public/profile.js
 public/profile.js.map
 public/vehicles.js

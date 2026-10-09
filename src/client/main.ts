@@ -91,6 +91,7 @@ import { COSMETIC_BY_ID, type Slot } from '../shared/cosmetics.ts';
 import { cosLook, lookOfEquipped } from './cosmeticlook.ts';
 import type { SceneId } from './modecards.ts';
 import { createMenuScene } from './menuscene.ts';
+import { createAttract } from './attract.ts';
 import { createGearStage } from './gearup.ts';
 import { createMenuFlow } from './menuflow.ts';
 import { createWardrobe } from './wardrobe.ts';
@@ -734,7 +735,7 @@ function drawFrame(realNow: number) {
   const interpolated = s && sampleAt(s.snaps.snaps, rt);
   if (!s || !interpolated || !latest) {
     // The menu's own diorama covers the screen, so the world's backdrop is not drawn under it.
-    if (state.phase === 'menu' && !menuEl.hidden && menuScene.running) return;
+    if (state.phase === 'menu' && !menuEl.hidden && (attract.frame(realNow, view) || menuScene.running)) return;
     drawBackdrop(ctx, view.w, view.h, view.dpr, now);
     if (processFrame(canvas, { night: 0, storm: false }, now, view.w, view.h, view.dpr)) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
     return;
@@ -1237,7 +1238,9 @@ const skinNow = () => cosLook({ g: wardrobe.state().equipped.gunSkin }).skin;
 // The menu's art: the backdrop yard and the gear-up stage, run by the flow (menuflow.ts) only while seen.
 const menuScene = createMenuScene($<HTMLCanvasElement>('menu-scene'), reducedMotion);
 const gearStage = createGearStage($<HTMLCanvasElement>('gear-view'), { loadout: () => loadout, look: () => lookOfEquipped(wardrobe.state().equipped), calm: reducedMotion });
-const flow = createMenuFlow({ menu: menuEl, stage: gearStage, scene: menuScene });
+// A live bot match behind the menu (attract.ts), drawn on the game canvas; the yard stands in until it is ready, and whenever it is off.
+const attract = createAttract({ canvas, ctx, menu: menuEl, fallback: menuScene, calm: reducedMotion, restore: resize });
+const flow = createMenuFlow({ menu: menuEl, stage: gearStage, scene: attract });
 /** The enlist plate on the first screen (guests only), and the death card's one quiet line when a guest has something at stake. */
 const enlist = mountEnlist($('enlist'), {
   auth: (kind, name, pass, email) => account.auth(kind, name, pass, email),

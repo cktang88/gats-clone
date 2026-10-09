@@ -105,6 +105,8 @@ let lightBroken = false;
 /** The pause menu's Effects option (settings.ts `fxPlan`): lighting switched off by choice, and the frame-time governors held back. */
 let lightOff = false;
 let holdGovernors = false;
+/** The menu's attract mode is drawing (attract.ts): its capped, low-resolution frames say nothing about the GPU in a match. */
+let attractHold = false;
 /** Multipliers from the graphics preset (quality.ts) on the lights, their shadows, the glow and the grain. */
 let rendererName: string | undefined;
 /** The GPU's name as the browser reports it (undefined when hidden), for the graphics menu. */
@@ -393,7 +395,7 @@ export function processFrame(source: HTMLCanvasElement, c: Context, now: number,
       if (sceneTex) scene = sceneTex;
       // Frame pacing is the honest GPU meter, but only a sustained stretch of slow frames counts (lightGovernor): step down a tier, then give the lights up.
       const t = performance.now();
-      if (lastLit && !forced && !holdGovernors) {
+      if (lastLit && !forced && !holdGovernors && !attractHold) {
         const step = governor.push(t - lastLit, lastCpuMs, t, tierIx, TIERS.length - 1, true);
         if (step.action === 'down') { tierIx++; note('step down', step.why); }
         else if (step.action === 'up') { tierIx--; note('step up', step.why); }
@@ -440,7 +442,7 @@ export function processFrame(source: HTMLCanvasElement, c: Context, now: number,
   g.uniform3f(u.gain, ...grade.gain);
   pass(g, p, null, w, h, [scene, h0.tex, q0.tex], ['src', 'bloomA', 'bloomB']);
   lastCpuMs = lastCpuMs * 0.9 + (performance.now() - t0) * 0.1;
-  if (!forced && !holdGovernors) {
+  if (!forced && !holdGovernors && !attractHold) {
     const t = performance.now();
     if (lightBroken && !lightOff && retryAt && t > retryAt && retried < 2) {
       // Lights were given up for being slow; a long while later, try the leanest tier once more.
@@ -452,6 +454,14 @@ export function processFrame(source: HTMLCanvasElement, c: Context, now: number,
     }
   }
   return true;
+}
+
+/** Holds the lighting governor while the menu's attract mode draws, and hands it a fresh start (after a settling moment) when it stops. */
+export function holdForAttract(on: boolean): void {
+  if (attractHold === on) return;
+  attractHold = on;
+  lastLit = 0;
+  governor.holdUntil(on ? Infinity : performance.now() + 2000);
 }
 
 /** The plain-canvas path drew this frame (a menu with no world, say): hide the shader canvas so a stale frame never shows. */

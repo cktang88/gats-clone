@@ -36,6 +36,7 @@ import { drawDust, drawVignette } from './ambience.ts';
 import { moodOf, setMood } from './mood.ts';
 import { drawNightFx } from './nightfx.ts';
 import { setLightClock } from './lighting.ts';
+import { onMapChange } from './mapscope.ts';
 import { lightBackdrop, lightWorld } from './lightfeed.ts';
 import { drawFixtures } from './fixtures.ts';
 import { floorPlanOf } from './floor.ts';
@@ -66,13 +67,15 @@ const CULL_MARGIN = 80;
 
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 
-type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; /** The real clock, for juice that keeps moving through a hit-stop. */ fxNow?: number; selfAngle: number | null; killerId: number | null; ghost?: Ghost | null };
+type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; /** The real clock, for juice that keeps moving through a hit-stop. */ fxNow?: number; selfAngle: number | null; killerId: number | null; ghost?: Ghost | null; /** Only the world: no names, health bars, chatter, emote bubbles, marks or damage numbers (the menu's attract mode). */ bare?: boolean };
 type View = { x0: number; y0: number; x1: number; y1: number };
 
 const inView = (v: View, x: number, y: number, w: number, h: number) => x + w >= v.x0 && x <= v.x1 && y + h >= v.y0 && y <= v.y1;
 const solidInView = (v: View, s: Solid) => inView(v, s.x, s.y, s.w + LIP, s.h + LIP + FOOT);
 
 const ground = createGroundCache();
+// The ground layer is one map's: a new map (or the menu's attract mode letting go, see attract.ts) frees it rather than holding it till the next bake.
+onMapChange(() => ground.clear());
 const mapWallKeys = new WeakMap<readonly WallView[], string>();
 export function mapWallsKey(walls: readonly WallView[]): string {
   let key = mapWallKeys.get(walls);
@@ -214,7 +217,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const p of downed) drawDowned(ctx, p, colorOf(p), serverNow(s.snaps, now), p.id === s.myId, now, k);
   drawGunGlints(ctx, s.corpses, now, (x, y) => inView(view, x - R, y - R, R * 2, R * 2));
   drawMotionBelow(ctx, now);
-  const tags = bodyTags(alive, s, now);
+  const tags = bodyTags(f.bare ? [] : alive, s, now);
   drawNamesUnderBodies(ctx, tags, dark, now);
   const recoil = kicks(s.effects, now);
   const flinches = flinchOf(s);
@@ -259,18 +262,18 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   if (geo?.map.roofs?.length) drawRoofs(ctx, geo, [s.lastSelf, ...snap.players.filter((p) => p.alive && p.id !== s.myId && mine?.team && p.team === mine.team)]);
   drawAmbientSky(ctx, now, view);
   drawBars(ctx, tags, dark);
-  drawEmoteBubbles(ctx, alive, now, dark);
+  if (!f.bare) drawEmoteBubbles(ctx, alive, now, dark);
   // Soldier chatter: skipped under the killcam, slow-motion and the round-end celebration, and for anyone showing an emote.
   const overlay = !!snap.match.winner || ['dl-slowmo', 'dl-play', 'dl-hold', 'dl-settle'].some((c) => !!document?.body?.classList?.contains(c));
   const emoting = (pid: number) => emoteOf(pid, now) !== null;
-  chatter.tick(snap, s.myId, now, { overlay, emoting });
-  if (!overlay) drawChatter(ctx, alive, now, dark, cam.scale, uiScaleFor(cam.w, cam.h), reducedMotion(), emoting);
+  if (!f.bare) chatter.tick(snap, s.myId, now, { overlay, emoting });
+  if (!overlay && !f.bare) drawChatter(ctx, alive, now, dark, cam.scale, uiScaleFor(cam.w, cam.h), reducedMotion(), emoting);
   if (f.ghost && snap.run) drawGhost(ctx, f.ghost, s.lastSelf, snap.run.core, now, k);
   const killer = f.killerId === null ? undefined : alive.find((p) => p.id === f.killerId);
   if (killer) drawKillerMark(ctx, killer, now, dark);
-  const nemesis = killer || snap.self.nemesis === null ? undefined : alive.find((p) => p.id === snap.self.nemesis && !p.hidden);
+  const nemesis = killer || f.bare || snap.self.nemesis === null ? undefined : alive.find((p) => p.id === snap.self.nemesis && !p.hidden);
   if (nemesis) drawKillerMark(ctx, nemesis, now, dark, 'NEMESIS');
-  drawJuice(ctx, f.fxNow ?? now, MARK_Y - 10);
+  if (!f.bare) drawJuice(ctx, f.fxNow ?? now, MARK_Y - 10);
   // What you just picked up, over your own soldier.
   drawGains(ctx, f.fxNow ?? now, mine?.alive ? mine : null, reducedMotion());
 }
