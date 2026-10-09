@@ -962,6 +962,10 @@ a.wordmark { text-decoration: none; }
 .chal.done .chal-count { color: var(--ok); }
 .chal-reward { grid-column: 1 / -1; display: grid; grid-template-columns: 140px 1fr; gap: var(--s3); align-items: center; padding: 10px 14px; background: var(--well); border: 1px solid var(--line); border-top: 3px solid var(--rc); }
 .chal-reward-info { display: grid; gap: 4px; justify-items: start; }
+.chal-reward-progress { justify-self: stretch; display: grid; gap: 3px; margin-top: 2px; }
+.chal-reward-progress .chal-bar, .chal-reward-progress .chal-count { grid-column: auto; grid-row: auto; }
+.chal-reward-progress.done .chal-bar i { background: var(--ok); }
+.chal-reward-progress.done .chal-count { color: var(--ok); }
 .chal-reward-info b { font: italic 900 22px/1 var(--display); text-transform: uppercase; }
 .chal-reward-info small { font: 600 12px var(--text); color: var(--muted); letter-spacing: 0; text-transform: none; }
 .chal-reward.got { opacity: 0.8; }

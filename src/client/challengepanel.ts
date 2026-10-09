@@ -12,16 +12,21 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''):
   return n;
 };
 
-function row(c: ChallengeView, rewardNote: boolean): HTMLElement {
-  const li = el('li', `chal${c.done ? ' done' : ''}`);
-  const text = el('span', 'chal-text', c.text);
-  const xp = el('b', 'chal-xp', `+${c.xp} XP`);
+/** A challenge's progress bar and its count ("12 / 40", or "Complete"): the same on a row and on the weekly reward card. */
+function progressOf(c: ChallengeView): [HTMLElement, HTMLElement] {
   const track = el('div', 'chal-bar');
   const fill = el('i');
   fill.style.width = `${Math.round(challengePct(c) * 100)}%`;
   track.append(fill);
   const count = el('small', 'chal-count', c.done ? 'Complete' : `${Math.min(c.progress, c.target).toLocaleString('en-US')} / ${c.target.toLocaleString('en-US')}`);
-  li.append(text, xp, track, count);
+  return [track, count];
+}
+
+function row(c: ChallengeView, rewardNote: boolean): HTMLElement {
+  const li = el('li', `chal${c.done ? ' done' : ''}`);
+  const text = el('span', 'chal-text', c.text);
+  const xp = el('b', 'chal-xp', `+${c.xp} XP`);
+  li.append(text, xp, ...progressOf(c));
   if (rewardNote && c.grant) li.append(el('em', 'chal-gift', 'Reward item'));
   return li;
 }
@@ -67,6 +72,10 @@ export function createChallengePanel(root: HTMLElement) {
         el('span', 'rarity ' + `r-${reward.item.rarity}`, `${RARITY_NAME[reward.item.rarity]} ${SLOT_LABEL[reward.item.slot].toLowerCase()}`),
         el('small', 'chal-for', `For: ${reward.challenge.text}`),
       );
+      const [track, count] = progressOf(reward.challenge);
+      const progress = el('div', `chal-reward-progress${reward.challenge.done ? ' done' : ''}`);
+      progress.append(track, count);
+      info.append(progress);
       card.append(art, info);
       parts.push(card);
       requestAnimationFrame(() => drawItem(art, reward.item));
