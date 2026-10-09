@@ -1,6 +1,6 @@
 import { BUILDINGS, isTurretKind, MAX_LEVEL, WORLD, ZOM, type BuildingKind, type TurretKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunView, Snapshot, ZombieView } from '../shared/protocol.ts';
-import { cellRect, coreRectAt, levelOf, maxLevelOf } from '../shared/sim/build.ts';
+import { cellRect, coreRectAt, costOf, levelOf, maxLevelOf } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 import { HIT_FLASH_MS } from './effects.ts';
 import { INK, PALETTE, tint } from './palette.ts';
@@ -580,6 +580,27 @@ export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: 
 
 const GHOST_LOOK = { ok: PALETTE.hpGood, no: PALETTE.hpBad, down: '#ff9f43' } as const;
 
+/** One cell of the ghost: the building seen through where it would stand (unless one stands there), washed and edged in `color`. */
+function drawGhostCell(ctx: CanvasRenderingContext2D, ghost: Ghost, cx: number, cy: number, color: string, preview: boolean, core: { x: number; y: number }, now: number) {
+  const { x, y, w, h } = cellRect(cx, cy);
+  if (preview) {
+    ctx.globalAlpha = 0.6;
+    const at = { cx, cy, hp: 10, kind: ghost.kind, lv: ghost.lv } as BuildingView;
+    if (ghost.kind === 'spikes') drawSpikes(ctx, at, now);
+    else {
+      drawSolids(ctx, [buildingSolid(at)]);
+      if (ghost.kind !== 'wall') drawHead(ctx, at, x + w / 2, y + h / 2 - 2, Math.atan2(y + h / 2 - core.y, x + w / 2 - core.x), 0, now);
+    }
+  }
+  ctx.globalAlpha = 0.3 + 0.1 * Math.sin(now / 160);
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = color;
+  ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+}
+
 /** The ghost previews the chosen tier or kind where it would stand, seen through, then a plate naming it (and, over a building, its level, health and upgrade). */
 export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x: number; y: number }, core: { x: number; y: number }, now: number, pxPerUnit: number) {
   ctx.setLineDash([12, 10]);
@@ -594,24 +615,25 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
   ctx.arc(self.x, self.y, ZOM.reachPx, 0, TAU);
   ctx.stroke();
   ctx.setLineDash([]);
-  const { x, y, w, h } = cellRect(ghost.cx, ghost.cy);
+  const { x, y, w } = cellRect(ghost.cx, ghost.cy);
   const color = ghost.refusal === null ? GHOST_LOOK.ok : ghost.refusal === 'taken' ? GHOST_LOOK.down : GHOST_LOOK.no;
-  if (ghost.refusal !== 'taken') {
-    ctx.globalAlpha = 0.6;
-    const at = { cx: ghost.cx, cy: ghost.cy, hp: 10, kind: ghost.kind, lv: ghost.lv } as BuildingView;
-    if (ghost.kind === 'spikes') drawSpikes(ctx, at, now);
-    else {
-      drawSolids(ctx, [buildingSolid(at)]);
-      if (ghost.kind !== 'wall') drawHead(ctx, at, x + w / 2, y + h / 2 - 2, Math.atan2(y + h / 2 - core.y, x + w / 2 - core.x), 0, now);
+  if (ghost.line) {
+    // A dragged line: every cell its own ghost, green where it goes up and red where it is passed over, each tagged with what it costs.
+    const cost = costOf(ghost.kind, ghost.lv);
+    for (const c of ghost.line) drawGhostCell(ctx, ghost, c.cx, c.cy, c.refusal === null ? GHOST_LOOK.ok : GHOST_LOOK.no, c.refusal !== 'taken', core, now);
+    ctx.font = '800 13px "Barlow Condensed", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    for (const c of ghost.line) {
+      const at = cellRect(c.cx, c.cy);
+      ctx.strokeStyle = 'rgba(28, 31, 38, 0.85)';
+      ctx.strokeText(`${cost}`, at.x + at.w / 2, at.y + at.h / 2);
+      ctx.fillStyle = c.refusal === null ? '#ffffff' : '#ffb3a8';
+      ctx.fillText(`${cost}`, at.x + at.w / 2, at.y + at.h / 2);
     }
-  }
-  ctx.globalAlpha = 0.3 + 0.1 * Math.sin(now / 160);
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y, w, h);
-  ctx.globalAlpha = 1;
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = color;
-  ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+  } else drawGhostCell(ctx, ghost, ghost.cx, ghost.cy, color, ghost.refusal !== 'taken', core, now);
   if (!ghost.label) return;
   const lines = ghost.detail ? [ghost.label, ghost.detail] : [ghost.label];
   // The plate is drawn in the world, so zoomed out it grows to stay readable.

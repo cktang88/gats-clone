@@ -1,4 +1,5 @@
 import { pickOptions, WORLD, ZOM, type BuildingKind, type ModeId } from '../shared/defs.ts';
+import { linesOf } from '../shared/sim/build.ts';
 import type { MapId } from '../shared/maps.ts';
 import { cleanName, type ClientMsg, type Loadout, type PlayerView, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
@@ -67,7 +68,7 @@ import { closeVerdict, retryAfterFailure, retryNow, socketRole, startRetry } fro
 import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './state.ts';
 import { aimTurrets, nextCoreHitAt } from './siege.ts';
 import { addCorpse, addZombieCorpse, explosiveDeath } from './corpses.ts';
-import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, nextTier, squadFromSearch, stepItem, upgradeTarget, withSquad, type BuildChip, type Ghost } from './zombies.ts';
+import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, lineGhostAt, nextTier, squadFromSearch, stepItem, upgradeTarget, withSquad, type BuildChip, type Ghost } from './zombies.ts';
 import { trackRootScale } from './uiscale.ts';
 import { createPauseMenu, showToast } from './pausemenu.ts';
 import { installPointerLock, lockWanted } from './pointerlock.ts';
@@ -160,6 +161,8 @@ const params = new URLSearchParams(location.search);
 const delaySend = makeDelay(Number(params.get('lag')) || 0, 0);
 const delayRecv = makeDelay(Number(params.get('lag')) || 0, Number(params.get('jitter')) || 0);
 let ghost: Ghost | null = null;
+/** A line being dragged out in build mode: the cell the press began on, till the button comes up (Esc or a right click drops it). */
+let drag: { cx: number; cy: number } | null = null;
 
 /** The session whose socket is live. While reconnecting the old session is only drawn, never sent to. */
 const sessionOf = (st: ClientState): Session | null => (st.phase === 'playing' || st.phase === 'dead' ? st.s : null);
@@ -642,10 +645,24 @@ function buildClick(s: Session, e: MouseEvent) {
   const chip: BuildChip | null = e.button === 0 ? buildChipAt(mouse.x, mouse.y) : null;
   if (chip) return pressBuildChip(s, chip);
   if (!ghost) return;
+  if (e.button === 2 && drag) { drag = null; return; }
+  // A press on an open cell with a wall or spike strip picked starts a line; letting go builds it (`finishDrag`), a press let go where it began builds the one.
+  if (e.button === 0 && linesOf(ghost.kind) && ghost.refusal !== 'taken') { drag = { cx: ghost.cx, cy: ghost.cy }; return; }
   if (e.button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: ghost.kind, cx: ghost.cx, cy: ghost.cy, ...(ghost.kind === 'wall' && ghost.lv > 1 && { lv: ghost.lv }) });
   else if (e.button === 0 && ghost.refusal === 'taken' && ghost.upgrade === null) send(s.ws, { t: 'upgrade', cx: ghost.cx, cy: ghost.cy });
   else if (e.button === 2 && ghost.refusal === 'taken') send(s.ws, { t: 'demolish', cx: ghost.cx, cy: ghost.cy });
   else return;
+  playClick(s);
+}
+
+/** The button came up on a dragged line: what its ghost showed goes up, the server judging each cell again in the same order. */
+function finishDrag() {
+  const s = sessionOf(state), line = drag && ghost?.line;
+  drag = null;
+  if (!s || state.phase !== 'playing' || !s.building || !ghost || !line?.some((c) => c.refusal === null)) return;
+  const lv = ghost.kind === 'wall' && ghost.lv > 1 ? { lv: ghost.lv } : {};
+  if (line.length === 1) send(s.ws, { t: 'build', kind: ghost.kind, cx: line[0]!.cx, cy: line[0]!.cy, ...lv });
+  else send(s.ws, { t: 'build', kind: ghost.kind, cells: line.map((c): [number, number] => [c.cx, c.cy]), ...lv });
   playClick(s);
 }
 
@@ -747,10 +764,11 @@ function drawFrame(realNow: number) {
   noteFrame(s, snap, aimCamera, selfAngle, now);
   const killerId = state.phase === 'dead' ? state.kill?.killerId ?? null : null;
   const site = s.building && mouseAiming ? buildSiteOf(latest, s.walls, s.lastSelf) : null;
-  ghost = site && ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize, s.buildTier);
+  if (drag && (!site || !linesOf(s.buildKind))) drag = null;
+  ghost = site && (drag ? lineGhostAt(site, s.buildKind, drag, screenToWorld(aimCamera, mouse), s.worldSize, s.buildTier) : ghostAt(site, s.buildKind, screenToWorld(aimCamera, mouse), s.worldSize, s.buildTier));
   // With the cursor on the build bar, the cell last hovered stays judged (and shown), so the bar's upgrade chip has a building to act on.
   const held = s.buildGhost;
-  if (site && held && buildChipAt(mouse.x, mouse.y) !== null) ghost = ghostAt(site, s.buildKind, { x: (held.cx + 0.5) * ZOM.cell, y: (held.cy + 0.5) * ZOM.cell }, s.worldSize, s.buildTier);
+  if (site && held && !drag && buildChipAt(mouse.x, mouse.y) !== null) ghost = ghostAt(site, s.buildKind, { x: (held.cx + 0.5) * ZOM.cell, y: (held.cy + 0.5) * ZOM.cell }, s.worldSize, s.buildTier);
   s.buildGhost = ghost;
   if (delight.drawKillcam(ctx, s, state.phase === 'dead', view, realNow)) {
     // The killcam's world is lit like the live one: the shader pass must take THIS frame, or its canvas keeps showing the last live frame (the normal camera) while the 2D one has been cleared for it.
@@ -799,6 +817,7 @@ function onKeyDown(e: KeyboardEvent) {
     e.preventDefault();
     // A held Escape's repeat would close the pause menu it just opened, as would the Esc that just let the captured mouse go.
     if (e.repeat || plock.escapeSpent(performance.now())) return;
+    if (drag) { drag = null; return; }
     const action = escapeAction({ inMatch: true, typing: false, pauseOpen: pause.isOpen(), confirming: pause.confirming(), wheelOpen: wheel.open, rangeOpen: rangeUi.isOpen(), building: s.building });
     if (action === 'cancel-leave') pause.cancelConfirm();
     else if (action === 'close-pause') pause.close();
@@ -984,7 +1003,7 @@ canvas.addEventListener('mousedown', (e) => {
   state.s.shots++;
   shooting.fireIfDue(state.s, performance.now());
 });
-window.addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
+window.addEventListener('mouseup', (e) => { if (e.button === 0) { firing = false; if (drag) finishDrag(); } });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 // In build mode the wheel steps through what can be built instead of zooming or scrolling.
 canvas.addEventListener('wheel', (e) => {

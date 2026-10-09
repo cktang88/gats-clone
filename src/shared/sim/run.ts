@@ -3,7 +3,7 @@ import { MAPS } from '../maps.ts';
 import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
-import { buildingView, buildRefusal, cellRect, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
+import { buildingView, buildRefusal, cellRect, linesOf, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
 import { armorWatch, tickArmor, tickTraps, tickUtilities, trapWatch } from './utility.ts';
 import { circleBlocked, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
@@ -97,6 +97,15 @@ export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: 
   }
   statsFor(run, p).built++;
   return null;
+}
+
+/**
+ * A line dragged out in build mode: each cell in order from its start goes up by the single build's rules (day, reach, a free cell, the scrap),
+ * so the line stands as far as the scrap lasts and a cell that cannot take it is passed over. Answers each cell's refusal, null for those built.
+ */
+export function buildLine(w: World, id: number, kind: BuildingKind, cells: readonly (readonly [number, number])[], lv = 1): (BuildRefusal | null)[] {
+  if (!linesOf(kind) || cells.length > ZOM.lineMax) return cells.map(() => 'notDay');
+  return cells.map(([cx, cy]) => build(w, id, kind, cx, cy, lv));
 }
 
 const standingAt = (w: World, cx: number, cy: number) => w.buildings.find((b) => b.cx === cx && b.cy === cy) ?? w.floor.find((b) => b.cx === cx && b.cy === cy);
@@ -211,7 +220,9 @@ function spawnUnit(w: World, run: Run, { kind, side, n }: HordeUnit) {
   const ax = strip.x + rand(w) * strip.w, ay = strip.y + rand(w) * strip.h;
   for (let left = n; left > 0; left -= SUB_GROUP) {
     const want = Math.min(left, SUB_GROUP), shift = (rand(w) - 0.5) * 2 * SUB_SPREAD * (n > SUB_GROUP ? 1 : 0);
-    const sx = alongX ? ax + shift : ax, sy = alongX ? ay : ay + shift;
+    // A sub-group shifted past the strip's end is pulled back in, so its spread never piles onto the end and its crush shoves it off its side.
+    const half = PACK_SPREAD / 2;
+    const sx = alongX ? clamp(ax + shift, strip.x + half, strip.x + strip.w - half) : ax, sy = alongX ? ay : clamp(ay + shift, strip.y + half, strip.y + strip.h - half);
     let pack: number | undefined;
     for (let placed = 0, tries = 0; placed < want && tries < 20 * want; tries++) {
       const x = clamp(sx + (rand(w) - 0.5) * (alongX ? PACK_SPREAD : strip.w), strip.x, strip.x + strip.w), y = clamp(sy + (rand(w) - 0.5) * (alongX ? strip.h : PACK_SPREAD), strip.y, strip.y + strip.h);

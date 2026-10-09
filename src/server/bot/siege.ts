@@ -267,23 +267,24 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const zombie = zombies.reduce<Watch['zombie']>((best, z) => (best && best.d <= z.d ? best : z), null);
   const down = snap.players.filter((p) => p.downed && p.id !== me.id);
   const downed = nearest(me, down.filter((p) => p.kind === 'human')) ?? nearest(me, down);
-  const humansBank = snap.players.some((p) => p.kind === 'human' && p.id !== me.id);
-  const spare = !humansBank || run.scrap > HUMANS_RESERVE;
+  const humansBank = mem.siegeBuild !== 'always' && snap.players.some((p) => p.kind === 'human' && p.id !== me.id);
+  const spends = mem.siegeBuild !== 'never';
+  const spare = spends && (!humansBank || run.scrap > HUMANS_RESERVE);
   const guarded = (b: BuildingView) => Math.hypot((b.cx + 0.5) * ZOM.cell - run.core.x, (b.cy + 0.5) * ZOM.cell - run.core.y) <= GUARD_RADIUS;
   const at = (b: BuildingView) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell });
   const tending = mem.motor.tending;
   const started = (b: BuildingView) => tending?.x === at(b).x && tending.y === at(b).y;
   const worn = !spare ? [] : (snap.buildings ?? [])
     .filter((b) => solid(b) && guarded(b) && (b.hp < WHOLE_TENTHS || ('ammo' in b && b.ammo <= (started(b) ? WHOLE_TENTHS - 1 : LOW_TENTHS) && run.scrap > 0))).map(at);
-  const dry = run.scrap > 0 ? (snap.buildings ?? []).filter((b) => guarded(b) && 'ammo' in b && b.ammo <= DRY_TENTHS).map(at) : [];
-  const plan = humansBank ? null : nextBuild(run, snap.buildings ?? []);
+  const dry = spends && run.scrap > 0 ? (snap.buildings ?? []).filter((b) => guarded(b) && 'ammo' in b && b.ammo <= DRY_TENTHS).map(at) : [];
+  const plan = humansBank || !spends ? null : nextBuild(run, snap.buildings ?? []);
   const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
   const coreInDanger = run.phase === 'night' && run.core.hp < run.core.maxHp * CORE_EMERGENCY_FRAC;
   const post = postFor(run.core, me.id, snap.buildings ?? []);
   const solids = squadSolids(run.core, snap.buildings ?? []);
   const watch: Watch = {
     me, core: run.core, post, zombie, zombies: siege.zombies, downed, needsTending: nearest(post, worn), dry: nearest(post, dry), tending, clear: (to) => clearWalk(arena.nav, solids, me, to), kiting: !!mem.motor.siegeStep?.kite, kiteTo: mem.motor.siegeStep?.kite ? mem.motor.siegeStep.to : null, next: buildable,
-    coreMendable: run.core.hp < run.core.maxHp && run.scrap > 0 && (coreInDanger || (spare && run.scrap > (run.phase === 'day' ? plan?.cost ?? 0 : 0))),
+    coreMendable: spends && run.core.hp < run.core.maxHp && run.scrap > 0 && (coreInDanger || (spare && run.scrap > (run.phase === 'day' ? plan?.cost ?? 0 : 0))),
   };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
   const tended = [watch.needsTending, watch.dry, watch.coreMendable ? run.core : null].find((t) => t?.x === errand.x && t?.y === errand.y);

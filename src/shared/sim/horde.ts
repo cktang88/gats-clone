@@ -237,7 +237,7 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
       if (flow[n]! >= UNREACHABLE || walled(n)) avoid.push(cellRect(nx, ny));
     }
     const s = steer(g, i, w.now, sx, sy, avoid);
-    const top = def.speed * me.speed;
+    const top = def.speed * me.speed * mul.speed;
     // A zombie that has not moved yet takes up its heading at once, so a fresh one walks in at full pace.
     const k = ai.hx === 0 && ai.hy === 0 ? 1 : Math.min(1, dt * BOID.turn);
     ai.hx += (s.wx * top - ai.hx) * k;

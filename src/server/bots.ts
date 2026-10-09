@@ -21,6 +21,11 @@ export type BotMemory = {
   tactics?: Tactics;
   /** The zombies a squad bot has lately had in sight (see siege.ts). */
   siege?: SiegeMemory;
+  /**
+   * Benches only: `always` keeps a bot on the squad's build plan with humans in the squad, as a human who builds sensibly would be;
+   * `never` has it spend nothing at all (no building, upgrading, mending or reloading), as a human who never builds. Unset, it follows the squad's rule.
+   */
+  siegeBuild?: 'always' | 'never';
 };
 
 /**

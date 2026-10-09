@@ -149,8 +149,12 @@ test('a night walks in from its forecast sides only, and a pack is split along t
   const packs = new Map<number, Zombie[]>();
   for (const z of seen) if (z.pack !== undefined) packs.set(z.pack, [...(packs.get(z.pack) ?? []), z]);
   assert.ok(packs.size > seen.length / (ZOM.maxAlive / 10), 'packs are tagged');
-  const along = (z: Zombie) => (sides.length && MAPS.outpost.siege!.horde[sides[0]!].w > MAPS.outpost.siege!.horde[sides[0]!].h ? z.x : z.y);
-  assert.ok(sd(seen.filter((z) => strips[0] && z.x >= strips[0].x && z.x <= strips[0].x + strips[0].w && z.y >= strips[0].y && z.y <= strips[0].y + strips[0].h).map(along)) > 300, 'entry points spread along the edge');
+  // On the side the most walked in from, so a night split over several sides still has a side with packs enough to judge.
+  const onStrip = strips.map((s) => seen.filter((z) => z.x >= s.x && z.x <= s.x + s.w && z.y >= s.y && z.y <= s.y + s.h));
+  const busiest = onStrip.reduce((a, b, i) => (b.length > onStrip[a]!.length ? i : a), 0);
+  const along = (z: Zombie) => (strips[busiest]!.w > strips[busiest]!.h ? z.x : z.y);
+  const spread = sd(onStrip[busiest]!.map(along));
+  assert.ok(spread > 300, `entry points spread along the edge (${spread.toFixed(0)} px over ${onStrip[busiest]!.length})`);
 });
 
 test('the horde near the core spreads round it rather than stacking on one face', () => {

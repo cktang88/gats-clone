@@ -1,6 +1,6 @@
 import { BUILDING_KINDS, BUILDINGS, hordeCount, MAX_LEVEL, nightOf, SIDES, TURRET_KINDS, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
-import { buildRefusal, cellOf, coreRectAt, costOf, levelOf, maxLevelOf, nameOf as nameAt, refundFor, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
+import { buildRefusal, cellOf, coreRectAt, costOf, levelOf, lineCells, maxLevelOf, nameOf as nameAt, planLine, refundFor, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 
 type Pose = { x: number; y: number };
@@ -175,7 +175,37 @@ export function upgradeLine(hover: HoverInfo, why: UpgradeRefusal | null): strin
 /**
  * `kind` and `lv` are what build mode would put up (a wall's `lv` its tier). With a building on the cell `hover` says what it is and `upgrade` whether it can step up; `detail` is the plate's second line.
  */
-export type Ghost = { kind: BuildingKind; lv: number; cx: number; cy: number; refusal: BuildRefusal | null; label: string; detail: string | null; hover: HoverInfo | null; upgrade: UpgradeRefusal | null };
+export type Ghost = {
+  kind: BuildingKind; lv: number; cx: number; cy: number; refusal: BuildRefusal | null; label: string; detail: string | null; hover: HoverInfo | null; upgrade: UpgradeRefusal | null;
+  /** While a line is dragged out: every cell of it from where the drag began, each judged as the server will build it; `cx`, `cy` are then its far end. */
+  line?: readonly LineCell[];
+};
+export type LineCell = { cx: number; cy: number; refusal: BuildRefusal | null };
+
+/** Why a cell of a dragged line is passed over, in a few words for the plate's count of them. */
+const SKIP_WORDS: Record<BuildRefusal, string> = {
+  notDay: 'not by night', farFromCore: 'too far out', outOfReach: 'out of reach', cover: 'blocked', core: 'blocked', taken: 'taken', body: 'someone in the way', scrap: 'short of scrap',
+};
+
+/**
+ * The ghost of a line dragged from cell `start` to the cursor at `at`: straight along the axis the drag went farther (`lineCells`), each cell judged
+ * as the server builds the line (`planLine`), so a cell shows red where it cannot go up or the scrap has run out before it.
+ */
+export function lineGhostAt(site: BuildSite, kind: BuildingKind, start: { cx: number; cy: number }, at: Pose, worldSize: number, lv = 1): Ghost {
+  const cell = cellOf(at.x, at.y), grid = worldSize / ZOM.cell;
+  const end = { cx: Math.min(grid - 1, Math.max(0, cell.cx)), cy: Math.min(grid - 1, Math.max(0, cell.cy)) };
+  const level = kind === 'wall' ? lv : 1;
+  const line = planLine(site, kind, lineCells(start, end), level);
+  const ok = line.filter((c) => c.refusal === null).length;
+  const skipped = new Map<string, number>();
+  for (const c of line) if (c.refusal !== null) skipped.set(SKIP_WORDS[c.refusal], (skipped.get(SKIP_WORDS[c.refusal]) ?? 0) + 1);
+  const last = line[line.length - 1]!;
+  return {
+    kind, lv: level, cx: last.cx, cy: last.cy, refusal: ok > 0 ? null : line[0]!.refusal, hover: null, upgrade: null, line,
+    label: `${nameAt(kind, level)} × ${ok}${ok < line.length ? ` of ${line.length}` : ''} · ${ok * costOf(kind, level)} scrap`,
+    detail: skipped.size ? [...skipped].map(([why, n]) => `${n} ${why}`).join(' · ') : null,
+  };
+}
 
 export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose, worldSize: number, lv = 1): Ghost {
   const cell = cellOf(at.x, at.y), grid = worldSize / ZOM.cell;
@@ -213,7 +243,7 @@ export function buildRows(): { label: string; chips: HintChip[] }[] {
 
 /** The bar's controls row: the clicks, upgrading and the tier and wheel shortcuts. */
 export const BUILD_CONTROLS: readonly HintChip[] = [
-  { key: 'Left click', what: 'build' },
+  { key: 'Left click', what: 'build · drag a wall line' },
   { key: 'Right click', what: 'take down' },
   { key: 'U', what: 'upgrade', pick: { upgrade: true } },
   { key: '1 · Q · wheel', what: 'wall tier' },

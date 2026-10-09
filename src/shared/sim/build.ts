@@ -89,6 +89,33 @@ export function buildRefusal(site: BuildSite, kind: BuildingKind, cx: number, cy
   return null;
 }
 
+export type Cell = { cx: number; cy: number };
+/** Whether a kind may be dragged out in a line in build mode: walls and spike strips, cheap pieces laid in rows. A turret goes up one at a time. */
+export const linesOf = (kind: BuildingKind) => (ZOM.lineKinds as readonly BuildingKind[]).includes(kind);
+
+/**
+ * The cells a drag from `a` to `b` lays: a straight line from `a` along whichever axis the drag went farther (across, on a tie), one cell for every
+ * cell crossed, at most `max` of them.
+ */
+export function lineCells(a: Cell, b: Cell, max: number = ZOM.lineMax): Cell[] {
+  const dx = b.cx - a.cx, dy = b.cy - a.cy, across = Math.abs(dx) >= Math.abs(dy);
+  const n = Math.min(max, (across ? Math.abs(dx) : Math.abs(dy)) + 1), sx = across ? Math.sign(dx) : 0, sy = across ? 0 : Math.sign(dy);
+  return Array.from({ length: Math.max(1, n) }, (_, i) => ({ cx: a.cx + sx * i, cy: a.cy + sy * i }));
+}
+
+/**
+ * A line judged as the server builds it: cell by cell from its start, each by `buildRefusal` with the scrap the cells before it left,
+ * so a cell that cannot be built is passed over and the line goes up as far as the scrap lasts.
+ */
+export function planLine(site: BuildSite, kind: BuildingKind, cells: readonly Cell[], lv = 1): (Cell & { refusal: BuildRefusal | null })[] {
+  let scrap = site.scrap;
+  return cells.map(({ cx, cy }) => {
+    const refusal = buildRefusal({ ...site, scrap }, kind, cx, cy, lv);
+    if (refusal === null) scrap -= costOf(kind, lv);
+    return { cx, cy, refusal };
+  });
+}
+
 export function upgradeRefusal(site: BuildSite, cx: number, cy: number): UpgradeRefusal | null {
   if (!site.day || !site.builder) return 'notDay';
   const b = site.buildings.find((o) => o.cx === cx && o.cy === cy);

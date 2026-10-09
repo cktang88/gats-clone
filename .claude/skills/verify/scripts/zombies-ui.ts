@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Usage: node zombies-ui.ts <run-dir> [step ...]   Steps: menu badlink squad build turrets night (default, in order), plus variety, downed and report on request.
+// Usage: node zombies-ui.ts <run-dir> [step ...]   Steps: menu badlink squad build turrets night (default, in order), plus drag, variety, downed and report on request.
 // Drives the zombies client in headless Chrome through real input. downed and report need a scratch copy with fragile humans and a weak core, and turrets builds a cannon
 // only on a scratch copy with more starting scrap, and variety (tiers, upgrades, every kind) needs about 3000 (see features/zombies.md).
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -285,6 +285,67 @@ const STEPS: Record<string, () => Promise<void>> = {
     await click(at!.x, at!.y);
     expect('the wall goes back up', await until(() => hasWall(frames.snap?.buildings, cell!.cx, cell!.cy)));
     await mouse('mouseMoved', VIEW.w / 2 + 200, VIEW.h / 2);
+  },
+  /**
+   * A left drag in build mode lays a line of walls: the ghost shows every cell of it, straight along the axis the drag went farther, with its price,
+   * red where it cannot go up; letting go builds the line in one message, and Esc or a right click mid-drag drops it.
+   */
+  async drag() {
+    await until(() => run()?.phase === 'day' && me()?.alive, 60_000);
+    if ((await zdev())?.building !== true) await tap('KeyB', 'b');
+    expect('B turns build mode on by day', await until(async () => (await zdev())?.building === true));
+    // 1 picks the wall, and again steps its tier: barricades, the cheapest, so more of the line is paid for.
+    for (let i = 0; i < 4; i++) {
+      const d = await zdev();
+      if (d?.buildKind === 'wall' && d.buildTier === 1) break;
+      await tap('Digit1', '1');
+      await sleep(150);
+    }
+    expect('barricades are picked', (await zdev())?.buildKind === 'wall' && (await zdev())?.buildTier === 1);
+    const self = me()!;
+    const cx = Math.floor(self.x / ZOM.cell) - 3, cy0 = Math.floor(self.y / ZOM.cell) - 3, cy1 = cy0 + 8;
+    const from = await toScreen(cellCenter(cx, cy0).x, cellCenter(cx, cy0).y), to = await toScreen(cellCenter(cx, cy1).x + 35, cellCenter(cx, cy1).y);
+    if (!expect('the drag ends are on screen', !!from && !!to)) return;
+    // Esc mid-drag drops the line and builds nothing.
+    const walls0 = frames.snap?.buildings?.length ?? 0;
+    await mouse('mouseMoved', from!.x, from!.y);
+    await sleep(80);
+    await mouse('mousePressed', from!.x, from!.y, 'left');
+    for (let i = 1; i <= 6; i++) { await mouse('mouseMoved', from!.x + ((to!.x - from!.x) * i) / 6, from!.y + ((to!.y - from!.y) * i) / 6); await sleep(40); }
+    expect('dragging shows a line ghost', await until(async () => ((await zdev())?.ghost as { line?: unknown[] } | null)?.line?.length === 9), JSON.stringify((await zdev())?.ghost));
+    await tap('Escape', 'Escape');
+    await mouse('mouseReleased', to!.x, to!.y, 'left');
+    await sleep(400);
+    expect('Esc drops the line and nothing goes up', (frames.snap?.buildings?.length ?? 0) === walls0 && (await zdev())?.building === true);
+    // The real drag: down the column, drifting sideways, so the line locks to the column.
+    const scrap = run()!.scrap;
+    await mouse('mouseMoved', from!.x, from!.y);
+    await sleep(80);
+    await mouse('mousePressed', from!.x, from!.y, 'left');
+    for (let i = 1; i <= 8; i++) { await mouse('mouseMoved', from!.x + ((to!.x - from!.x) * i) / 8, from!.y + ((to!.y - from!.y) * i) / 8); await sleep(50); }
+    await sleep(250);
+    const g = (await zdev())?.ghost as (ZombiesDev['ghost'] & { line?: { cx: number; cy: number; refusal: string | null }[] }) | null;
+    const line = g?.line ?? [];
+    expect('the line ghost runs straight down the column from where the drag began', line.length === 9 && line.every((c, i) => c.cx === cx && c.cy === cy0 + i), JSON.stringify(line));
+    const ok = line.filter((c) => c.refusal === null);
+    expect('the line shows cells that go up and cells it passes over', ok.length > 0 && ok.length < line.length, line.map((c) => c.refusal ?? 'ok').join(','));
+    log(`ghost plate: ${g?.label} / ${g?.detail}`);
+    await shot('zom-drag-ghost');
+    await mouse('mouseReleased', to!.x, to!.y, 'left');
+    expect('letting go builds every green cell of the line', await until(() => ok.every((c) => hasWall(frames.snap?.buildings, c.cx, c.cy)), 3000), `${ok.length} cells`);
+    expect('and none of the red ones', line.filter((c) => c.refusal !== null && c.refusal !== 'taken').every((c) => !hasWall(frames.snap?.buildings, c.cx, c.cy)));
+    expect('the line cost a wall\'s price for each wall', await until(() => run()!.scrap === scrap - ok.length * costOf('wall', g!.lv)), `${scrap} -> ${run()!.scrap}`);
+    await mouse('mouseMoved', VIEW.w / 2 + 200, VIEW.h / 2);
+    await sleep(400);
+    await shot('zom-drag-built');
+    // A press let go where it began is still a single build.
+    const one = await buildableCell();
+    if (one) {
+      const at = await toScreen(cellCenter(one.cx, one.cy).x, cellCenter(one.cx, one.cy).y);
+      const before = run()!.scrap;
+      await click(at!.x, at!.y);
+      expect('a click still builds one wall', await until(() => hasWall(frames.snap?.buildings, one.cx, one.cy) && run()!.scrap === before - BUILDINGS.wall.cost), `${before} -> ${run()!.scrap}`);
+    }
   },
   /** Tiers, upgrades and every kind: needs a scratch copy with about 3000 starting scrap and a long day (see features/zombies.md). */
   async variety() {

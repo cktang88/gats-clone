@@ -65,6 +65,11 @@ export type ClientMsg =
   | { t: 'respawn'; loadout: Loadout }
   /** Zombies: put a building on, or take one off, grid cell (`cx`, `cy`) of `ZOM.cell` px. A wall's `lv` is its tier (1 when absent). */
   | { t: 'build'; kind: BuildingKind; cx: number; cy: number; lv?: number }
+  /**
+   * Zombies: a line dragged out in build mode, its cells `[cx, cy]` in order from where the drag began, one straight run along a row or a column, at most `ZOM.lineMax`,
+   * of a kind in `ZOM.lineKinds`. The server builds each cell by the single build's rules in that order, so the line goes up as far as the scrap lasts and a cell that cannot take it is passed over.
+   */
+  | { t: 'build'; kind: BuildingKind; cells: [number, number][]; lv?: number }
   | { t: 'demolish'; cx: number; cy: number }
   /** Zombies: upgrade the wall, turret or utility on the cell one level, by day. */
   | { t: 'upgrade'; cx: number; cy: number }
@@ -389,6 +394,22 @@ function parseInput(v: unknown): InputState | null {
   };
 }
 
+/** A dragged line's cells: 1 to `ZOM.lineMax` grid cells, each the next along one row or one column, all the same way. */
+function lineOfCells(v: unknown): [number, number][] | null {
+  if (!Array.isArray(v) || v.length < 1 || v.length > ZOM.lineMax) return null;
+  const cells: [number, number][] = [];
+  for (const c of v) {
+    if (!Array.isArray(c) || c.length !== 2) return null;
+    const cx = gridCell(c[0]), cy = gridCell(c[1]);
+    if (cx === null || cy === null) return null;
+    cells.push([cx, cy]);
+  }
+  if (cells.length === 1) return cells;
+  const sx = cells[1]![0] - cells[0]![0], sy = cells[1]![1] - cells[0]![1];
+  if (Math.abs(sx) + Math.abs(sy) !== 1) return null;
+  return cells.every(([cx, cy], i) => cx === cells[0]![0] + sx * i && cy === cells[0]![1] + sy * i) ? cells : null;
+}
+
 export function parseClientMsg(raw: string): ClientMsg | null {
   let v: unknown;
   try { v = JSON.parse(raw); } catch { return null; }
@@ -424,10 +445,17 @@ export function parseClientMsg(raw: string): ClientMsg | null {
       return loadout ? { t: 'respawn', loadout } : null;
     }
     case 'build': {
+      if (!oneOf(BUILDING_KINDS, v.kind)) return null;
+      const lv = v.lv === undefined ? undefined : Number.isInteger(v.lv) && (v.lv as number) >= 1 && (v.lv as number) <= MAX_LEVEL ? (v.lv as number) : null;
+      if (lv === null) return null;
+      if (v.cells !== undefined) {
+        const cells = lineOfCells(v.cells);
+        if (!cells || !oneOf(ZOM.lineKinds, v.kind) || v.cx !== undefined || v.cy !== undefined) return null;
+        return { t: 'build', kind: v.kind, cells, ...(lv !== undefined && { lv }) };
+      }
       const cx = gridCell(v.cx), cy = gridCell(v.cy);
-      if (cx === null || cy === null || !oneOf(BUILDING_KINDS, v.kind)) return null;
-      if (v.lv === undefined) return { t: 'build', kind: v.kind, cx, cy };
-      return Number.isInteger(v.lv) && (v.lv as number) >= 1 && (v.lv as number) <= MAX_LEVEL ? { t: 'build', kind: v.kind, cx, cy, lv: v.lv as number } : null;
+      if (cx === null || cy === null) return null;
+      return { t: 'build', kind: v.kind, cx, cy, ...(lv !== undefined && { lv }) };
     }
     case 'upgrade': {
       const cx = gridCell(v.cx), cy = gridCell(v.cy);

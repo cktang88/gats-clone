@@ -6,7 +6,7 @@ import { parseClientMsg, type ClientMsg, type GameEvent, type Loadout, type Serv
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
 import { benchUntilNextMatch, placeOf, redeploysOpen, seatFor, takeSeat } from '../shared/sim/royale.ts';
-import { build, demolish, toggleReady, upgrade } from '../shared/sim/run.ts';
+import { build, buildLine, demolish, toggleReady, upgrade } from '../shared/sim/run.ts';
 import { interestLook, snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
 import { holdLook, NO_LOOK, type LookSides } from '../shared/lookahead.ts';
 import { addScore, choosePick } from '../shared/sim/stats.ts';
@@ -323,7 +323,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       case 'input': enqueueInput(client.inputs, { seq: msg.seq, input: msg.input, viewAt: msg.viewAt, rewindCapMs, arrivedTick: world.tick }); return;
       case 'pick': choosePick(world, id, msg.level, msg.option); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
-      case 'build': build(world, id, msg.kind, msg.cx, msg.cy, msg.lv); return;
+      case 'build': if ('cells' in msg) buildLine(world, id, msg.kind, msg.cells, msg.lv); else build(world, id, msg.kind, msg.cx, msg.cy, msg.lv); return;
       case 'demolish': demolish(world, id, msg.cx, msg.cy); return;
       case 'upgrade': upgrade(world, id, msg.cx, msg.cy); return;
       case 'ready': toggleReady(world, id); return;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, LEVELS, NIGHTS, ZOM, ZOMBIE_KINDS } from '../src/shared/defs.ts';
+import { BUILDINGS, hordeCount, LEVELS, NIGHTS, ZOM, ZOMBIE_KINDS, type ZombieKind } from '../src/shared/defs.ts';
 import type { Snapshot, SnapshotWire } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { zombieMaxHp } from '../src/shared/sim/run.ts';
@@ -34,7 +34,8 @@ test('the run view times the night by its wave and reports the run once the core
   const night = snapshotFor(w, p.id).run!;
   assert.equal(night.phase, 'night');
   assert.equal(night.phaseEndsAt, null);
-  assert.equal(night.waveLeft, Math.round(NIGHTS[0]!.horde.walker! * ZOM.hordeShare({ humans: 0, bots: 2 })));
+  const share = ZOM.hordeShare({ humans: 0, bots: 2 });
+  assert.equal(night.waveLeft, Object.entries(NIGHTS[0]!.horde).reduce((n, [k, listed]) => n + hordeCount(k as ZombieKind, listed, share), 0));
   w.run!.stats.set(p.id, { name: p.name, kills: 4, revives: 1, built: 2 });
   const none = { walker: 0, brute: 0, runner: 0, plated: 0, bloater: 0, colossus: 0 };
   w.run!.turretKills = { sentry: { ...none, walker: 7, brute: 1 }, cannon: { ...none, brute: 2 }, scatter: { ...none, runner: 3 }, mortar: none, tesla: none };

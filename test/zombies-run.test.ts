@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, LEVELS, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, ZOMBIES, type Side, type ZombieKind } from '../src/shared/defs.ts';
+import { BUILDINGS, hordeCount, LEVELS, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, ZOMBIES, type Side, type ZombieKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { toggleReady } from '../src/shared/sim/run.ts';
 import { hurtCore } from '../src/shared/sim/horde.ts';
@@ -17,6 +17,9 @@ const onSide = (side: Side, x: number, y: number) => {
   const r = MAPS.outpost.siege!.horde[side];
   return x >= r.x - SPAWN_EDGE_SLACK_PX && x <= r.x + r.w + SPAWN_EDGE_SLACK_PX && y >= r.y - SPAWN_EDGE_SLACK_PX && y <= r.y + r.h + SPAWN_EDGE_SLACK_PX;
 };
+
+/** Everything night `night`'s row sends a squad with this share of the horde. */
+const nightSize = (night: number, share: number) => Object.entries(NIGHTS[night - 1]!.horde).reduce((n, [k, listed]) => n + hordeCount(k as ZombieKind, listed, share), 0);
 
 function runUntil(w: World, done: () => boolean, maxMs: number) {
   for (let t = 0; t < maxMs && !done(); t += TICK_MS) step(w, TICK_MS);
@@ -40,7 +43,7 @@ test('the night trickles its wave in from the horde edges and stays dark until t
   const night = w.run!.phase;
   assert.ok(night.k === 'night');
   const wave = night.toSpawn.reduce((n, u) => n + u.n, 0) + w.zombies.length;
-  assert.equal(wave, Math.round(NIGHTS[0]!.horde.walker! * ZOM.hordeShare({ humans: 1, bots: 3 })));
+  assert.equal(wave, nightSize(1, ZOM.hordeShare({ humans: 1, bots: 3 })));
   const seen = new Set<number>();
   for (let t = 0; t < 1000; t += TICK_MS) {
     for (const z of w.zombies.filter((z) => !seen.has(z.id))) {
@@ -209,6 +212,8 @@ test('a boss comes alone for any squad, its health scaled by the squad\'s share 
     const w = zomWorld();
     for (let i = 0; i < humans; i++) spawnAt(w, 1380, 1450 + i * 30, { kind: 'human' });
     w.run!.core.hp = 1e9;
+    // Nobody shoots, so the horde's bites on the core would cost every survivor before the boss walks in.
+    w.run!.survivors = 1e9;
     w.run!.night = 5;
     run(w, ZOM.dayMs + TICK_MS);
     const night = w.run!.phase;

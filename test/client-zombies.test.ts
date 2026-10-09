@@ -295,7 +295,7 @@ test('the forecast names each night\'s kinds and sides from the night table, and
     for (const kind of ZOMBIE_KINDS) assert.equal(line.includes(ZOMBIES[kind].many), kind in row.horde, `night ${i + 1}: ${line} and the ${kind}`);
     for (const side of SIDES) assert.equal(line.includes(side), row.from.length < SIDES.length && row.from.includes(side), `night ${i + 1}: ${line} and the ${side}`);
   });
-  assert.equal(forecast(1, 1), `Walkers from the north · ${NIGHTS[0]!.horde.walker} strong`);
+  assert.equal(forecast(1, 1), `Brutes and walkers from the north · ${NIGHTS[0]!.horde.walker! + NIGHTS[0]!.horde.brute!} strong`);
   assert.ok(forecast(NIGHTS.length, 1).includes('from every side'));
 });
 
