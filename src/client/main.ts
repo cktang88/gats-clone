@@ -1196,7 +1196,7 @@ const gearStage = createGearStage($<HTMLCanvasElement>('gear-view'), { loadout: 
 const flow = createMenuFlow({ menu: menuEl, art: modeArt, stage: gearStage, scene: menuScene });
 /** The enlist plate on the first screen (guests only), and the death card's one quiet line when a guest has something at stake. */
 const enlist = mountEnlist($('enlist'), {
-  auth: (kind, name, pass) => account.auth(kind, name, pass),
+  auth: (kind, name, pass, email) => account.auth(kind, name, pass, email),
   suggestName: () => (nameInput.value.trim() ? cleanName(nameInput.value) : ''),
   afterSignIn: () => flow.go('modes'),
   hasGuestProgress: () => loadGuestClaims().length > 0,

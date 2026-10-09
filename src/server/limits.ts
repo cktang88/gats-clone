@@ -14,6 +14,9 @@ export const LIMITS = {
   messagesPerSec: 60,
   messageBurst: 120,
   authPerMin: 10,
+  /** Password-reset requests: per address, and reset emails per account, each a burst of this many refilling over an hour. */
+  resetPerIpPerHour: 10,
+  resetPerAccountPerHour: 3,
   /** Private zombies squads: how many may run at once, how fast one address may open them, and how long one may sit without humans. */
   squadRooms: 20,
   squadsPerMin: 6,

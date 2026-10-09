@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121419">
+  <meta name="referrer" content="no-referrer">
+  <title>Reset password · Tinwar</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page">
+  <main class="menu">
+    <div class="menu-card doc-card">
+      <header class="brand">
+        <a class="wordmark" href="/"><h1 class="logo"><em>T</em>INWAR</h1></a>
+        <p class="tagline">Reset password</p>
+      </header>
+      <article class="panel doc">
+        <form id="reset-form" class="auth" novalidate hidden>
+          <p class="muted">Pick a new password for your account (4 to 128 characters). Every device signed in to it is signed out.</p>
+          <input id="reset-pass" type="password" autocomplete="new-password" maxlength="128" placeholder="New password" aria-label="New password" required>
+          <input id="reset-pass2" type="password" autocomplete="new-password" maxlength="128" placeholder="New password again" aria-label="New password again" required>
+          <button id="reset-submit" type="submit">Set new password</button>
+        </form>
+        <p id="reset-status" class="status" role="status"></p>
+        <p id="reset-done" hidden><a href="/">Back to the game to log in</a></p>
+      </article>
+      <footer class="menu-footer"><a href="/">Back to the game</a> · <a href="privacy.html">Privacy</a></footer>
+    </div>
+  </main>
+  <script type="module" src="reset.js"></script>
+</body>
+</html>

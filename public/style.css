@@ -345,6 +345,10 @@ kbd {
 
 .auth { display: grid; gap: 8px; margin-top: 12px; }
 .auth .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* The signed-in account's optional reset email (menu.ts emailSection), folded under its one-line summary. */
+.acct-email { margin-top: 14px; }
+.acct-email summary { cursor: pointer; overflow-wrap: anywhere; }
+.acct-email > p { margin: 8px 0 0; font-size: var(--t-label); }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0 0; }
 .stats div { background: var(--well); border: 1px solid var(--line); padding: var(--s2); text-align: center; }
 .stats dt { font: 700 var(--t-micro) var(--display); color: var(--muted); text-transform: uppercase; letter-spacing: 0.16em; }

@@ -37,7 +37,7 @@
 #menu .enlist-sub { margin: 6px 0 0; font: 500 15px/1.3 var(--text); color: var(--m-sub); }
 
 #menu .enlist-body { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 22px; }
-#menu .enlist[data-form="register"] .enlist-body, #menu .enlist[data-form="login"] .enlist-body { grid-template-columns: minmax(0, 1fr); }
+#menu .enlist[data-form="register"] .enlist-body, #menu .enlist[data-form="login"] .enlist-body, #menu .enlist[data-form="forgot"] .enlist-body { grid-template-columns: minmax(0, 1fr); }
 
 /* Benefits: a stamped icon and a few words each, two by two, ruled off from the headline by an ink seam. */
 #menu .enlist-perks {
@@ -70,6 +70,10 @@
 #menu .enlist-field > span { font: 800 13px/1 var(--display); letter-spacing: 0.2em; text-transform: uppercase; color: var(--m-sub); }
 #menu .enlist-fields input { min-width: 0; padding: 10px 12px; font: 700 19px/1.1 var(--display); letter-spacing: 0.04em; }
 #menu .enlist-fields input[aria-invalid] { border-color: #ff6b5e; }
+/* Sign-up's optional email (and the forgot form's one field) takes the second row under name and password, the button beside it. */
+#menu .enlist-fields .enlist-email { grid-column: 1 / 3; }
+#menu .enlist[data-form="forgot"] .enlist-fields { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto; }
+#menu .enlist-hint { margin-left: 8px; font: 500 13px/1 var(--text); letter-spacing: 0; text-transform: none; color: var(--m-sub); opacity: 0.85; }
 #menu .enlist-form-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; min-height: 22px; }
 #menu .enlist-msg { margin: 0; font: 600 15px/1.25 var(--text); color: var(--m-sub); }
 #menu .enlist-msg:empty { display: none; }
@@ -100,7 +104,9 @@
   #menu .enlist-icon { width: 22px; height: 22px; }
   #menu .enlist-actions { grid-template-columns: minmax(0, 1fr) auto; align-items: center; justify-items: stretch; gap: 14px; }
   #menu .enlist-go { font-size: 18px; padding: 12px 14px 11px !important; }
-  #menu .enlist-fields { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  #menu .enlist-fields, #menu .enlist[data-form="forgot"] .enlist-fields { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  #menu .enlist-fields .enlist-email { grid-column: 1 / -1; }
+  #menu .enlist-hint { display: block; margin: 5px 0 0; }
   #menu .enlist-x { right: 10px; top: 9px; font-size: 13px; }
 }
 /* A phone on its side is short: one row (tag, headline, benefits two by two, the button), no subline. */

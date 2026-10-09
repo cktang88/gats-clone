@@ -28,11 +28,22 @@
           <li>Your account name.</li>
           <li>A scrypt hash of your password and the random salt used to make it. Your password itself is never saved.</li>
           <li>Your stats: kills, deaths, total score, games played and best score.</li>
+          <li>An email address, only if you give one. It is optional.</li>
         </ul>
-        <p>Your account name and stats are public. They appear on the leaderboard, and anyone can look them up by name.</p>
+        <p>Your account name and stats are public. They appear on the leaderboard, and anyone can look them up by name. Your email is not.</p>
+
+        <h2>Your email address</h2>
+        <p>Adding an email is optional, at sign-up or later in the Account panel. It is used for one thing only: sending you a link to reset your password when you ask for one. Without an email the account works the same, but its password can't be reset.</p>
+        <ul>
+          <li>It is never shown to other players, never on the leaderboard, a profile or in a match, and never sold or shared. Only you can see it, in your own Account panel while you are logged in.</li>
+          <li>The game sends no newsletters or other mail, and does not check the address by mailing it. It sends a reset email only when someone enters both your account name and that email in the "Forgot password?" form.</li>
+          <li>To deliver a reset email, the address and the email's text go to the operator's email provider (configured by the operator, for example Resend), which handles them under its own privacy policy.</li>
+          <li>A reset link works once, for 30 minutes. The server keeps only a hash of it, never the link itself, and deletes the hash once it is used or a newer one replaces it.</li>
+          <li>You can change or delete your email at any time in the Account panel (it asks for your password). Deleting it removes it from the server's account file at once.</li>
+        </ul>
 
         <h2>Staying logged in</h2>
-        <p>When you log in or register, the server gives your browser a session token, which your browser keeps in its local storage. The token holds your account name and the times it was issued and expires, 30 days later. The server signs it, so nobody can make a token for an account they do not own. Logging out deletes it from your browser.</p>
+        <p>When you log in or register, the server gives your browser a session token, which your browser keeps in its local storage. The token holds your account name and the times it was issued and expires, 30 days later. The server signs it, so nobody can make a token for an account they do not own. Logging out deletes it from your browser. Resetting your password signs out every session made before the reset.</p>
 
         <h2>What your browser keeps</h2>
         <p>The game stores a few settings in your browser's local storage, under these keys:</p>
@@ -51,16 +62,16 @@
         <p>Chat messages pass through a word filter and go to the players in your room. The server does not save or log them. Guest names go through the same filter.</p>
 
         <h2>Rate limits</h2>
-        <p>To slow down password guessing and connection floods, the server counts login attempts and open game connections per IP address. These counters exist only in the server's memory and are never written to disk or to logs. A login counter is dropped about a minute after your last attempt, a connection count when the connection closes, and all of them when the server restarts.</p>
+        <p>To slow down password guessing, reset-email spam and connection floods, the server counts login attempts, password-reset requests (per IP address and per account) and open game connections per IP address. These counters exist only in the server's memory and are never written to disk or to logs. A login counter is dropped about a minute after your last attempt, a connection count when the connection closes, and all of them when the server restarts.</p>
 
         <h2>No cookies, ads or trackers</h2>
-        <p>The game sets no cookies. Every page, script and style comes from the game's own server. It loads nothing from other sites, and it sends nothing about you to anyone else.</p>
+        <p>The game sets no cookies. Every page, script and style comes from the game's own server. It loads nothing from other sites, and it sends nothing about you to anyone else, except a password-reset email you asked for, which goes out through the email provider described above.</p>
 
         <h2>Where it runs</h2>
         <p>The game is hosted on Fly.io, in its <code>iad</code> region near Ashburn, Virginia, USA. Fly.io carries the traffic to the game and may keep its own network logs under its own privacy policy.</p>
 
         <h2>Keeping and deleting your data</h2>
-        <p>Accounts stay until the operator deletes them. There is no delete button yet. To have your account name, password hash and stats removed, ask the operator at the contact below.</p>
+        <p>Accounts stay until the operator deletes them. You can delete your email yourself in the Account panel. There is no button to delete the whole account yet. To have your account name, password hash, email and stats removed, ask the operator at the contact below.</p>
 
         <h2>Contact</h2>
         <!-- OPERATOR: add a contact address -->

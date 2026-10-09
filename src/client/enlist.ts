@@ -1,4 +1,6 @@
 import { cleanName, NAME_MAX } from '../shared/protocol.ts';
+import { EMAIL_MAX, emailError } from '../shared/email.ts';
+import { requestReset } from './api.ts';
 
 /**
  * The enlist plate: on the first menu screen a guest sees what an account keeps (medals, cosmetics, a reserved name, a place on the
@@ -7,7 +9,8 @@ import { cleanName, NAME_MAX } from '../shared/protocol.ts';
  * when a guest has something at stake: a lifetime medal, a level, or play the server is not recording at all.
  */
 export type AuthKind = 'login' | 'register';
-export type FormMode = 'closed' | AuthKind;
+/** `forgot` asks for a password-reset link by email or name. */
+export type FormMode = 'closed' | AuthKind | 'forgot';
 /** What a guest stands to lose this visit, loudest first: nothing saved at all, then a lifetime medal, then a level. */
 export type Stakes = { unrecorded: boolean; medal: boolean; level: boolean };
 export const NO_STAKES: Stakes = { unrecorded: false, medal: false, level: false };
@@ -32,13 +35,18 @@ export function enlistPitch(stakes: Stakes): { title: string; sub: string } {
   if (stakes.unrecorded) return { title: 'Your stats aren’t being saved', sub: 'Guest play from here isn’t recorded. A free account keeps every match.' };
   if (stakes.medal) return { title: 'Bank your medals', sub: 'Guest medals sit on a name anyone can take. Enlist and they come with you.' };
   if (stakes.level) return { title: 'Keep climbing', sub: 'Guest levels sit on a name anyone can take. Enlist and your level comes with you.' };
-  return { title: 'Enlist', sub: 'Free, no email, ten seconds. Or just pick a fight as a guest.' };
+  return { title: 'Enlist', sub: 'Free, ten seconds. Or just pick a fight as a guest.' };
 }
 
 /** The line under "Create your account": a guest with progress on file is told it comes along. */
 export function registerSub(hasGuestProgress: boolean): string {
-  return hasGuestProgress ? `Pick the name you want to keep. ${CARRY_LINE}` : 'Pick the name you want to keep. No email needed.';
+  return hasGuestProgress ? `Pick the name you want to keep. ${CARRY_LINE}` : 'Pick the name you want to keep.';
 }
+
+/** The sign-up form's line under the email field: it is optional, and what it is for. */
+export const EMAIL_HINT = 'Optional. Only used to reset your password.';
+/** What the forgot-password form says under its headline. */
+export const FORGOT_SUB = 'Enter your soldier name and the email on that account; both must match. An account with no email can’t be reset: add one in your account to enable password reset.';
 
 /** The one line on the death card for a guest with something at stake, or null to stay quiet. */
 export function guestNudge(signedIn: boolean, stakes: Stakes): string | null {
@@ -142,7 +150,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
 
 type Deps = {
   /** Logs in or registers; resolves to an error message, or null once signed in. */
-  auth(kind: AuthKind, name: string, password: string): Promise<string | null>;
+  auth(kind: AuthKind, name: string, password: string, email?: string): Promise<string | null>;
   /** The name typed on the gear step, to prefill the form. */
   suggestName?(): string;
   /** Where focus goes once the plate folds away (the first mode card). */
@@ -178,11 +186,18 @@ export function mountEnlist(root: HTMLElement, deps: Deps) {
   const flip = el('button', { type: 'button', id: 'enlist-flip', className: 'link enlist-alt' });
   const cancel = el('button', { type: 'button', id: 'enlist-cancel', className: 'link enlist-x' }, 'Cancel');
   const msg = el('p', { className: 'enlist-msg', id: 'enlist-msg', role: 'alert' });
+  const emailIn = el('input', { id: 'enlist-email', type: 'email', maxLength: EMAIL_MAX, autocomplete: 'email', spellcheck: false, placeholder: 'you@example.com · optional' });
+  const forgotIn = el('input', { id: 'enlist-forgot-email', type: 'email', maxLength: EMAIL_MAX, autocomplete: 'email', spellcheck: false, placeholder: 'you@example.com' });
+  const forgot = el('button', { type: 'button', id: 'enlist-forgot', className: 'link enlist-alt' }, 'Forgot password?');
   const passLabel = el('span', {}, 'Password');
-  const fields = el('div', { className: 'enlist-fields' },
-    el('label', { className: 'enlist-field' }, el('span', {}, 'Soldier name'), nameIn),
-    el('label', { className: 'enlist-field' }, passLabel, passIn), submit);
-  const formEl = el('form', { className: 'enlist-form', noValidate: true }, fields, el('div', { className: 'enlist-form-foot' }, flip, msg));
+  const nameField = el('label', { className: 'enlist-field' }, el('span', {}, 'Soldier name'), nameIn);
+  const passField = el('label', { className: 'enlist-field' }, passLabel, passIn);
+  const emailField = el('label', { className: 'enlist-field enlist-email' }, el('span', {}, 'Email ', el('small', { className: 'enlist-hint', id: 'enlist-email-hint' }, EMAIL_HINT)), emailIn);
+  emailIn.setAttribute('aria-describedby', 'enlist-email-hint');
+  const forgotField = el('label', { className: 'enlist-field' }, el('span', {}, 'Email on the account'), forgotIn);
+  const fields = el('div', { className: 'enlist-fields' });
+  const foot = el('div', { className: 'enlist-form-foot' }, flip, msg);
+  const formEl = el('form', { className: 'enlist-form', noValidate: true }, fields, foot);
 
   const body = el('div', { className: 'enlist-body' });
   root.replaceChildren(el('div', { className: 'enlist-plate' }, dogTag(), head, body, notNow));
@@ -200,10 +215,13 @@ export function mountEnlist(root: HTMLElement, deps: Deps) {
       cancel.remove();
       return;
     }
-    title.textContent = form === 'register' ? 'Create your account' : 'Welcome back';
-    sub.textContent = form === 'register' ? registerSub(deps.hasGuestProgress?.() ?? false) : 'Log in to pick up your record and your gear.';
-    submit.textContent = form === 'register' ? 'Enlist' : 'Log in';
-    flip.textContent = form === 'register' ? 'Already enlisted? Log in' : 'New here? Create an account';
+    title.textContent = form === 'register' ? 'Create your account' : form === 'forgot' ? 'Reset your password' : 'Welcome back';
+    sub.textContent = form === 'register' ? registerSub(deps.hasGuestProgress?.() ?? false) : form === 'forgot' ? FORGOT_SUB : 'Log in to pick up your record and your gear.';
+    submit.textContent = form === 'register' ? 'Enlist' : form === 'forgot' ? 'Send link' : 'Log in';
+    flip.textContent = form === 'register' ? 'Already enlisted? Log in' : form === 'forgot' ? 'Back to log in' : 'New here? Create an account';
+    const want = form === 'register' ? [nameField, passField, emailField, submit] : form === 'forgot' ? [nameField, forgotField, submit] : [nameField, passField, submit];
+    if (want.some((f, i) => fields.children[i] !== f) || fields.children.length !== want.length) fields.replaceChildren(...want);
+    if (form === 'login') { if (!forgot.isConnected) flip.after(forgot); } else forgot.remove();
     passIn.autocomplete = form === 'register' ? 'new-password' : 'current-password';
     passIn.placeholder = form === 'register' ? '4+ characters' : '';
     nameIn.placeholder = form === 'register' ? '3–16 letters or digits' : '';
@@ -215,16 +233,16 @@ export function mountEnlist(root: HTMLElement, deps: Deps) {
   const setError = (text: string, field?: HTMLInputElement) => {
     msg.textContent = text;
     msg.classList.toggle('error', !!text);
-    for (const f of [nameIn, passIn]) f.toggleAttribute('aria-invalid', f === field);
+    for (const f of [nameIn, passIn, emailIn, forgotIn]) f.toggleAttribute('aria-invalid', f === field);
     if (field) field.focus();
   };
 
-  const open = (mode: AuthKind, focus = true) => {
+  const open = (mode: AuthKind | 'forgot', focus = true) => {
     form = mode;
     setError('');
     if (!nameIn.value) nameIn.value = (deps.suggestName?.() ?? '').trim();
     render();
-    if (focus) requestAnimationFrame(() => (nameIn.value ? passIn : nameIn).focus({ preventScroll: true }));
+    if (focus) requestAnimationFrame(() => (mode === 'forgot' ? (nameIn.value ? forgotIn : nameIn) : nameIn.value ? passIn : nameIn).focus({ preventScroll: true }));
   };
   const close = (focusOn: HTMLElement = create) => {
     form = 'closed';
@@ -234,27 +252,44 @@ export function mountEnlist(root: HTMLElement, deps: Deps) {
 
   create.onclick = () => open('register');
   login.onclick = () => open('login');
-  flip.onclick = () => { open(form === 'register' ? 'login' : 'register', false); passIn.focus(); };
+  flip.onclick = () => { const to = form === 'login' ? 'register' : 'login'; open(to, false); (nameIn.value ? passIn : nameIn).focus(); };
+  forgot.onclick = () => open('forgot');
   cancel.onclick = () => close();
   notNow.onclick = () => { dismissed = true; saveDismissed(true); render(); deps.afterSignIn?.(); };
   formEl.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } });
-  for (const f of [nameIn, passIn]) f.addEventListener('input', () => { if (f.hasAttribute('aria-invalid')) setError(''); });
+  for (const f of [nameIn, passIn, emailIn, forgotIn]) f.addEventListener('input', () => { if (f.hasAttribute('aria-invalid')) setError(''); });
 
   formEl.onsubmit = async (e) => {
     e.preventDefault();
     if (busy || form === 'closed') return;
+    if (form === 'forgot') {
+      if (!nameIn.value.trim()) { setError('Enter your soldier name.', nameIn); return; }
+      const bad = forgotIn.value.trim() ? emailError(forgotIn.value) : 'Enter the email on your account.';
+      if (bad) { setError(bad, forgotIn); return; }
+      busy = true;
+      submit.disabled = true;
+      msg.classList.remove('error');
+      msg.textContent = 'Sending…';
+      const r = await requestReset(nameIn.value.trim(), forgotIn.value.trim());
+      busy = false;
+      submit.disabled = false;
+      if ('error' in r) setError(authErrorText('login', r.error), forgotIn);
+      else { setError(''); msg.textContent = r.message; }
+      return;
+    }
     const kind = form;
-    const local = credentialError(nameIn.value, passIn.value);
-    if (local) { setError(local, /^Pass/.test(local) ? passIn : nameIn); return; }
+    const local = credentialError(nameIn.value, passIn.value) ?? (kind === 'register' ? emailError(emailIn.value) : null);
+    if (local) { setError(local, /^Pass/.test(local) ? passIn : /email/i.test(local) ? emailIn : nameIn); return; }
     busy = true;
     submit.disabled = true;
     msg.classList.remove('error');
     msg.textContent = kind === 'register' ? 'Enlisting…' : 'Logging in…';
-    const err = await deps.auth(kind, nameIn.value.trim(), passIn.value);
+    const err = await deps.auth(kind, nameIn.value.trim(), passIn.value, kind === 'register' ? emailIn.value.trim() || undefined : undefined);
     busy = false;
     submit.disabled = false;
-    if (err) { setError(authErrorText(kind, err), /password/i.test(err) && kind === 'login' ? passIn : nameIn); return; }
+    if (err) { setError(authErrorText(kind, err), /password/i.test(err) && kind === 'login' ? passIn : /email/i.test(err) ? emailIn : nameIn); return; }
     passIn.value = '';
+    emailIn.value = '';
     setError('');
     form = 'closed';
     // `sync(true)` from the account change has already folded the plate away.

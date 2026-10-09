@@ -2,8 +2,9 @@ import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS, type ModeId, ty
 import { HANDLING } from '../shared/handling.ts';
 import type { Loadout } from '../shared/protocol.ts';
 import { CLASS_ROLES } from '../shared/roles.ts';
-import { authenticate, dropGuestClaim, fetchStats, loadAccount, loadGuestClaims, loadName, pickGuestClaim, saveAccount, type Account, type ServerInfo } from './api.ts';
+import { authenticate, dropGuestClaim, fetchOwnEmail, fetchStats, loadAccount, requestReset, saveOwnEmail, loadGuestClaims, loadName, pickGuestClaim, saveAccount, type Account, type ServerInfo } from './api.ts';
 import { CARRY_LINE } from './enlist.ts';
+import { EMAIL_MAX, emailError } from '../shared/email.ts';
 import type { MutedNames } from './chatmute.ts';
 import { CONTROLS } from './input.ts';
 import { drawGunCard } from './gunart.ts';
@@ -244,12 +245,52 @@ export function renderSquadChip(root: HTMLElement, code: string | null, link: st
   root.replaceChildren(el('span', {}, `Squad ${code}`), copy);
 }
 
-export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): { current(): Account | null; expire(message: string): void; auth(kind: 'login' | 'register', name: string, password: string): Promise<string | null> } {
+/** For a player locked out of an account with no email: it can't be reset, and how to make the next one resettable. */
+export const NO_EMAIL_LINE = 'Add an email in your account to enable password reset.';
+
+/**
+ * The signed-in account's reset email: what is on file (only its owner sees it), and a small form to add, change or remove it,
+ * which asks for the current password.
+ */
+function emailSection(a: Account): HTMLElement {
+  const state = el('span', { className: 'muted' }, 'Checking…');
+  const input = el('input', { type: 'email', id: 'account-email', placeholder: 'you@example.com', autocomplete: 'email', maxLength: EMAIL_MAX });
+  const pass = el('input', { type: 'password', id: 'account-email-pass', placeholder: 'Current password', autocomplete: 'current-password', maxLength: 128 });
+  const save = el('button', { type: 'submit' }, 'Save');
+  const remove = el('button', { type: 'button', className: 'secondary' }, 'Remove');
+  const msg = el('p', { className: 'status', role: 'status' });
+  const form = el('form', { className: 'auth acct-email-form', noValidate: true }, input, pass, el('div', { className: 'row' }, save, remove), msg);
+  const box = el('details', { className: 'acct-email', id: 'account-email-box' }, el('summary', {}, 'Password reset email: ', state), el('p', { className: 'muted' }, 'Optional. Only used to reset your password; never shown to anyone.'), form);
+  const show = (email: string | null) => {
+    state.textContent = email ?? 'none';
+    state.className = email ? '' : 'muted';
+    input.value = email ?? '';
+    remove.hidden = !email;
+    if (!email) { box.open = true; msg.textContent = 'Add an email to enable password reset.'; }
+  };
+  void fetchOwnEmail(a.token).then((e) => { if (e === undefined) state.textContent = 'unavailable'; else show(e); });
+  const submit = async (email: string) => {
+    const local = email ? emailError(email) : null;
+    if (local) { msg.textContent = local; input.focus(); return; }
+    if (!pass.value) { msg.textContent = 'Enter your current password to change the email.'; pass.focus(); return; }
+    msg.textContent = 'Saving…';
+    const r = await saveOwnEmail(a.token, email, pass.value);
+    if ('error' in r) { msg.textContent = /wrong/i.test(r.error) ? 'Wrong password.' : r.error; return; }
+    pass.value = '';
+    show(r.email);
+    msg.textContent = r.email ? 'Saved. Password reset links go to this address.' : 'Email removed. Add one again to enable password reset.';
+  };
+  form.onsubmit = (e) => { e.preventDefault(); void submit(input.value.trim()); };
+  remove.onclick = () => void submit('');
+  return box;
+}
+
+export function mountAccount(root: HTMLElement, onChange: (a: Account | null) => void): { current(): Account | null; expire(message: string): void; auth(kind: 'login' | 'register', name: string, password: string, email?: string): Promise<string | null> } {
   let account = loadAccount();
   /** Logs in or registers (from this sheet or the enlist plate); resolves to the server's error, or null once signed in. */
-  const auth = async (kind: 'login' | 'register', name: string, password: string): Promise<string | null> => {
+  const auth = async (kind: 'login' | 'register', name: string, password: string, email?: string): Promise<string | null> => {
     const guest = kind === 'register' ? pickGuestClaim(loadName()) : undefined;
-    const r = await authenticate(kind, name, password, guest);
+    const r = await authenticate(kind, name, password, guest, email);
     if ('error' in r) {
       // A spent or refused claim is no use again: forget it, so the next try makes a fresh account.
       if (guest && r.guestInvalid) dropGuestClaim(guest);
@@ -267,7 +308,7 @@ export function mountAccount(root: HTMLElement, onChange: (a: Account | null) =>
     const stats = el('dl', { className: 'stats' }, el('dd', { className: 'muted' }, 'Loading stats…'));
     const out = el('button', { type: 'button', className: 'link' }, 'Log out');
     out.onclick = () => { account = null; saveAccount(null); onChange(null); showSignedOut(); };
-    root.replaceChildren(el('h2', {}, 'Account'), el('p', {}, 'Signed in as ', el('b', {}, a.name), ' ', out), stats);
+    root.replaceChildren(el('h2', {}, 'Account'), el('p', {}, 'Signed in as ', el('b', {}, a.name), ' ', out), stats, emailSection(a));
     fetchStats(a.name).then((s) => {
       if (!s) { stats.replaceChildren(el('dd', { className: 'muted' }, 'No games yet.')); return; }
       const kd = s.deaths ? (s.kills / s.deaths).toFixed(2) : String(s.kills);
@@ -291,7 +332,31 @@ export function mountAccount(root: HTMLElement, onChange: (a: Account | null) =>
     };
     form.onsubmit = (e) => { e.preventDefault(); void submit('login'); };
     register.onclick = () => void submit('register');
-    root.replaceChildren(el('h2', {}, 'Account'), el('p', { className: 'muted' }, loadGuestClaims().length ? `Log in to keep stats across games. ${CARRY_LINE}` : 'Log in to keep stats across games.'), form);
+    const forgot = el('button', { type: 'button', className: 'link', id: 'account-forgot' }, 'Forgot password?');
+    forgot.onclick = () => showForgot(name.value.trim());
+    root.replaceChildren(el('h2', {}, 'Account'), el('p', { className: 'muted' }, loadGuestClaims().length ? `Log in to keep stats across games. ${CARRY_LINE}` : 'Log in to keep stats across games.'), form, forgot);
+  };
+
+  /** Asks for a reset link with the account's name and its email; the server's answer is the same whether or not they matched. */
+  const showForgot = (prefill: string) => {
+    const name = el('input', { placeholder: 'Account name', autocomplete: 'username', maxLength: 16, required: true, value: prefill });
+    const query = el('input', { type: 'email', placeholder: 'Email on the account', autocomplete: 'email', maxLength: EMAIL_MAX, required: true });
+    const send = el('button', { type: 'submit' }, 'Send reset link');
+    const back = el('button', { type: 'button', className: 'secondary' }, 'Back');
+    const msg = el('p', { className: 'status', role: 'status' });
+    const form = el('form', { className: 'auth' }, name, query, el('div', { className: 'row' }, send, back), msg);
+    back.onclick = () => showSignedOut();
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      if (!form.reportValidity()) return;
+      const bad = emailError(query.value);
+      if (bad) { msg.textContent = bad; query.focus(); return; }
+      msg.textContent = 'Sending…';
+      const r = await requestReset(name.value.trim(), query.value.trim());
+      msg.textContent = 'error' in r ? r.error : r.message;
+    };
+    root.replaceChildren(el('h2', {}, 'Reset password'), el('p', { className: 'muted' }, `Enter the account name and the email on it; both must match. Accounts without an email can’t be reset. ${NO_EMAIL_LINE}`), form);
+    (prefill ? query : name).focus();
   };
 
   if (account) showSignedIn(account);

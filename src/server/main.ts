@@ -9,7 +9,9 @@ import { WebSocketServer } from 'ws';
 import { WORLD, type ModeId } from '../shared/defs.ts';
 import { cleanName } from '../shared/protocol.ts';
 import { isSlot, parsePicks } from '../shared/cosmetics.ts';
-import { openAccounts, type Accounts } from './accounts.ts';
+import { openAccounts, RESET_MS, type Accounts } from './accounts.ts';
+import { mailerFromEnv, resetMessage, type Mailer } from './mail.ts';
+import { normalizeEmail } from '../shared/email.ts';
 import { openProfiles, profileView, type GuestClaim, type Profiles } from './profiles.ts';
 import { loadModerator } from './moderation.ts';
 import { LIMITS, makeFaultLog, makeKeyedLimiter, makeWindowGate, type Limits } from './limits.ts';
@@ -19,7 +21,11 @@ import { navStats } from './bot/nav.ts';
 import { ROTATION } from '../shared/maps.ts';
 import { planTicks } from './clock.ts';
 
-export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean };
+/**
+ * `mailer` sends password-reset links (null or absent: email is not configured, and a reset request only logs that).
+ * `publicUrl` is the origin those links point at (`PUBLIC_URL`); never taken from a request's Host header, which a client sets.
+ */
+export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean; mailer?: Mailer | null; publicUrl?: string };
 export type RunningServer = { port: number; rooms: ReadonlyMap<string, Room>; close(): Promise<void> };
 
 const PUBLIC_DIR = resolve(import.meta.dirname, '../../public');
@@ -56,6 +62,37 @@ function parseCredentials(body: unknown): { name: string; password: string } | n
   return { name: clean, password };
 }
 
+/** The one answer to every well-formed reset request, whether or not any account has that email or name. */
+export const RESET_SENT = 'If that name and email match an account, we’ve sent a link to reset its password. Check your inbox.';
+export const RESET_INVALID = 'This reset link is invalid, used or expired. Ask for a new one.';
+
+/**
+ * The account routes that change something send JSON from this site's own pages. A form on another site cannot send
+ * `content-type: application/json` without a CORS preflight (which this server never grants), and a browser always names the
+ * page's origin in `Origin` on a cross-site POST, so either check alone stops a forged request; both run.
+ */
+function sameOrigin(req: IncomingMessage, publicUrl: string | undefined): boolean {
+  if (!/^application\/json\s*(;|$)/i.test(String(req.headers['content-type'] ?? ''))) return false;
+  if (req.headers['sec-fetch-site'] === 'cross-site') return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  let host: string;
+  try { host = new URL(origin).host; } catch { return false; }
+  if (host === req.headers.host) return true;
+  try { return publicUrl !== undefined && host === new URL(publicUrl).host; } catch { return false; }
+}
+
+const bearer = (req: IncomingMessage) => /^Bearer (.{1,256})$/.exec(String(req.headers.authorization ?? ''))?.[1];
+
+/** The optional email a body carries: `undefined` for none, the stored form, or null for something that is not an email. */
+function bodyEmail(body: unknown): string | null | undefined {
+  const e = (body as Record<string, unknown>).email;
+  if (e === undefined || e === null || e === '') return undefined;
+  if (typeof e !== 'string' || !e.trim()) return typeof e === 'string' ? undefined : null;
+  return normalizeEmail(e);
+}
+const EMAIL_REFUSED = 'That doesn’t look like an email address. Leave it empty, or use one like name@example.com.';
+
 export const GUEST_CLAIM_REFUSED = 'That guest progress can’t be carried over (it was already claimed, or isn’t yours). Enlist again to start fresh.';
 
 /** The guest claim token a registration body carries, `undefined` when it carries none; anything there that is not a string is refused as a claim. */
@@ -79,13 +116,13 @@ async function loadStatic(file: string) {
   return entry;
 }
 
-async function serveStatic(publicDir: string, pathname: string, req: IncomingMessage, res: ServerResponse) {
+async function serveStatic(publicDir: string, pathname: string, req: IncomingMessage, res: ServerResponse, extra: Record<string, string> = {}) {
   let file: string;
   try { file = resolve(publicDir, '.' + decodeURIComponent(pathname === '/' ? '/index.html' : pathname)); } catch { file = ''; }
   if (!file.startsWith(publicDir + sep)) { res.writeHead(404).end(); return; }
   try {
     const { etag, data, gz } = await loadStatic(file);
-    const headers: Record<string, string> = { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache', etag };
+    const headers: Record<string, string> = { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache', etag, ...extra };
     if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers).end(); return; }
     const useGzip = gz !== null && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
     if (useGzip) headers['content-encoding'] = 'gzip';
@@ -104,6 +141,7 @@ const squadCode = () => `z-${[...randomBytes(6)].map((b) => SQUAD_CODE_CHARS[b %
 const rangeCode = () => `r-${[...randomBytes(6)].map((b) => SQUAD_CODE_CHARS[b % 32]).join('')}`;
 
 type Rooms = { all: Map<string, Room>; openSquad(): string | null; openRange(): string | null; load(): object };
+type Mail = { mailer: Mailer | null; publicUrl(): string; configuredUrl: string | undefined; allowIp: AuthLimiter; allowAccount: AuthLimiter };
 type IpOf = (req: IncomingMessage) => string;
 
 const socketIp: IpOf = (req) => req.socket.remoteAddress ?? '';
@@ -114,7 +152,31 @@ const forwardedIp: IpOf = (req) => {
   return last || socketIp(req);
 };
 
-async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, accounts: Accounts, profiles: Profiles, publicDir: string, allowAuth: AuthLimiter, allowSquad: AuthLimiter, ipOf: IpOf) {
+/** `POST /api/reset/request`: the same answer for every well-formed request, sent before any mail goes out, so neither the reply nor its timing says whether an account matched. */
+async function resetRequest(req: IncomingMessage, res: ServerResponse, accounts: Accounts, mail: Mail, ip: string) {
+  if (!sameOrigin(req, mail.configuredUrl)) return json(res, 403, { error: 'Cross-site request refused' });
+  if (!mail.allowIp(ip, Date.now())) return json(res, 429, { error: 'Too many reset requests. Try again later.' });
+  const body = await readBody(req);
+  const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+  const name = typeof b.name === 'string' ? b.name.trim() : '';
+  const email = typeof b.email === 'string' ? normalizeEmail(b.email) : null;
+  // Shape errors only: neither says anything about whether such an account exists.
+  if (!name || name.length > 32 || !email) return json(res, 400, { error: 'Enter your soldier name and the email on your account.' });
+  if (!mail.mailer) {
+    console.warn('password reset requested, but email is not configured (set RESEND_API_KEY and MAIL_FROM, or SMTP_URL and MAIL_FROM)');
+    return json(res, 200, { ok: true, message: RESET_SENT });
+  }
+  const now = Date.now();
+  const send = accounts.requestReset(name, email, (n) => mail.allowAccount(n.toLowerCase(), now));
+  json(res, 200, { ok: true, message: RESET_SENT });
+  // Mailed after the reply has gone, so the reply's timing cannot tell a match. The token is in the link only, never in a log.
+  if (!send) return;
+  const mailer = mail.mailer;
+  const msg = resetMessage(send.to, send.name, `${mail.publicUrl()}/reset?token=${send.token}`, RESET_MS / 60_000);
+  mailer.send(msg).catch((err: unknown) => console.error(`password reset email via ${mailer.name} failed:`, (err as Error).message));
+}
+
+async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, accounts: Accounts, profiles: Profiles, publicDir: string, allowAuth: AuthLimiter, allowSquad: AuthLimiter, ipOf: IpOf, mail: Mail) {
   let url: URL;
   try { url = new URL(req.url ?? '/', 'http://x'); } catch { return json(res, 400, { error: 'Bad request target' }); }
   const path = url.pathname;
@@ -161,16 +223,52 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
     if (!result.ok) return json(res, 403, { error: 'Item not unlocked', rejected: result.rejected, equipped: result.equipped });
     return json(res, 200, { equipped: result.equipped, unlocked: profiles.get(account)?.unlocked ?? [] });
   }
+  // The reset page: the token arrives in its URL once, and the page moves it into a POST body and out of the address bar.
+  if ((req.method === 'GET' || req.method === 'HEAD') && path === '/reset') return serveStatic(publicDir, '/reset.html', req, res, { 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+  if (req.method === 'POST' && path === '/api/reset/request') return resetRequest(req, res, accounts, mail, ipOf(req));
+  if (req.method === 'POST' && path === '/api/reset/confirm') {
+    if (!sameOrigin(req, mail.configuredUrl)) return json(res, 403, { error: 'Cross-site request refused' });
+    if (!allowAuth(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many attempts. Try again in a minute.' });
+    const body = await readBody(req);
+    const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+    if (typeof b.password !== 'string' || b.password.length < 4 || b.password.length > 128) return json(res, 400, { error: 'Passwords need 4 to 128 characters.' });
+    const name = typeof b.token === 'string' ? await accounts.confirmReset(b.token, b.password) : null;
+    return name ? json(res, 200, { ok: true, name }) : json(res, 400, { error: RESET_INVALID });
+  }
+  // A signed-in player's own account: only the bearer of its session token ever sees its email.
+  if (req.method === 'GET' && path === '/api/account') {
+    const name = accounts.nameForToken(bearer(req) ?? '');
+    if (!name) return json(res, 401, { error: 'Sign in first' });
+    res.setHeader('cache-control', 'no-store');
+    return json(res, 200, { name, email: accounts.email(name) });
+  }
+  if (req.method === 'POST' && path === '/api/account/email') {
+    if (!sameOrigin(req, mail.configuredUrl)) return json(res, 403, { error: 'Cross-site request refused' });
+    if (!allowAuth(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many attempts. Try again in a minute.' });
+    const name = accounts.nameForToken(bearer(req) ?? '');
+    if (!name) return json(res, 401, { error: 'Sign in first' });
+    const body = await readBody(req);
+    if (typeof body !== 'object' || body === null) return json(res, 400, { error: 'Bad request' });
+    const password = (body as Record<string, unknown>).password;
+    const email = bodyEmail(body);
+    if (email === null) return json(res, 400, { error: EMAIL_REFUSED });
+    if (typeof password !== 'string' || !password || password.length > 128) return json(res, 400, { error: 'Enter your current password.' });
+    if (!(await accounts.changeEmail(name, password, email ?? null))) return json(res, 403, { error: 'Wrong password' });
+    return json(res, 200, { email: email ?? null });
+  }
   if (req.method === 'POST' && (path === '/api/register' || path === '/api/login')) {
     if (!allowAuth(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many attempts. Try again in a minute.' });
     const body = await readBody(req);
     const creds = parseCredentials(body);
     if (!creds) return json(res, 400, { error: 'Name must be 3-16 letters/digits and password at least 4 characters' });
     if (path === '/api/register') {
+      // An email is optional, and kept only to mail a password-reset link.
+      const email = bodyEmail(body);
+      if (email === null) return json(res, 400, { error: EMAIL_REFUSED });
       // A guest's progress comes along only on the proof of their own claim token (see `adoptGuest`), never on a name.
       const guest = guestClaimToken(body);
       if (guest === undefined) {
-        const session = await accounts.register(creds.name, creds.password);
+        const session = await accounts.register(creds.name, creds.password, undefined, email);
         if (session) { profiles.reset(creds.name); return json(res, 200, { ...session, carried: false }); }
         return json(res, 409, { error: 'Name taken' });
       }
@@ -179,7 +277,7 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
         const held = profiles.reserveClaim(guest);
         hold.claim = held;
         return held;
-      });
+      }, email);
       if (session === 'unclaimable') return json(res, 403, { error: GUEST_CLAIM_REFUSED, guest: 'invalid' });
       if (!session) { if (hold.claim) profiles.releaseClaim(hold.claim); return json(res, 409, { error: 'Name taken' }); }
       const claim = hold.claim!;
@@ -209,6 +307,13 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const moderator = await loadModerator(opts.dataDir);
   const publicDir = opts.publicDir ?? PUBLIC_DIR;
   const allowSquad = makeKeyedLimiter(limits.squadsPerMin / 60, limits.squadsPerMin);
+  const mail: Mail = {
+    mailer: opts.mailer ?? null,
+    configuredUrl: opts.publicUrl,
+    publicUrl: () => (opts.publicUrl ?? `http://localhost:${(http.address() as AddressInfo | null)?.port ?? opts.port}`).replace(/\/+$/, ''),
+    allowIp: makeKeyedLimiter(limits.resetPerIpPerHour / 3600, limits.resetPerIpPerHour),
+    allowAccount: makeKeyedLimiter(limits.resetPerAccountPerHour / 3600, limits.resetPerAccountPerHour),
+  };
   // Shared by every room, so hopping rooms does not reset it; in memory only (a restart resets it, which is fine).
   const newProfiles = makeWindowGate(limits.newProfileGapMs, limits.newProfilesPerDay, limits.newProfileWindowMs);
   const newRoom = (id: string, mode: ModeId, seed: number) => createRoom(id, mode, seed, accounts, opts.stepsPerTick ?? 1, limits, moderator, profiles, newProfiles);
@@ -255,7 +360,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   };
 
   const http = createServer((req, res) => {
-    route(req, res, { all: rooms, openSquad, openRange, load: () => load }, accounts, profiles, publicDir, allowAuth, allowSquad, ipOf).catch((err: unknown) => {
+    route(req, res, { all: rooms, openSquad, openRange, load: () => load }, accounts, profiles, publicDir, allowAuth, allowSquad, ipOf, mail).catch((err: unknown) => {
       console.error(err);
       if (!res.headersSent) json(res, 500, { error: 'Internal error' });
     });
@@ -369,8 +474,15 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const port = Number(process.env.PORT ?? 8080);
   const dataDir = process.env.DATA_DIR ?? resolve(import.meta.dirname, '../../data');
-  const server = await startServer({ port, dataDir, trustProxy: process.env.TRUST_PROXY === '1' });
+  const mailer = mailerFromEnv(process.env);
+  const publicUrl = process.env.PUBLIC_URL?.trim() || undefined;
+  const server = await startServer({ port, dataDir, trustProxy: process.env.TRUST_PROXY === '1', mailer, publicUrl });
   console.log(`Tinwar listening on http://localhost:${server.port}`);
+  if (!mailer) console.log('password-reset email is not configured (set RESEND_API_KEY and MAIL_FROM, or SMTP_URL and MAIL_FROM)');
+  else {
+    console.log(`password-reset email goes out via ${mailer.name}`);
+    if (!publicUrl) console.warn('PUBLIC_URL is not set: reset links will point at localhost');
+  }
   // Lay out every map's bot nav and cover now, a map at a time, so no room stalls a tick building one when it wakes or rotates.
   warmLayouts([...new Set(Object.values(ROTATION).flat())], (go) => void setTimeout(go, 200).unref());
   const shutdown = async (signal: string) => {

@@ -46,10 +46,10 @@ export async function fetchStats(name: string): Promise<Stats | null> {
  * progress into the new account; the reply says whether it did (`carried`), or `guestInvalid` when the server refused the claim.
  * Logging in never sends one: an existing account never takes a guest's progress.
  */
-export async function authenticate(kind: 'login' | 'register', name: string, password: string, guest?: string): Promise<(Account & { carried: boolean }) | { error: string; guestInvalid?: boolean }> {
+export async function authenticate(kind: 'login' | 'register', name: string, password: string, guest?: string, email?: string): Promise<(Account & { carried: boolean }) | { error: string; guestInvalid?: boolean }> {
   try {
     const r = await getJson(`/api/${kind}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, password, ...(kind === 'register' && guest && { guest }) }),
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, password, ...(kind === 'register' && guest && { guest }), ...(kind === 'register' && email && { email }) }),
     });
     if (isObj(r) && typeof r.token === 'string' && typeof r.name === 'string') return { token: r.token, name: r.name, carried: r.carried === true };
     return { error: isObj(r) && typeof r.error === 'string' ? r.error : 'Unexpected server reply', ...(isObj(r) && r.guest === 'invalid' && { guestInvalid: true }) };
@@ -148,5 +148,36 @@ export async function postEquip(token: string, slot: Slot, id: string): Promise<
     const r: unknown = await res.json();
     if (res.ok && isObj(r) && isObj(r.equipped)) return { equipped: r.equipped as Equipped, unlocked: Array.isArray(r.unlocked) ? (r.unlocked as string[]) : [] };
     return { error: isObj(r) && typeof r.error === 'string' ? r.error : 'Could not equip that' };
+  } catch { return { error: 'Could not reach server' }; }
+}
+
+const errorOf = (r: unknown, fallback: string) => (isObj(r) && typeof r.error === 'string' ? r.error : fallback);
+const postJson = async (path: string, body: unknown, token?: string): Promise<{ ok: boolean; body: unknown }> => {
+  const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json', ...(token && { authorization: `Bearer ${token}` }) }, body: JSON.stringify(body) });
+  return { ok: res.ok, body: await res.json().catch(() => null) };
+};
+
+/** Asks for a reset link for an account by its name and the email on file; both must match. The server answers the same whether or not they did. */
+export async function requestReset(name: string, email: string): Promise<{ message: string } | { error: string }> {
+  try {
+    const r = await postJson('/api/reset/request', { name, email });
+    return r.ok && isObj(r.body) && typeof r.body.message === 'string' ? { message: r.body.message } : { error: errorOf(r.body, 'Could not send a reset link') };
+  } catch { return { error: 'Could not reach server' }; }
+}
+
+/** The signed-in account's own email (only its session token can read it), null for none, or undefined when it can't be read. */
+export async function fetchOwnEmail(token: string): Promise<string | null | undefined> {
+  try {
+    const res = await fetch('/api/account', { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
+    const r: unknown = await res.json();
+    return res.ok && isObj(r) ? (typeof r.email === 'string' ? r.email : null) : undefined;
+  } catch { return undefined; }
+}
+
+/** Adds, changes or (with '') removes the account's email; the current password is required. */
+export async function saveOwnEmail(token: string, email: string, password: string): Promise<{ email: string | null } | { error: string }> {
+  try {
+    const r = await postJson('/api/account/email', { email, password }, token);
+    return r.ok && isObj(r.body) ? { email: typeof r.body.email === 'string' ? r.body.email : null } : { error: errorOf(r.body, 'Could not save the email') };
   } catch { return { error: 'Could not reach server' }; }
 }
