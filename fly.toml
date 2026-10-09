@@ -41,4 +41,4 @@ kill_timeout = '10s'
 
 [[vm]]
   size = 'performance-1x'
-  memory = '1024mb'
+  memory = '2048mb'
