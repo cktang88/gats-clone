@@ -1,5 +1,5 @@
-import { badgeKey, CAREER, CAREER_IDS, CAREER_TIERS, KM_PX, MEDAL_IDS, MEDALS, type Badge, type CareerId, type MedalId, type WeaponId } from '../shared/defs.ts';
-import { careerArt, careerName, medalArt, medalSvg } from './medals.ts';
+import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, MEDALS, type Badge, type CareerId, type MedalId, type WeaponId } from '../shared/defs.ts';
+import { careerArt, careerName, careerTooltip, medalArt, medalSvg } from './medals.ts';
 import { trackRootScale } from './uiscale.ts';
 import { COSMETIC_BY_ID, SLOTS, type Slot } from '../shared/cosmetics.ts';
 import { COLORS, COLOR_IDS, type ColorId } from '../shared/defs.ts';
@@ -49,7 +49,7 @@ function trackCard(p: ProfileJson, track: CareerId): HTMLElement {
   const from = top === undefined ? 0 : def.at[top]!;
   bar.style.setProperty('--v', next === undefined ? '100%' : `${Math.round(((have - from) / (next - from)) * 100)}%`);
   card.append(line, bar);
-  if (top !== undefined) card.title = `${CAREER_TIERS[top]} · earned ${new Date(p.badges[badgeKey(shown)]!).toLocaleDateString()}`;
+  card.title = careerTooltip(track, top === undefined ? undefined : { tier: shown.tier, at: p.badges[badgeKey(shown)]! });
   return card;
 }
 
@@ -107,6 +107,7 @@ function render(p: ProfileJson) {
   head.replaceChildren();
   const worn = el('div', 'profile-worn');
   if (p.featured) worn.innerHTML = medalSvg(careerArt(p.featured), 132, careerName(p.featured));
+  if (p.featured) worn.title = careerTooltip(p.featured.track, { tier: p.featured.tier, at: p.badges[badgeKey(p.featured)] ?? p.firstSeen });
   const who = el('div', 'profile-who');
   const lvl = (p as unknown as { level?: number }).level;
   const stars = (p as unknown as { prestige?: number }).prestige ?? 0;

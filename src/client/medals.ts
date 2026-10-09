@@ -121,6 +121,20 @@ const CAREER_ART: Record<CareerId, Omit<MedalArt, 'tier'>> = {
 
 export const careerArt = (b: Badge): MedalArt => ({ ...CAREER_ART[b.track], tier: CAREER_TIERS[b.tier]!, stars: b.tier + 1 });
 export const careerName = (b: Badge) => `${CAREER[b.track].name} ${['I', 'II', 'III', 'IV'][b.tier]}`;
+
+const TIER_WORD: Record<MedalTier, string> = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold', platinum: 'Platinum' };
+/**
+ * What a lifetime medal is for, as a hover tooltip: the track and what counts toward it (a match medal's own rule when the
+ * track counts one), every rung's goal, and the rung this player holds with the day it was earned.
+ */
+export function careerTooltip(track: CareerId, held?: { tier: Badge['tier']; at: number }): string {
+  const def = CAREER[track];
+  const medal = def.needs in MEDALS ? MEDALS[def.needs as MedalId] : null;
+  const what = medal ? `Earned for ${def.unit}: ${medal.desc.charAt(0).toLowerCase()}${medal.desc.slice(1)}.` : `Earned for ${def.unit}.`;
+  const rungs = def.at.map((n, i) => `${TIER_WORD[CAREER_TIERS[i]!]} ${n.toLocaleString('en-US')}`).join(' · ');
+  const got = held ? `\nHeld: ${careerName({ track, tier: held.tier })} (${TIER_WORD[CAREER_TIERS[held.tier]!]}), earned ${new Date(held.at).toLocaleDateString()}.` : '';
+  return `${def.name}: ${what}\n${rungs}${got}`;
+}
 // Each medal's tier on screen is the one its rules give it.
 for (const id of Object.keys(ART) as MedalId[]) ART[id] = { ...ART[id], tier: MEDALS[id].tier };
 
