@@ -173,7 +173,7 @@ test('the grenade ability, a knife lunge, a gas cloud and a land mine all hurt t
   assert.ok(t.hp <= before - 49, `knife ${before - t.hp}`);
   const g = targetOf(w, 'plank');
   const r = spawnAt(w, g.x - 300, g.y);
-  w.thrown.push({ id: 9001, kind: 'gasCloud', owner: r.id, team: null, x: g.x, y: g.y, expiresAt: w.now + 3000 });
+  w.thrown.push({ id: 9001, kind: 'gasCloud', owner: r.id, team: null, x: g.x, y: g.y, bornAt: w.now, expiresAt: w.now + 3000 });
   run(w, 1000);
   assert.ok(g.hp < g.maxHp, 'gas');
   const m = targetOf(w, 'paper');

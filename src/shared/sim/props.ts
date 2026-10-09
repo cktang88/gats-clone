@@ -38,7 +38,7 @@ function setOff(w: World, q: Prop, spark: PropSpark, dir: { x: number; y: number
       break;
     }
     case 'gas':
-      w.thrown.push({ id: newId(w), kind: 'gasCloud', owner, team: spark.team, x: q.x, y: q.y, expiresAt: w.now + PROP_FX.gas.cloudMs });
+      w.thrown.push({ id: newId(w), kind: 'gasCloud', owner, team: spark.team, x: q.x, y: q.y, bornAt: w.now, expiresAt: w.now + PROP_FX.gas.cloudMs });
       w.events.push({ e: 'prop', kind: 'gas', k: 'pop', x: q.x, y: q.y });
       gone(w, q);
       break;
@@ -48,7 +48,7 @@ function setOff(w: World, q: Prop, spark: PropSpark, dir: { x: number; y: number
       w.events.push({ e: 'prop', kind: 'generator', k: 'arc', x: q.x, y: q.y });
       break;
     case 'oil':
-      w.thrown.push({ id: newId(w), kind: 'fireSlick', owner, team: spark.team, x: q.x, y: q.y, expiresAt: w.now + PROP_FX.oil.burnMs });
+      w.thrown.push({ id: newId(w), kind: 'fireSlick', owner, team: spark.team, x: q.x, y: q.y, bornAt: w.now, expiresAt: w.now + PROP_FX.oil.burnMs });
       w.events.push({ e: 'prop', kind: 'oil', k: 'pop', x: q.x, y: q.y });
       gone(w, q);
       break;

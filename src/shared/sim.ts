@@ -183,7 +183,7 @@ export function step(w: World, dtMs: number): void {
   tickThrown(w, dt);
   tickBarrels(w);
   tickProps(w, dt, playersThisTick(w));
-  if (w.range) tickRange(w, dt);
+  if (w.range) tickRange(w);
   tickAirdrops(w);
   watchCloseCalls(w);
   for (const c of w.crates) {

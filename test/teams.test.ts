@@ -30,7 +30,7 @@ for (const mode of MODE_IDS.filter((m) => m === 'TDM' || m === 'DOM')) {
     assert.deepEqual(sidesWith(createRoom('r', mode, 1, accounts), 4), { redHumans: 2, blueHumans: 2, red: WORLD.minPlayers / 2, blue: WORLD.minPlayers / 2 });
   });
 
-  test(`${mode}: a side that loses its humans gets three bots for each human the other side has, until a human joins it`, () => {
+  test(`${mode}: a side that loses its humans gets one bot for each human the other side has, until a human joins it`, () => {
     const room = createRoom('r', mode, 1, accounts);
     const sockets = new Map<string, ReturnType<typeof fakeSocket>>();
     const join = (name: string) => {
@@ -44,9 +44,9 @@ for (const mode of MODE_IDS.filter((m) => m === 'TDM' || m === 'DOM')) {
       for (const name of ['Ann', 'Bo', 'Cy', 'Di']) join(name);
       assert.deepEqual(sides(room), { redHumans: 2, blueHumans: 2, redBots: 7, blueBots: 7 });
       for (const p of [...room.world.players.values()]) if (p.kind === 'human' && p.team === 'red') sockets.get(p.name)!.close();
-      assert.deepEqual(sides(room), { redHumans: 0, blueHumans: 2, redBots: 11, blueBots: 5 }, 'red plays eleven bots against two humans and five bots');
+      assert.deepEqual(sides(room), { redHumans: 0, blueHumans: 2, redBots: 9, blueBots: 7 }, 'red plays nine bots against two humans and seven bots');
       join('Eve');
-      assert.deepEqual(sides(room), { redHumans: 1, blueHumans: 2, redBots: 9, blueBots: 6 }, 'the next human joins red, two of its extra bots leave and blue gains one');
+      assert.deepEqual(sides(room), { redHumans: 1, blueHumans: 2, redBots: 8, blueBots: 7 }, 'the next human joins red and one of its bots leaves');
     } finally {
       for (const ws of sockets.values()) ws.close();
     }

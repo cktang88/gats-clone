@@ -632,7 +632,7 @@ export const PROP_FX = {
   gas: { cloudMs: 7000 },
   /** A shorted generator arcs for `arcMs`, then pulses: everyone within `radius` is slowed to `slowMul` for `slowMs` and cannot use an ability for `lockMs`. */
   generator: { arcMs: 600, radius: 210, slowMs: 2600, slowMul: 0.55, lockMs: 2000 },
-  /** The slick burns everyone in `radius` (but its spiller) at `dps` for `burnMs`. */
+  /** The slick burns everyone in `radius` (but its spiller) at `dps` for `burnMs`, in half-second pulses (`dotPulses` in sim/dot.ts). */
   oil: { radius: 100, burnMs: 6000, dps: 18 },
   /**
    * A broken-open cabinet's pack lies `packMs`, taken by the first player who walks over it (a body within `pickR` of its centre) and needs it.
@@ -879,7 +879,7 @@ export const ZOM = {
 
 /**
  * Last Squad's ring, one row per phase: the safe circle holds for `waitMs`, then closes over `shrinkMs` to `radius`, inside the circle it closes from.
- * Outside the circle a body loses `dps` of its max health a second, through armor and the spawn shield, and does not regenerate.
+ * Outside the circle a body loses `dps` of its max health a second (half that each half second, `dotPulses` in sim/dot.ts), through armor and the spawn shield, and does not regenerate.
  */
 export type RingPhase = { waitMs: number; shrinkMs: number; radius: number; dps: number };
 export const RING: readonly RingPhase[] = [

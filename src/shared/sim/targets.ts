@@ -1,8 +1,7 @@
-import { ARMOR_IDS, GUNS, GUN_IDS, PERK_TIERS, PROP_FX, PROPS, BARREL, type ArmorId, type GunId, type PerkId, type Tier } from '../defs.ts';
+import { ARMOR_IDS, GUNS, GUN_IDS, PERK_TIERS, PROPS, BARREL, type ArmorId, type GunId, type PerkId, type Tier } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { RANGE, TARGETS, targetBody, targetPos, type RangeView, type TargetDef, type TargetView } from '../range.ts';
 import { explode } from './combat.ts';
-import { GAS_RADIUS } from './abilities.ts';
 import { dist2, segmentEntersCapsuleAt } from './movement.ts';
 import { effectiveStats } from './stats.ts';
 import type { Player, World } from './world.ts';
@@ -160,8 +159,14 @@ export function rangeView(w: World, pid: number): RangeView {
   return { last: s.last, dps: Math.round(dps * 10) / 10, shots: s.shots, hits: s.hitShots, ttk: s.ttk, downs: s.downs, total: Math.round(s.total) };
 }
 
-/** Gas and fire burn targets, a mine goes off under one, targets stand again, barrels and props come back, and the range keeps its one player at level 0. */
-export function tickRange(w: World, dt: number): void {
+/** A mine goes off under a target (gas and fire burn them in `burnTargets`), targets stand again, barrels and props come back, and the range keeps its one player at level 0. */
+/** A gas cloud's or burning slick's pulse on the range: every standing target within `radius` of (x, y) takes `amount` as one hit. */
+export function burnTargets(w: World, x: number, y: number, radius: number, amount: number, attacker: Player | null, label: string): void {
+  if (!w.range) return;
+  for (const t of w.range.targets) if (standing(t) && dist2(t.x, t.y, x, y) < radius * radius) damageTarget(w, t, amount, { attacker, label, burn: true });
+}
+
+export function tickRange(w: World): void {
   const r = w.range;
   if (!r) return;
   for (const t of r.targets) {
@@ -173,10 +178,7 @@ export function tickRange(w: World, dt: number): void {
   }
   for (const th of w.thrown) {
     const owner = w.players.get(th.owner) ?? null;
-    if (th.kind === 'gasCloud' || th.kind === 'fireSlick') {
-      const radius = th.kind === 'gasCloud' ? GAS_RADIUS : PROP_FX.oil.radius, dps = th.kind === 'gasCloud' ? 14 : PROP_FX.oil.dps;
-      for (const t of r.targets) if (standing(t) && dist2(t.x, t.y, th.x, th.y) < radius * radius) damageTarget(w, t, dps * dt, { attacker: owner, label: th.kind === 'gasCloud' ? 'Gas' : 'Fire', burn: true });
-    } else if (th.kind === 'landMine' && w.now >= th.armedAt && owner?.life.k === 'alive') {
+    if (th.kind === 'landMine' && w.now >= th.armedAt && owner?.life.k === 'alive') {
       const tripped = r.targets.some((t) => standing(t) && dist2(t.x, t.y, th.x, th.y) < (TARGETS[t.def.kind].r + 30) ** 2);
       if (tripped) {
         w.thrown = w.thrown.filter((o) => o !== th);

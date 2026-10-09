@@ -2,6 +2,7 @@ import { COLOR_IDS, LEVELS, RING, ROYALE, WORLD, type ColorId } from '../defs.ts
 import { MAPS } from '../maps.ts';
 import { ringAt, type Circle, type RingView, type RoundWinner, type RoyaleResult, type Team } from '../protocol.ts';
 import { die, kill } from './combat.ts';
+import { DOT_SHARE, dotPulses } from './dot.ts';
 import { goDown, tickDowned } from './downed.ts';
 import { circleBlocked, dist2, rectsOverlap } from './movement.ts';
 import { abilityOf, effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
@@ -142,18 +143,28 @@ function landDrops(w: World, r: Royale) {
   });
 }
 
+/**
+ * Outside the circle a body loses `RING`'s share of its max health a second, in pulses on the world clock (`dotPulses` from time 0, so every
+ * body outside burns on the same beat): each pulse is one hit, one number, of `DOT_MS` worth. One who steps back in between pulses takes nothing more.
+ */
 function burnOutside(w: World, r: Royale, dtMs: number) {
+  const pulses = dotPulses(0, w.now, dtMs);
+  if (pulses === 0) return;
   const c = safeCircle(r, w.now);
   const dps = ringDps(r.ring);
-  const onceASecond = w.tick % WORLD.tickHz === 0;
   for (const p of [...w.players.values()]) {
     const life = p.life;
     if (life.k === 'dead' || dist2(p.x, p.y, c.x, c.y) <= c.r * c.r) continue;
-    const perSec = dps * effectiveStats(p).maxHp;
-    if (onceASecond) w.events.push({ e: 'dmg', attacker: null, victim: p.id, amount: Math.round(perSec), x: p.x, y: p.y, kind: 'player' });
-    if (life.k === 'downed') { hurtDowned(w, p, (perSec * dtMs) / 1000, null); continue; }
-    life.hp -= (perSec * dtMs) / 1000;
+    const amount = dps * effectiveStats(p).maxHp * DOT_SHARE * pulses;
+    if (life.k === 'downed') {
+      w.events.push({ e: 'dmg', attacker: null, victim: p.id, amount: Math.round(Math.min(life.hp, amount) * 10) / 10, x: p.x, y: p.y, kind: 'player' });
+      hurtDowned(w, p, amount, null);
+      continue;
+    }
+    const dealt = Math.min(life.hp, amount);
+    life.hp -= amount;
     life.lastDamageAt = w.now;
+    w.events.push({ e: 'dmg', attacker: null, victim: p.id, amount: Math.round(dealt * 10) / 10, x: p.x, y: p.y, kind: 'player' });
     if (life.hp <= 0) kill(w, p, null, 'Ring');
   }
 }

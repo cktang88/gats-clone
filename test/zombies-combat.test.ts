@@ -109,7 +109,7 @@ test('knife, gas and land mines work on zombies too', () => {
   const gasWorld = nightWorld();
   const gasser = spawnAt(gasWorld, X, Y);
   const choking = addZombie(gasWorld, 'brute', X, Y + 400, 1000);
-  gasWorld.thrown.push({ id: newId(gasWorld), kind: 'gasCloud', owner: gasser.id, team: gasser.team, x: X, y: Y + 400, expiresAt: Infinity });
+  gasWorld.thrown.push({ id: newId(gasWorld), kind: 'gasCloud', owner: gasser.id, team: gasser.team, x: X, y: Y + 400, bornAt: gasWorld.now, expiresAt: Infinity });
   run(gasWorld, 1000);
   assert.ok(choking.hp < 1000, 'the gas choked');
 

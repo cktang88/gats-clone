@@ -169,9 +169,10 @@ export type Thrown =
   /** A smoke cloud: it blooms, drifts at (vx, vy) and thins away (see `smokeShape`). */
   | { id: number; kind: 'smokeCloud'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; bornAt: number; expiresAt: number }
   | { id: number; kind: 'landMine'; owner: number; team: Team; x: number; y: number; armedAt: number; expiresAt: number }
-  | { id: number; kind: 'gasCloud'; owner: number; team: Team; x: number; y: number; expiresAt: number }
-  /** An oil drum's burning slick: it burns whoever stands in it but its spiller (see `PROP_FX.oil`). */
-  | { id: number; kind: 'fireSlick'; owner: number; team: Team; x: number; y: number; expiresAt: number };
+  /** A gas cloud: it hurts whoever is in it in pulses (`dotPulses`), on a clock from `bornAt`. */
+  | { id: number; kind: 'gasCloud'; owner: number; team: Team; x: number; y: number; bornAt: number; expiresAt: number }
+  /** An oil drum's burning slick: it burns whoever stands in it but its spiller (see `PROP_FX.oil`), in pulses from `bornAt` like a gas cloud. */
+  | { id: number; kind: 'fireSlick'; owner: number; team: Team; x: number; y: number; bornAt: number; expiresAt: number };
 
 /** `crew` is how many of the one team alone on the zone stand on it (0 when it is empty or contested); `contested` is both teams on it. */
 export type Zone = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number; crew: number; contested: boolean };

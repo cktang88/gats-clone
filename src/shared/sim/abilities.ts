@@ -2,13 +2,16 @@ import { PROP_FX, WORLD, ZOMBIES, type AbilityId } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { damagePlayer, explode } from './combat.ts';
 import { damageZombie } from './run.ts';
-import { knifeTargets } from './targets.ts';
+import { DOT_SHARE, dotPulses } from './dot.ts';
+import { burnTargets, knifeTargets } from './targets.ts';
 import { nearestEdge } from '../geom.ts';
 import { circleHitsRect, clamp, dist2, earliestHit, knifeLunge, segmentBlocked, startDash } from './movement.ts';
 import { coverRects, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
 
 const BUILT_WALL_MS = 12000;
 export const GAS_RADIUS = 140;
+/** A gas cloud's damage a second, the grenade's and the canister's alike. */
+export const GAS_DPS = 14;
 export const GRENADE_FUSE_MS = 900;
 export const BLAST_RADIUS = { grenade: 160, fragGrenade: 90 } as const;
 const THROW_SPEED = 700;
@@ -119,6 +122,28 @@ function bounceOff(t: { x: number; y: number; vx: number; vy: number }, pts: rea
   t.y = py + ny * BOUNCE.standoff;
 }
 
+/** What each lingering hazard deals: damage a second over a circle, in pulses (`dotPulses`). A kill by fire is an Arsonist. */
+const HAZARDS = {
+  gasCloud: { radius: GAS_RADIUS, dps: GAS_DPS, label: 'Gas', medal: undefined },
+  fireSlick: { radius: PROP_FX.oil.radius, dps: PROP_FX.oil.dps, label: 'Fire', medal: 'arsonist' },
+} as const;
+
+/**
+ * A cloud's or slick's pulse, when one falls in this step (up to and at its last moment): everyone in it then, players, zombies and range
+ * targets alike, takes `DOT_MS` worth of its damage as one hit, credited to whoever made it. Its maker is spared (as `damagePlayer` spares a
+ * non-blast hit on oneself), teammates too.
+ */
+function burnPulse(w: World, t: Extract<Thrown, { kind: 'gasCloud' | 'fireSlick' }>, owner: Player | null, dtMs: number) {
+  const pulses = dotPulses(t.bornAt, w.now, dtMs, t.expiresAt);
+  if (pulses === 0) return;
+  const h = HAZARDS[t.kind], amount = h.dps * DOT_SHARE * pulses, r2 = h.radius ** 2;
+  for (const p of w.players.values()) {
+    if (dist2(p.x, p.y, t.x, t.y) < r2) damagePlayer(w, p, amount, { attacker: owner, team: t.team, label: h.label, piercing: true, via: 'gas', ...(h.medal && { medal: h.medal }), fromX: t.x, fromY: t.y });
+  }
+  for (const z of w.zombies) if (dist2(z.x, z.y, t.x, t.y) < r2) damageZombie(w, z, amount, owner);
+  burnTargets(w, t.x, t.y, h.radius, amount, owner, h.label);
+}
+
 export function tickThrown(w: World, dt: number) {
   const keep: Thrown[] = [];
   for (const t of w.thrown) {
@@ -152,7 +177,7 @@ export function tickThrown(w: World, dt: number) {
           }
         } else {
           w.events.push({ e: 'boom', x: t.x, y: t.y, r: 40 });
-          keep.push({ id: t.id, kind: 'gasCloud', owner: t.owner, team: t.team, x: t.x, y: t.y, expiresAt: w.now + 5000 });
+          keep.push({ id: t.id, kind: 'gasCloud', owner: t.owner, team: t.team, x: t.x, y: t.y, bornAt: w.now, expiresAt: w.now + 5000 });
         }
         break;
       }
@@ -172,25 +197,10 @@ export function tickThrown(w: World, dt: number) {
         keep.push(t);
         break;
       }
-      case 'gasCloud': {
-        if (w.now >= t.expiresAt) break;
-        for (const p of w.players.values()) {
-          if (dist2(p.x, p.y, t.x, t.y) < GAS_RADIUS ** 2) {
-            damagePlayer(w, p, 14 * dt, { ...by, label: 'Gas', piercing: true, via: 'gas', fromX: t.x, fromY: t.y });
-          }
-        }
-        for (const z of w.zombies) if (dist2(z.x, z.y, t.x, t.y) < GAS_RADIUS ** 2) damageZombie(w, z, 14 * dt, owner);
-        keep.push(t);
-        break;
-      }
+      case 'gasCloud':
       case 'fireSlick': {
-        if (w.now >= t.expiresAt) break;
-        const r2 = PROP_FX.oil.radius ** 2;
-        for (const p of w.players.values()) {
-          if (dist2(p.x, p.y, t.x, t.y) < r2) damagePlayer(w, p, PROP_FX.oil.dps * dt, { ...by, label: 'Fire', piercing: true, via: 'gas', medal: 'arsonist', fromX: t.x, fromY: t.y });
-        }
-        for (const z of w.zombies) if (dist2(z.x, z.y, t.x, t.y) < r2) damageZombie(w, z, PROP_FX.oil.dps * dt, owner);
-        keep.push(t);
+        burnPulse(w, t, owner, dt * 1000);
+        if (w.now < t.expiresAt) keep.push(t);
         break;
       }
     }

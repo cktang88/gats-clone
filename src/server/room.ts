@@ -30,11 +30,12 @@ const TICK_MS = 1000 / WORLD.tickHz;
 const CHAT_INTERVAL_MS = 1000;
 const RTT_SAMPLES = 5;
 /**
- * A side short of humans gets this many bots for each one it lacks. Set when humans carried more health than bots; they now carry the
- * same, a bot's hits counting 0.8 on them (`BOT_DAMAGE_TO_HUMAN`), so this wants measuring again.
- * Measured when humans carried triple health, over 24 seeded TDM rounds with bot-driven humans: 1v0, 2v0, 0v2, 3v0 and 2v1 each land between a third and two thirds of wins; at 2.5 one split went 88% to the humans and at 2 another went 92%.
+ * A side short of humans gets this many bots for each one it lacks: one, now that people and bots carry the same health (a bot's hits
+ * count 0.8 on a human, `BOT_DAMAGE_TO_HUMAN`), so a bot fills a missing human's seat one for one.
+ * It was 3 when humans carried triple health (24 seeded TDM rounds with bot-driven humans then put 1v0, 2v0, 0v2, 3v0 and 2v1 each between a
+ * third and two thirds of wins).
  */
-const BOTS_PER_HUMAN = 3;
+const BOTS_PER_HUMAN = 1;
 /** Told once, at join, to a guest whose new name got no profile because their address hit the new-profile limit. */
 export const UNRECORDED_NOTICE = "Your stats aren't being saved for new names right now — register to keep them.";
 
