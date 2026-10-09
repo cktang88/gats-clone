@@ -213,7 +213,7 @@ function weaponMedals(w: World, killer: Player, victim: Player, how: KillHow, ow
       break;
     case 'assault': {
       const bloom = rulesOf(GUNS[how.gun]).bloom;
-      if (bloom && life.k === 'alive' && life.spray <= bloom.free && range >= WEAPON_MEDALS.disciplinedPx) out.push('disciplined');
+      if (bloom && life.k === 'alive' && life.spray <= bloom.tap && range >= WEAPON_MEDALS.disciplinedPx) out.push('disciplined');
       break;
     }
     case 'sniper':

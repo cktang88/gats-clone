@@ -225,6 +225,6 @@ test('Run and Gun is an SMG kill on the move just out of a sprint; Disciplined a
   w.now += MEDAL_RULES.multiMs + 1;
   assert.deepEqual(shot(w, r, spawnAt(w, 2000 + WEAPON_MEDALS.disciplinedPx + 10, 2100), 'assault', 10_000), ['disciplined']);
   w.now += MEDAL_RULES.multiMs + 1;
-  if (r.life.k === 'alive') r.life.spray = rulesOf(GUNS.assault).bloom!.free + 1;
+  if (r.life.k === 'alive') r.life.spray = rulesOf(GUNS.assault).bloom!.tap + 1;
   assert.ok(!shot(w, r, spawnAt(w, 2000 + WEAPON_MEDALS.disciplinedPx + 10, 1900), 'assault', 10_000).includes('disciplined'), 'a bloomed spray');
 });

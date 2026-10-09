@@ -3,6 +3,7 @@ import { BOT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Sna
 import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { bloomRecoverMul, settleShare, spreadFor } from '../../shared/sim/stats.ts';
+import { coolSpray, sprayCap } from '../../shared/sim/trigger.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, wrapAngle, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
 import { clearOfLeaves, doorCentre, leavesCrossed, navAround, takeReplan, type BotArena, type StandingLeaf } from './arena.ts';
 import { doorLeaves, swingArcAt, swingHinges, SWING_MAX } from '../../shared/sim/doors.ts';
@@ -250,17 +251,17 @@ function plants(v: Perception, c: IntentCtx, d: number, fromCover: boolean): boo
 }
 
 /**
- * Burst-tapping: a gun whose bloom starts after its first few rounds (an assault rifle, a sniper, an SMG or auto pistol that holds a lane) has
- * its bot let go after that many and take the gun back to rest before it fires again, instead of holding a spray that drifts off the target
+ * Burst-tapping: a gun that blooms with every round past its first (an assault rifle, a sniper, an SMG or auto pistol that holds a lane) has
+ * its bot let go after its `tap` rounds and take the gun back to rest before it fires again, instead of holding a spray that drifts off the target
  * (from `TAP_FROM_PX` out; closer, the cone swallows any bloom). A rusher hoses, and so does a machine gun: its job is to pin, and a stream pins.
  */
 export const TAP_FROM_PX = 280;
 export function tapRhythm(gun: GunId, rushes: boolean): { windowMs: number; pauseMs: number } | null {
   const def = GUNS[gun];
   const { bloom } = rulesOf(def);
-  if (!bloom || bloom.free > 4 || rushes || def.base === 'lmg') return null;
+  if (!bloom || bloom.tap > 4 || rushes || def.base === 'lmg') return null;
   const perRound = def.burst ? ((def.burst.count - 1) * def.burst.gapMs + def.fireMs) / def.burst.count : def.fireMs;
-  return { windowMs: bloom.free * perRound - 1, pauseMs: bloom.settleMs + 0.5 * bloom.recoverMs };
+  return { windowMs: bloom.tap * perRound - 1, pauseMs: bloom.settleMs + 0.5 * bloom.recoverMs };
 }
 
 /**
@@ -304,7 +305,7 @@ function hitChance(gun: GunId, r: Rhythm, sprayShot: number, s: ShotRead, settle
  */
 export function holdsFire(gun: GunId, r: Rhythm, s: ShotRead): boolean {
   if (s.urgent || s.d < TAP_FROM_PX || s.sinceShotMs >= r.patienceMs) return false;
-  const rounds = s.pausing ? Math.max(1, rulesOf(GUNS[gun]).bloom?.free ?? 1) : 1;
+  const rounds = s.pausing ? Math.max(1, rulesOf(GUNS[gun]).bloom?.tap ?? 1) : 1;
   return hitChance(gun, r, s.spray + rounds, s, s.settle ?? 0) < GOOD_SHOT * hitChance(gun, r, rounds, s);
 }
 
@@ -312,15 +313,14 @@ export function holdsFire(gun: GunId, r: Rhythm, s: ShotRead): boolean {
  * Its own bloom as the bot reckons it, the way a person watches the reticle: a round gone from the magazine kicks it a shot, a reload
  * settles it, and with nothing fired for the gun's `settleMs` it comes back down at the sim's rate (`Rhythm.recover`).
  */
-function ownBloom(r: Rhythm | null, gun: GunId, tap: Motor['tap'], ammo: number, tick: number): { spray: number; firedTick: number } {
+export function ownBloom(r: Rhythm | null, gun: GunId, tap: Motor['tap'], ammo: number, tick: number): { spray: number; firedTick: number } {
   const { bloom } = rulesOf(GUNS[gun]);
   let spray = tap?.spray ?? 0, firedTick = tap?.firedTick ?? -Infinity;
   if (!r || !bloom) return { spray: 0, firedTick };
   const was = tap?.ammo ?? ammo;
-  const max = bloom.free + (bloom.maxMul - 1) / bloom.perShot;
-  if (ammo < was) { spray = Math.min(max, spray + (was - ammo)); firedTick = tick - 1; }
+  if (ammo < was) { spray = Math.min(sprayCap(bloom), spray + (was - ammo)); firedTick = tick - 1; }
   else if (ammo > was) spray = 0;
-  else if ((tick - firedTick) * TICK_MS > bloom.settleMs) spray = Math.max(0, spray - (max * TICK_MS * r.recover) / bloom.recoverMs);
+  else if ((tick - firedTick) * TICK_MS > bloom.settleMs) spray = coolSpray(spray, bloom, TICK_MS, r.recover);
   return { spray, firedTick };
 }
 

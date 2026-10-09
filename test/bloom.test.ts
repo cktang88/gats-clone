@@ -1,12 +1,17 @@
 /// <reference types="node" />
-// Full-auto bloom, through the sim itself: a held trigger is punished standing as well as moving, taps and short bursts stay tight, a bipod
-// tames a machine gun without taking its bloom away, and the Machine Pistol carries a real stage-1 punch.
+// Full-auto bloom, through the sim itself: a held trigger bites at once and slows as it nears its cap (never past it), it is punished standing
+// as well as moving, taps stay tight, a bipod tames a machine gun without taking its bloom away, the page's prediction and a bot's read of its
+// own bloom are the sim's, and the Machine Pistol carries a real stage-1 punch.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EVOLUTIONS, GUN_IDS, GUNS, roundsPerSec, rulesOf, WORLD, type GunId } from '../src/shared/defs.ts';
+import { IDLE_INPUT } from '../src/shared/sim/world.ts';
 import type { InputState } from '../src/shared/protocol.ts';
-import { step } from '../src/shared/sim.ts';
+import { setInput, step } from '../src/shared/sim.ts';
 import { easedSpread, spreadFor } from '../src/shared/sim/stats.ts';
+import { bloomShare, sprayCap } from '../src/shared/sim/trigger.ts';
+import { NO_FIRING, settle, stepTrigger, type TriggerInput } from '../src/client/fire.ts';
+import { fireRhythm, ownBloom } from '../src/server/bot/motor.ts';
 import { emptyWorld, equip, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 /** Every full-auto gun of the classes that have them (bursts and pellet guns aside): what a held trigger is about. */
@@ -44,17 +49,46 @@ function held(gun: GunId, opts: { moving?: boolean; rounds?: number; rest?: numb
   return out;
 }
 
-test('a held trigger blooms hard standing still, for every full-auto gun: noticeably by round 8, wide by round 20', () => {
+test('the bloom curve: each round past the free ones adds less than the one before, and the cone lands on its cap without passing it', () => {
+  for (const gun of GUN_IDS) {
+    const bloom = rulesOf(GUNS[gun]).bloom!;
+    const shares = Array.from({ length: Math.ceil(sprayCap(bloom)) + 4 }, (_, k) => bloomShare(bloom, k));
+    for (let k = 1; k < shares.length; k++) {
+      assert.ok(shares[k]! <= 1 && shares[k]! >= shares[k - 1]!, `${gun}: round ${k} at ${shares[k]} of the cap`);
+      if (k > bloom.free + 1) assert.ok(shares[k]! - shares[k - 1]! <= shares[k - 1]! - shares[k - 2]! + 1e-12, `${gun}: round ${k} adds more than round ${k - 1}`);
+    }
+    assert.equal(shares.at(-1), 1, `${gun}: a long spray reaches the cap`);
+    assert.equal(bloomShare(bloom, sprayCap(bloom) + 50), 1, `${gun}: and stays on it`);
+  }
+  // Through the sim: a held trigger's rounds, standing and walking, each widen the cone by no more than the round before, up to the cap.
+  for (const gun of BARE) {
+    for (const moving of [false, true]) {
+      const s = held(gun, { moving, rounds: 40 });
+      const cap = spreadFor(gun, {}, !moving, 1e6);
+      const free = rulesOf(GUNS[gun]).bloom!.free;
+      for (let i = free + 1; i < s.length; i++) assert.ok(s[i]! - s[i - 1]! <= s[i - 1]! - s[i - 2]! + 1e-9, `${gun}${moving ? ' walking' : ''}: round ${i + 1} adds more than round ${i}`);
+      assert.ok(Math.max(...s) <= cap + 1e-9, `${gun}: never past its cap`);
+      assert.ok(s[39]! > 0.97 * cap, `${gun}: forty rounds all but reach it`);
+    }
+  }
+});
+
+test('a held trigger bites at once and then slows: round 3 already shows a clear rise for every full-auto gun, and it is wide by round 20', () => {
   // Round 20 against round 1, standing: the class guns are pinned harder than the heavy evolutions (a drum SMG, a bipod gun stood up), which
   // soak more of the kick with their weight.
   const atLeast: Partial<Record<GunId, number>> = { assault: 3, lmg: 1.8, lightMg: 1.6, smg: 1.6, hailstorm: 2 };
+  const classGuns: readonly GunId[] = ['assault', 'smg', 'lmg', 'hailstorm', 'skirmisher', 'ranger'];
   for (const gun of BARE) {
-    const s = held(gun);
-    const r1 = s[0]!, r8 = s[7]!, r20 = s[19]!;
-    assert.ok(r8 >= 1.08 * r1, `${gun}: round 8 ${r8.toFixed(4)} vs round 1 ${r1.toFixed(4)}`);
-    assert.ok(r20 >= (atLeast[gun] ?? 1.3) * r1, `${gun}: round 20 is ${(r20 / r1).toFixed(2)}x round 1 standing`);
-    assert.ok(r8 > 1.5 * r1 || gun !== 'assault', 'an assault rifle sprayed is half as wide again by round 8: tap it');
+    for (const moving of [false, true]) {
+      const s = held(gun, { moving, rounds: 20 });
+      const r1 = s[0]!, r3 = s[2]!, r5 = s[4]!, r10 = s[9]!, r20 = s[19]!;
+      assert.ok(r3 >= 1.05 * r1, `${gun}: round 3 ${(r3 / r1).toFixed(2)}x round 1`);
+      if (classGuns.includes(gun)) assert.ok(r3 >= 1.15 * r1, `${gun}: a light or class gun snaps up, round 3 ${(r3 / r1).toFixed(2)}x round 1`);
+      assert.ok((r5 - r1) / 4 > (r20 - r10) / 10, `${gun}: the first rounds climb faster than rounds 10 to 20`);
+      if (!moving) assert.ok(r20 >= (atLeast[gun] ?? 1.3) * r1, `${gun}: round 20 is ${(r20 / r1).toFixed(2)}x round 1 standing`);
+    }
   }
+  assert.ok(held('assault')[4]! > 1.8 * held('assault')[0]!, 'an assault rifle sprayed is nearly twice as wide by round 5: tap it');
   // A bipod gun stood still but not yet set down blooms like any other.
   for (const gun of FULL_AUTO.filter((id) => rulesOf(GUNS[id]).deploy)) assert.ok(spreadFor(gun, {}, true, 20) >= 1.3 * spreadFor(gun, {}, true, 1), gun);
 });
@@ -68,16 +102,21 @@ test('standing still helps only a little: a held trigger grows nearly as many ti
   }
 });
 
-test('tapping stays tight: single taps and short bursts of the free rounds never bloom past the first round', () => {
+test('tapping stays tight: single taps never bloom past the first round, and each short tap starts back on it', () => {
   for (const gun of FULL_AUTO) {
     const first = held(gun, { rounds: 1 })[0]!;
+    // A round's kick lands on the cone at once and eases back out over `SPREAD_EASE` once the gun cools: four taps a second stay within a
+    // sixth of the first round, and a tap every half second is back on it every time.
     const taps = held(gun, { tap: { rounds: 1, gapMs: 250 } });
-    assert.ok(Math.max(...taps) <= first * 1.001, `${gun}: taps four a second stay at ${first.toFixed(4)} (widest ${Math.max(...taps).toFixed(4)})`);
-    const free = rulesOf(GUNS[gun]).bloom!.free;
-    const bursts = held(gun, { tap: { rounds: free, gapMs: 450 } });
-    assert.ok(Math.max(...bursts) <= first * 1.001, `${gun}: bursts of ${free} stay at ${first.toFixed(4)} (widest ${Math.max(...bursts).toFixed(4)})`);
+    assert.ok(Math.max(...taps) <= first * 1.15, `${gun}: taps four a second stay near ${first.toFixed(4)} (widest ${Math.max(...taps).toFixed(4)})`);
+    const paced = held(gun, { tap: { rounds: 1, gapMs: 500 } });
+    assert.ok(Math.max(...paced) <= first * 1.001, `${gun}: a tap every half second stays at ${first.toFixed(4)} (widest ${Math.max(...paced).toFixed(4)})`);
+    const tap = rulesOf(GUNS[gun]).bloom!.tap;
+    const bursts = held(gun, { tap: { rounds: tap, gapMs: 500 }, rounds: 4 * tap });
+    for (let i = 0; i < bursts.length; i += tap) assert.ok(bursts[i]! <= first * 1.001, `${gun}: tap ${i / tap + 1} of ${tap} starts at ${bursts[i]!.toFixed(4)}, not ${first.toFixed(4)}`);
+    assert.ok(Math.max(...bursts) <= held(gun, { rounds: tap })[tap - 1]! * 1.001, `${gun}: and no tap blooms past a fresh one`);
   }
-  // The burst guns recover between bursts: a held Battle Rifle or Carbine never blooms.
+  // A burst flies on its first round's cone, and the burst guns recover between bursts: a held Battle Rifle or Carbine never blooms.
   for (const gun of ['battleRifle', 'carbine', 'machinePistol'] as const) {
     const s = held(gun, { rounds: 18 });
     assert.ok(Math.max(...s) <= s[0]! * 1.001, `${gun}: held bursts stay tight`);
@@ -94,6 +133,39 @@ test('a set-down bipod tames a machine gun but does not stop its bloom', () => {
     const bare = (round: number) => spreadFor(gun, {}, true, round, 0, 0, false);
     assert.ok(grows < bare(30) / bare(1), `${gun}: set down it blooms ${grows.toFixed(2)}x, less than the ${(bare(30) / bare(1)).toFixed(2)}x standing without it`);
     assert.ok(down[29]! < 0.6 * bare(30), `${gun}: and its widest set-down cone is well inside the bare standing one`);
+  }
+});
+
+test('the page predicts the sim\'s spread, and a bot reckons the sim\'s bloom, through one implementation of the curve', () => {
+  for (const gun of ['assault', 'smg', 'lmg', 'heavyLmg', 'minigun', 'battleRifle', 'sniper', 'semiAuto'] as const) {
+    for (const moving of [false, true]) {
+      const w = emptyWorld();
+      const p = spawnAt(w, 1500, 3000, { loadout: { weapon: GUNS[gun].base, armor: 'none' }, kind: 'human' });
+      equip(p, gun);
+      if (p.life.k === 'alive') p.life.ammo = 1e6;
+      const ready = { gun, mag: 1e6, reloadMs: GUNS[gun].reloadMs, ammo: 1e6, reloading: false, reloadFrac: 0, alive: true, armed: true };
+      let t = settle(NO_FIRING, ready, 0, 0, []).firing.trigger;
+      const rhythm = fireRhythm(gun, false, 1);
+      let tap: Parameters<typeof ownBloom>[2] = { since: null, pauseUntil: -Infinity, spray: 0, firedTick: -Infinity, ammo: 1e6 };
+      // Held, let go, tapped, held again: every tick the page's eased spread is the sim's, and a tapping bot's reckoned bloom (it sees a round
+      // leave a snapshot late) is within one tick's cooling of it.
+      const pattern = 'P' + 'h'.repeat(45) + '.'.repeat(8) + 'P...P...P....' + 'P' + 'h'.repeat(30) + '.'.repeat(40);
+      let shots = 0, fire = false;
+      [...pattern].forEach((c, i) => {
+        if (c === 'P') { shots++; fire = true; } else if (c === '.') fire = false;
+        const input: TriggerInput = { fire, shots, reload: false, right: moving };
+        setInput(w, p.id, i + 1, { ...IDLE_INPUT, ...input, angle: 0 });
+        step(w, TICK_MS);
+        t = stepTrigger(t, input, w.now).t;
+        if (p.life.k !== 'alive') return;
+        assert.ok(Math.abs(easedSpread(t.spreadHist) - easedSpread(p.life.spreadHist)) < 1e-12, `${gun}${moving ? ' walking' : ''}: the page's spread after input ${i + 1}`);
+        if (!rhythm) return;
+        const own = ownBloom(rhythm, gun, tap, p.life.ammo, i + 1);
+        tap = { since: null, pauseUntil: -Infinity, spray: own.spray, firedTick: own.firedTick, ammo: p.life.ammo };
+        const tick = (sprayCap(rulesOf(GUNS[gun]).bloom!) * TICK_MS) / rulesOf(GUNS[gun]).bloom!.recoverMs;
+        assert.ok(Math.abs(own.spray - p.life.spray) <= tick + 1e-9, `${gun}: the bot reckons ${own.spray.toFixed(3)}, the sim has ${p.life.spray.toFixed(3)} after input ${i + 1}`);
+      });
+    }
   }
 });
 

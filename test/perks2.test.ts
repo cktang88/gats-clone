@@ -108,8 +108,10 @@ test('Marathon: sprint 15% faster and the post-sprint settle half as long', () =
 
 test('Steady Hands: bloom builds 40% slower, recovers 60% faster, and the settle is a quarter shorter', () => {
   const plain = { 2: 'firstAid' } as const, steady = { 2: 'steadyHands' } as const;
-  const bloomAt = (perks: typeof plain | typeof steady) => spreadFor('assault', perks, true, 6) / spreadFor('assault', perks, true, 0);
-  assert.ok(Math.abs((bloomAt(steady) - 1) / (bloomAt(plain) - 1) - 0.6) < 0.02, `bloom builds at ${(bloomAt(steady) - 1) / (bloomAt(plain) - 1)} of the pace`);
+  // A round adds 0.6 of its heat: ten rounds with it bloom the cone as far along its curve as six without.
+  const bloomAt = (perks: typeof plain | typeof steady, rounds: number) => spreadFor('assault', perks, true, 1 + rounds);
+  assert.ok(Math.abs(bloomAt(steady, 10) - bloomAt(plain, 6)) < 1e-12, `ten rounds with it bloom ${bloomAt(steady, 10)}, six without ${bloomAt(plain, 6)}`);
+  assert.ok(bloomAt(steady, 6) < bloomAt(plain, 6) && bloomAt(steady, 6) > spreadFor('assault', plain, true, 1), 'it builds slower, but builds');
   assert.equal(bloomRecoverMul(steady), 1.6);
   const sprayAfter = (recover: number) => {
     const s: TriggerState = { ammo: 30, reloadUntil: null, nextFireAt: 0, burstLeft: 0, pressUntil: -Infinity, spray: 8, firedAt: -10_000, spin: 0 };

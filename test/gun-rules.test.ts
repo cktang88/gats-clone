@@ -79,7 +79,7 @@ test('a sniper\'s patient rounds stay inside its still cone standing and stray f
   assert.ok(widest(spray('pistol', false, 20)) <= spreadFor('pistol', {}, false), 'a pistol walking stays in its slightly wider walking cone');
 });
 
-test('an assault rifle held down blooms after its first shots, up to two and a half times, and taps stay tight', () => {
+test('an assault rifle held down blooms from its second round up to its cap, and paced taps stay tight', () => {
   const { w, p } = shooter('assault');
   run(w, 400);
   const held: number[][] = [];
@@ -92,8 +92,9 @@ test('an assault rifle held down blooms after its first shots, up to two and a h
   assert.ok(Math.abs(spreadFor('assault', {}, true, spray) - standingCap) < 1e-12, 'a long spray standing reaches its (smaller) standing cap');
   assert.ok(Math.abs(spreadFor('assault', {}, true, 1000) - standingCap) < 1e-12, 'and holds there, however long the spray');
   assert.ok(Math.abs(spreadFor('assault', {}, false, 1000) - bloom.maxMul * spreadFor('assault', {}, false)) < 1e-12, 'on the move it blooms the full way');
-  assert.equal(spreadFor('assault', {}, true, 3), GUNS.assault.spread, 'the first three shots of a spray do not bloom');
-  assert.ok(widest(held.slice(0, 3).flat()) <= GUNS.assault.spread);
+  assert.equal(spreadFor('assault', {}, true, 1), GUNS.assault.spread, 'the first round of a spray does not bloom');
+  assert.ok(spreadFor('assault', {}, true, 2) > 1.2 * GUNS.assault.spread, 'the second already does');
+  assert.ok(widest(held.slice(0, 1).flat()) <= GUNS.assault.spread);
   assert.ok(widest(held.slice(10).flat()) > GUNS.assault.spread, 'later rounds stray past the still cone');
 
   const tapped: number[] = [];
@@ -101,9 +102,9 @@ test('an assault rifle held down blooms after its first shots, up to two and a h
   run(t.w, 400);
   while (tapped.length < 20) {
     tapped.push(...tick(t.w, t.p, { fire: true, shots: t.p.input.shots + 1 }));
-    for (let i = 0; i < 6; i++) tapped.push(...tick(t.w, t.p, {}));
+    for (let i = 0; i < 12; i++) tapped.push(...tick(t.w, t.p, {}));
   }
-  assert.ok(widest(tapped) <= GUNS.assault.spread, 'four taps a second never bloom');
+  assert.ok(widest(tapped) <= GUNS.assault.spread, 'a tap every 400 ms never blooms');
 });
 
 test('guns handle the same in Zombies as between players: a held trigger blooms just as far', () => {

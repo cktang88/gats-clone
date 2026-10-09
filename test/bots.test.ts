@@ -107,8 +107,9 @@ function duel(persona: PersonalityId, seed: number, ticks: number, perks: PerkId
 const moving = (i: InputState) => i.up || i.down || i.left || i.right;
 const keysOf = (i: InputState) => `${+i.up}${+i.down}${+i.left}${+i.right}`;
 
+/** The share of its fire ticks a bot spends standing still, past its first half second (its first look, before its first strafe leg). */
 const stillShare = (runs: InputState[][]) => {
-  const shots = runs.flat().filter((i) => i.fire);
+  const shots = runs.flatMap((r) => r.slice(15)).filter((i) => i.fire);
   return shots.filter((i) => !moving(i)).length / shots.length;
 };
 

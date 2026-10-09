@@ -2,6 +2,7 @@ import {
   ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, SPREAD_EASE, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, VIEW, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
 import { loadOf, sprintShareOf, walkMulOf } from '../handling.ts';
+import { bloomShare } from './trigger.ts';
 import { rand, type Life, type PerkOfTier, type Player, type World } from './world.ts';
 
 type PerkMods = {
@@ -115,7 +116,7 @@ export const bloomRecoverMul = (perks: Partial<Record<Tier, PerkId>>): number =>
 export const suppressionMul = (suppression: number): number => 1 + suppression * SUPPRESSION.spread;
 
 function bloomMul({ bloom }: GunRules, sprayShot: number, build = 1): number {
-  return bloom ? Math.min(bloom.maxMul, 1 + bloom.perShot * build * Math.max(0, sprayShot - bloom.free)) : 1;
+  return bloom ? 1 + (bloom.maxMul - 1) * bloomShare(bloom, sprayShot, build) : 1;
 }
 
 /** Whether the gun has the still spread, `sinceMoveMs` after the last step (0 while walking). */

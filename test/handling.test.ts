@@ -32,10 +32,12 @@ test('the formulas move the right way: heavier and longer settle slower, sway mo
   }
 });
 
-test('bloom growth is the per-round kick times the rate of fire, for every gun', () => {
+test('bloom growth starts at the first round\'s kick (shape x kick) times the rate of fire, for every gun', () => {
   for (const id of GUN_IDS) {
     const g = GUNS[id], h = handlingOfGun(g);
-    assert.ok(Math.abs(h.growthPerSec - h.kick * roundsPerSec(g)) < 1e-12, id);
+    assert.ok(Math.abs(h.growthPerSec - h.shape * h.kick * roundsPerSec(g)) < 1e-12, id);
+    assert.ok(Math.abs(h.rounds - h.cap / h.kick) < 1e-12 && Math.abs(h.firstKick - h.shape * h.kick) < 1e-12, id);
+    assert.ok(h.shape >= HANDLING.shape.min && h.shape <= HANDLING.shape.max, `${id}: shape ${h.shape}`);
     const b = rulesOf(g).bloom!;
     assert.ok(Math.abs(b.perShot * g.spread - h.kick) < 1e-4 * Math.max(1, h.kick / g.spread), `${id}: the sim's per-shot bloom is the kick`);
     assert.ok(Math.abs((b.maxMul - 1) * g.spread - h.cap) < 1e-4 * Math.max(1, h.cap / g.spread), `${id}: the sim's cap is the cap`);

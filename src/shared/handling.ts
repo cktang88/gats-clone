@@ -5,10 +5,13 @@
  *
  * - `floor`: the least spread it ever fires with (bigger rounds and short barrels group worse).
  * - `sway`: the spread walking adds on top of the still spread (the gun's moment of inertia, kg x length squared, past a light gun's free swing).
- * - `kick`: the bloom one round adds (radians), from its energy, soaked by the gun's weight and steadied by its length, and grown by its
- *   cadence past the reference rifle's (a gun that cycles faster than the hands can bring the muzzle back stacks each round on the last).
- *   Bloom then grows at `kick x rounds per second` (`growthPerSec`), never a constant of its own, up to `cap`, and comes back down at
- *   `decayPerSec`.
+ * - `kick`: the bloom a round adds on average over the climb to `cap` (radians), from its energy, soaked by the gun's weight and steadied
+ *   by its length, and grown by its cadence past the reference rifle's (a gun that cycles faster than the hands can bring the muzzle back
+ *   stacks each round on the last). `cap / kick` is how many rounds (`rounds`) a held trigger takes to reach the cap.
+ * - `shape`: how front-loaded that climb is (q below, from the weight): the first round past the free ones adds `q x kick` and each later
+ *   one less, as `(1 - bloom/cap)^(1 - 1/q)`, landing on the cap with no overshoot. A light gun snaps up and flattens; a heavy one rises
+ *   slower but carries its momentum nearly straight to the cap. `bloomShare` in sim/stats.ts is the curve. Bloom starts growing at
+ *   `firstKick x rounds per second` (`growthPerSec`), never a constant of its own, and comes back down at `decayPerSec`.
  * - `still`: the share of its moving bloom a gun grows standing. Standing helps only a little (a heavy gun leans on the body a little
  *   better): a held trigger blooms standing much as it does on the move, so full auto is never free for standing still.
  * - `settleMs`: how long the post-sprint bloom takes to ease out (a light, short gun is steady at once; a heavy, long one swings for seconds).
@@ -64,6 +67,12 @@ export const HANDLING = {
    * rounds and kicks only its round).
    */
   kick: { at: 0.0068, energy: 0.6, weight: 0.7, length: 0.3, rate: 0.5 },
+  /**
+   * shape q = clamp(q0 / weight^w, min, max): the bloom curve's front-loading (see `bloomCurve`). The per-round kick is `q x kick` from rest
+   * and shrinks as (1 - bloom/cap)^(1 - 1/q): q = 1 is the old straight line, q = 2 a parabola that lands on the cap, higher q bites harder
+   * early and flattens sooner. The reference rifle's 2; a pistol's 3.4 (it snaps up), the heaviest MG's 1.3 (its momentum carries it).
+   */
+  shape: { at: 2, weight: 0.45, min: 1.3, max: 3.4 },
   /** cap = cap0 x energy^e / weight^w: the most bloom a spray can stack (radians: a held trigger at range is a bad idea) */
   cap: { at: 0.125, energy: 0.3, weight: 0.3 },
   /** decay = cap / recover, recover = recover0 x weight^w x length^l ms (a heavy gun takes longer to bring back on) */
@@ -95,7 +104,13 @@ export const HANDLING = {
 
 export type Handling = {
   floor: number; sway: number; kick: number; cap: number; recoverMs: number; still: number; settleMs: number; swingMs: number;
-  /** Bloom growth while the trigger is held: `kick` x `rps`, radians per second. */
+  /** The bloom curve's front-loading (q, see `HANDLING.shape`). */
+  shape: number;
+  /** Rounds past the free ones a held trigger takes to reach the cap: `cap / kick`. */
+  rounds: number;
+  /** What the first round past the free ones adds: `shape x kick`. */
+  firstKick: number;
+  /** Bloom growth as a held trigger starts: `firstKick` x `rps`, radians per second (it slows as the bloom nears the cap). */
   growthPerSec: number;
   /** How fast a spray's bloom comes back down, radians per second (`cap` over `recoverMs`). */
   decayPerSec: number;
@@ -114,15 +129,16 @@ export function handlingOf(b: Build): Handling {
   const kick = round(H.kick.at * e ** H.kick.energy / (m ** H.kick.weight * l ** H.kick.length) * cadence * scope.kick * bolt.kick, 5);
   const cap = round(H.cap.at * e ** H.cap.energy / m ** H.cap.weight * scope.cap * bolt.cap, 4);
   const recoverMs = Math.round(H.recover.at * m ** H.recover.weight * l ** H.recover.length * scope.recover * bolt.recover);
+  const shape = round(Math.min(H.shape.max, Math.max(H.shape.min, H.shape.at / m ** H.shape.weight)), 2);
   const hill = inertia ** H.settle.n / (inertia ** H.settle.n + H.settle.mid ** H.settle.n);
   return {
     floor: round(H.floor.at * e ** H.floor.energy / l ** H.floor.length, 5),
     sway: round(H.sway.at * Math.sqrt(Math.max(0, inertia - H.sway.free)) * scope.sway * bolt.sway, 5),
-    kick, cap, recoverMs,
+    kick, cap, recoverMs, shape, rounds: cap / kick, firstKick: kick * shape,
     still: round(Math.min(H.still.max, Math.max(H.still.min, H.still.at / m ** H.still.weight)) * scope.still * bolt.still, 2),
     settleMs: Math.round(H.settle.min + H.settle.span * hill),
     swingMs: Math.round(H.swing.min + (H.swing.span * inertia) / (inertia + H.swing.mid)),
-    growthPerSec: kick * b.rps,
+    growthPerSec: kick * shape * b.rps,
     decayPerSec: cap / (recoverMs / 1000),
   };
 }
@@ -133,3 +149,15 @@ export const loadOf = (gunKg: number, gunCm: number, armorKg: number): number =>
 export const walkMulOf = (load: number): number => Math.max(H.load.floor, H.load.top - H.load.perKg * load);
 /** How much of the sprint bonus (`SPRINT.speedMul`) a soldier under `load` kg keeps: over 1 for a light load, near none for the heaviest. */
 export const sprintShareOf = (load: number): number => Math.min(H.sprint.max, Math.max(H.sprint.min, H.sprint.max - (load / H.sprint.soft) ** 2));
+
+/**
+ * The bloom curve: the share (0..1) of its cap a spray has bloomed after `heat` rounds past its free ones, for a gun that takes `rounds` to
+ * reach the cap with front-loading `shape` (q). It is 1 - (1 - heat/rounds)^q: the exact solution of a per-round kick that starts at q times
+ * the mean and shrinks as (1 - share)^(1 - 1/q), so each round adds less than the one before, and it lands on the cap at `rounds` with no
+ * overshoot (and stays there). q = 1 is a straight line.
+ */
+export function bloomCurve(heat: number, rounds: number, shape: number): number {
+  if (heat <= 0) return 0;
+  if (heat >= rounds) return 1;
+  return 1 - (1 - heat / rounds) ** shape;
+}
