@@ -119,7 +119,7 @@ function under(ctx: Ctx, now: number, view: ThemeView): void {
     const d = districtAt(l.x, l.y).d;
     const flick = calm ? 1 : 0.94 + 0.06 * Math.sin(t * 0.002 + i * 1.7) * Math.sin(t * 0.00077 + i);
     if (near(l.x, l.y, 140)) lampPost(ctx, l.x, l.y, d.light, flick);
-    setLight(`hb:l${i}${l.east ? 'e' : ''}`, { x: l.x, y: l.y - 36, radius: 470, color: SODIUM, intensity: 1.1 * flick, size: 12, shadows: true });
+    setLight(`hb:l${i}${l.east ? 'e' : ''}`, { x: l.x, y: l.y - 36, radius: 390, color: SODIUM, intensity: 0.92 * flick, size: 12, shadows: true });
     waterLights.push({ x: l.x, y: l.y - 10, r: 300, k: 0.7 * flick, rgb: rgbOf(d.light) });
   }
   // The rooms' lit windows light the floor round them and the yards beside them.

@@ -13,7 +13,10 @@ import { seeded } from './grain.ts';
 
 const CELL = 4;
 const MAX_LIGHTS = 30;
-const CAP = 0.92, GLOW_CAP = 0.56;
+/** The ceilings of the plain night (exported for the brightness test): the light multiplied in, and the glow screened over it. */
+export const CAP = 0.92, GLOW_CAP = 0.56;
+/** How strongly the glow layer is screened over the world at a dusk. */
+export const glowAlpha = (dark: number): number => Math.min(0.7, 0.15 + 0.5 * dark);
 let shade: HTMLCanvasElement | null = null;
 let glow: HTMLCanvasElement | null = null;
 let fogc: HTMLCanvasElement | null = null;
@@ -176,7 +179,7 @@ export function drawNightFx(ctx: CanvasRenderingContext2D, tl: Point, br: Point,
   ctx.globalAlpha = 1;
   ctx.drawImage(shade, tl.x, tl.y, vw, vh);
   ctx.globalCompositeOperation = 'screen';
-  ctx.globalAlpha = Math.min(0.7, 0.15 + 0.5 * dark);
+  ctx.globalAlpha = glowAlpha(dark);
   ctx.drawImage(glow!, tl.x, tl.y, vw, vh);
   if (amb.rain > 0) {
     const t = now / 1000, len = 26 * (vh / 900 + 0.4);

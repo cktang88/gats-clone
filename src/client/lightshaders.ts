@@ -1,3 +1,5 @@
+import { GLINT, GLINT_WHITE, GLSL_SHOULDER, GLSL_TONE, PUDDLE, glf } from './exposure.ts';
+
 /**
  * GLSL for the lighting pass (lightgl.ts). WebGL1-safe: no extensions, RGBA8 targets, constant loop bounds.
  *
@@ -159,6 +161,7 @@ float rainStreak(vec2 uv){
 uniform int nshock;
 uniform vec4 sk[4];       // centre uv x, y, ring radius (screen heights), progress 0..1
 uniform vec4 sp[4];       // strength, 0, 0, 0
+${GLSL_SHOULDER}
 
 vec3 lightAt(vec2 uv){
   vec2 o = ltexel * 0.5;
@@ -185,9 +188,10 @@ void main(){
   }
   vec3 b = texture2D(base, uv).rgb;
   vec4 o = texture2D(over, uv);
-  // Lights add up, so they are tone-mapped: overlapping lamps saturate toward 1 instead of burning the floor white.
+  // Lights add up, so they are tone-mapped to a fixed ceiling (exposure.ts): a mood's gain steepens the curve but never lifts
+  // the ceiling, so overlapping lamps saturate to a warm pool instead of burning the floor white or orange.
   vec3 raw = lightAt(uv) * 2.0 + texture2D(shaft, uv).rgb * shafts;
-  vec3 L = (1.0 - exp(-1.25 * raw)) * 0.9 * gain;
+  ${GLSL_TONE}
   float occ = 0.0;
   vec4 m = texture2D(mask, uv);
   if (ao > 0.0 && m.r < 0.5) {
@@ -202,6 +206,7 @@ void main(){
   // Under a strong light the cool ambient gives way to the light's own colour, so a lamp's pool reads amber, not grey.
   float strength = clamp(dot(L, vec3(0.3, 0.59, 0.11)) * 1.5, 0.0, 1.0);
   vec3 lit = b * (amb * a * (1.0 - 0.8 * strength) + L) + L * wx.w;
+  float unlit = max(b.r * amb.r, max(b.g * amb.g, b.b * amb.b)) * a;
   vec2 wp = vec2(vw.x + uv.x * vw.z, vw.y + (1.0 - uv.y) * vw.w);
   // Water sits deep and dark at night, so the lamps on it read.
   float deep = smoothstep(0.02, 0.1, b.b - b.r) * clamp(1.0 - dot(amb, vec3(0.33)) * 1.4, 0.0, 0.6);
@@ -213,8 +218,8 @@ void main(){
     float pud = smoothstep(0.55, 0.64, pn) * stone * wx.x;
     float glint = pow(vnoise(wp / 7.0 + time * 0.0003), 7.0) * stone * wx.x;
     float lum = dot(L, vec3(0.3, 0.59, 0.11));
-    lit = mix(lit, lit * 0.72 + L * 1.15 * (0.5 + 0.5 * a) + amb * 0.1, pud * 0.85);
-    lit += L * glint * 2.4 * (0.25 + lum) + vec3(0.9, 0.95, 1.0) * glint * lum * 0.5;
+    lit = mix(lit, lit * 0.72 + L * ${glf(PUDDLE)} * (0.5 + 0.5 * a) + amb * 0.1, pud * 0.85);
+    lit += L * glint * ${glf(GLINT)} * (0.25 + lum) + vec3(0.9, 0.95, 1.0) * glint * lum * ${glf(GLINT_WHITE)};
     if (wx.y > 0.0) {
       // Raindrops ringing the puddles.
       vec2 rp = wp / 26.0; vec2 cell = floor(rp);
@@ -232,11 +237,12 @@ void main(){
     vec3 fogCol = fogc.rgb * (amb * 0.75 + L * 1.7 + 0.04);
     lit = mix(lit, fogCol, f * 0.55);
   }
-  vec3 result = lit * (1.0 - o.a) + o.rgb;
-  if (wx.z > 0.5) result += texture2D(beam, uv).rgb * (1.0 - o.a);
+  if (wx.z > 0.5) lit += texture2D(beam, uv).rgb;
   if (wx.y > 0.0) {
     float rs = rainStreak(uv) * wx.y;
-    result += vec3(0.62, 0.74, 0.95) * rs * (0.12 + 0.9 * dot(L, vec3(0.3, 0.59, 0.11))) * (1.0 - o.a);
+    lit += vec3(0.62, 0.74, 0.95) * rs * (0.12 + 0.9 * dot(L, vec3(0.3, 0.59, 0.11)));
   }
-  gl_FragColor = vec4(result, 1.0);
+  // The highlight shoulder: lit ground rolls off below the bloom threshold; lamp glass and the unlit overlay keep their glare.
+  lit = shoulder(lit, unlit, max(b.r, max(b.g, b.b)));
+  gl_FragColor = vec4(lit * (1.0 - o.a) + o.rgb, 1.0);
 }`;
