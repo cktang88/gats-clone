@@ -21,20 +21,31 @@ export function enlistVisible(signedIn: boolean, dismissed: boolean, form: FormM
   return form !== 'closed' || !dismissed;
 }
 
+/**
+ * What registering does with a guest's progress: the guest profile this browser made comes into the new account, once
+ * (`/api/register` with its claim token; logging in to an existing account never takes it). Every line below says the same.
+ */
+export const CARRY_LINE = 'Your stats and medals come with you.';
+
 /** The plate's headline and line under it, sharpened when this guest has something at stake. */
 export function enlistPitch(stakes: Stakes): { title: string; sub: string } {
   if (stakes.unrecorded) return { title: 'Your stats aren’t being saved', sub: 'Guest play from here isn’t recorded. A free account keeps every match.' };
-  if (stakes.medal) return { title: 'Bank your medals', sub: 'Guest medals sit on a name anyone can take. Enlist so the next ones are yours.' };
-  if (stakes.level) return { title: 'Keep climbing', sub: 'Guest levels sit on a name anyone can take. Enlist so the next ones are yours.' };
+  if (stakes.medal) return { title: 'Bank your medals', sub: 'Guest medals sit on a name anyone can take. Enlist and they come with you.' };
+  if (stakes.level) return { title: 'Keep climbing', sub: 'Guest levels sit on a name anyone can take. Enlist and your level comes with you.' };
   return { title: 'Enlist', sub: 'Free, no email, ten seconds. Or just pick a fight as a guest.' };
+}
+
+/** The line under "Create your account": a guest with progress on file is told it comes along. */
+export function registerSub(hasGuestProgress: boolean): string {
+  return hasGuestProgress ? `Pick the name you want to keep. ${CARRY_LINE}` : 'Pick the name you want to keep. No email needed.';
 }
 
 /** The one line on the death card for a guest with something at stake, or null to stay quiet. */
 export function guestNudge(signedIn: boolean, stakes: Stakes): string | null {
   if (signedIn) return null;
   if (stakes.unrecorded) return 'Guest stats aren’t being saved.';
-  if (stakes.medal) return 'Guest medals don’t stay yours.';
-  if (stakes.level) return 'Guest levels don’t stay yours.';
+  if (stakes.medal) return 'Enlist to keep your guest medals.';
+  if (stakes.level) return 'Enlist to keep your guest level.';
   return null;
 }
 
@@ -136,6 +147,8 @@ type Deps = {
   suggestName?(): string;
   /** Where focus goes once the plate folds away (the first mode card). */
   afterSignIn?(): void;
+  /** Whether this browser holds a guest profile's claim, so registering carries its progress over. */
+  hasGuestProgress?(): boolean;
 };
 
 export function mountEnlist(root: HTMLElement, deps: Deps) {
@@ -188,7 +201,7 @@ export function mountEnlist(root: HTMLElement, deps: Deps) {
       return;
     }
     title.textContent = form === 'register' ? 'Create your account' : 'Welcome back';
-    sub.textContent = form === 'register' ? 'Pick the name you want to keep. No email needed.' : 'Log in to pick up your record and your gear.';
+    sub.textContent = form === 'register' ? registerSub(deps.hasGuestProgress?.() ?? false) : 'Log in to pick up your record and your gear.';
     submit.textContent = form === 'register' ? 'Enlist' : 'Log in';
     flip.textContent = form === 'register' ? 'Already enlisted? Log in' : 'New here? Create an account';
     passIn.autocomplete = form === 'register' ? 'new-password' : 'current-password';

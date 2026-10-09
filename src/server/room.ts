@@ -53,6 +53,8 @@ export type Room = {
   info(): RoomInfo;
   /** Dev counters for netcode measurement: per-human input backlog, bytes and snapshots sent and skipped since the last call. */
   netStats(): RoomNetStats;
+  /** Stops recording guests seated under `name` (any case): its profile was just carried into an account. */
+  forgetGuest(name: string): void;
   close(): void;
 };
 
@@ -294,10 +296,12 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const unrecorded = !account && !practice && !registered(name) && profiles.get(name) === null && newProfiles !== null && !newProfiles.take(client.ip, Date.now());
       const joinedClient: Extract<Client, { k: 'joined' }> = { k: 'joined', ws: client.ws, playerId: p.id, account, guest: account || unrecorded ? null : name, lastChatAt: -Infinity, lastEmoteAt: -Infinity, lastRadioAt: -Infinity, aspect: msg.aspect, look: null, lookAt: world.now, since: world.now, encode: makeSnapshotEncoder(), inputs: newInputQueue() };
       const key = profileKey(joinedClient, name);
+      // The guest who makes a name's profile is its owner: their claim token is what carries it into an account they register.
+      const guestClaim = key && !account && !practice ? profiles.adoptGuest(key) : null;
       p.badge = key ? profiles.featured(key) : null;
       clients.set(client.ws, joinedClient);
       balanceBots();
-      send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, map: world.map, walls: wallViews(world), account });
+      send(client.ws, { t: 'welcome', id: p.id, mode, worldSize: MAPS[world.map].size, map: world.map, walls: wallViews(world), account, ...(guestClaim && { guest: guestClaim }) });
       if (radioStation) send(client.ws, { t: 'radio', station: radioStation, by: null });
       if (unrecorded) send(client.ws, { t: 'chat', from: '', text: UNRECORDED_NOTICE, team: null });
       profile(p.id, { games: 1 });
@@ -514,6 +518,9 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const out = { id, mode, humans: joined().length, players: world.players.size, queues: joined().map((c) => c.inputs.waiting.length), buffered: joined().map((c) => c.ws.bufferedAmount), botMemKb: Math.round(JSON.stringify([...bots.values()]).length / 1024), sizes, ...net };
       net.bytes = net.snaps = net.skipped = net.ticked = net.botMs = net.stepMs = net.advanceMs = net.sendMs = 0;
       return out;
+    },
+    forgetGuest(name) {
+      for (const c of joined()) if (c.guest?.toLowerCase() === name.toLowerCase()) c.guest = null;
     },
     close() {
       // Seated players leave now, so their lives and walks are credited before a shutting-down server flushes and exits;

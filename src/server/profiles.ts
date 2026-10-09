@@ -1,3 +1,4 @@
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, WEAPON_IDS, type Badge, type MedalId, type WeaponId } from '../shared/defs.ts';
@@ -38,7 +39,16 @@ export type Profile = {
   challenges: ChallengesState;
   /** The UTC day of the last round won, for the first-win-of-the-day bonus. */
   lastWinDay: string;
+  /**
+   * A guest profile's owner: the SHA-256 (hex) of the secret in the guest claim token handed to the connection that made it
+   * (see `adoptGuest`). Only that token can carry the profile into a new account (`reserveClaim`). Never served by the API;
+   * absent on an account's profile, on a claimed one and on guest profiles made before claims existed.
+   */
+  owner?: string;
 };
+
+/** What a registration takes from a guest profile: whose it was (its key) and the owner hash that proved it. */
+export type GuestClaim = { from: string; owner: string };
 
 /** Career stats, plus events that only feed challenges (`wins`, `finishes`, `nights`, `zkills`, `bastion`) and are not stored. */
 export type ProfileDelta = {
@@ -66,11 +76,46 @@ export type Profiles = {
   cos(name: string): Cos | null;
   /** Wipes a name's profile, when an account is registered under it, so nobody inherits what guests did under that name. */
   reset(name: string): void;
+  /**
+   * Makes a new guest profile under `name` (which must have none) and returns its claim token: the only proof that can later
+   * carry it into an account. Null when the name already has a profile.
+   */
+  adoptGuest(name: string, now?: number): string | null;
+  /**
+   * Checks a guest claim token against the profile it names and, when it proves an unclaimed one, holds that profile for this
+   * claim (a second claim on it is refused until `commitClaim` or `releaseClaim`). Null for a forged, stale or held token.
+   */
+  reserveClaim(token: string): (GuestClaim & { kills: number; deaths: number; games: number }) | null;
+  /** Lets go of a held claim that will not be committed. */
+  releaseClaim(claim: GuestClaim): void;
+  /**
+   * Carries a held (or, on recovery, recorded) guest profile into account `to`: wipes whatever guests left under `to`, moves
+   * the profile there, drops its owner so the token is spent, and saves at once. False, changing nothing but the wipe, when the
+   * guest profile is gone or no longer has that owner (already carried over).
+   */
+  commitClaim(claim: GuestClaim, to: string): Promise<boolean>;
+  /**
+   * Startup recovery, run once accounts are loaded: finishes every recorded claim whose move never reached profiles.json, and
+   * wipes guest-owned profiles left under account names (a registration's wipe that never reached disk).
+   */
+  reconcile(accounts: readonly { name: string; claim?: GuestClaim }[]): Promise<void>;
   flush(): Promise<void>;
 };
 
 const key = (name: string) => name.toLowerCase();
 const SAVE_DELAY_MS = 2000;
+const sha256 = (secret: string) => createHash('sha256').update(secret).digest('hex');
+const OWNER_HASH = /^[0-9a-f]{64}$/;
+
+/** A guest claim token: `<base64url of the lowercased name>.<256-bit random secret, base64url>`. */
+export function parseGuestToken(token: unknown): { key: string; secret: string } | null {
+  if (typeof token !== 'string' || token.length > 256) return null;
+  const m = /^([A-Za-z0-9_-]{1,200})\.([A-Za-z0-9_-]{43})$/.exec(token);
+  if (!m) return null;
+  return { key: Buffer.from(m[1]!, 'base64url').toString(), secret: m[2]! };
+}
+const ownerMatches = (p: Profile | undefined, owner: string) =>
+  !!p?.owner && p.owner.length === owner.length && timingSafeEqual(Buffer.from(p.owner), Buffer.from(owner));
 
 export const freshProfile = (name: string, now: number): Profile => {
   const p: Profile = {
@@ -149,6 +194,7 @@ function clean(raw: unknown): Profile | null {
       week: typeof c.week === 'string' ? c.week.slice(0, 8) : '', weekly: cleanItems(c.weekly, WEEKLY_POOL),
     },
     lastWinDay: typeof r.lastWinDay === 'string' ? r.lastWinDay.slice(0, 10) : '',
+    ...(typeof r.owner === 'string' && OWNER_HASH.test(r.owner) && { owner: r.owner }),
   };
   syncLevel(p);
   grantUnlocks(p);
@@ -192,6 +238,24 @@ export async function openProfiles(dataDir: string): Promise<Profiles> {
   };
   let pending: ReturnType<typeof setTimeout> | null = null;
   const saveSoon = () => { pending ??= setTimeout(() => { pending = null; void save(); }, SAVE_DELAY_MS); };
+  /** Saves now, folding in any debounced save. */
+  const saveNow = () => { if (pending) { clearTimeout(pending); pending = null; } return save(); };
+  /** Guest profiles held by a registration between its checks and its commit, by key, with the owner hash that holds them. */
+  const held = new Map<string, string>();
+  /** The move itself, all in memory and in one synchronous step; the caller saves. */
+  const move = (claim: GuestClaim, to: string): boolean => {
+    held.delete(claim.from);
+    const p = byKey.get(claim.from);
+    news.delete(key(to));
+    if (!p || !ownerMatches(p, claim.owner)) { byKey.delete(key(to)); return false; }
+    byKey.delete(claim.from);
+    news.delete(claim.from);
+    byKey.delete(key(to));
+    delete p.owner;
+    p.name = to;
+    byKey.set(key(to), p);
+    return true;
+  };
   return {
     get: (name) => byKey.get(key(name)) ?? null,
     record(name, delta, now = Date.now()) {
@@ -246,7 +310,44 @@ export async function openProfiles(dataDir: string): Promise<Profiles> {
     },
     reset(name) {
       news.delete(key(name));
-      if (byKey.delete(key(name))) saveSoon();
+      // A guest profile held by a claim is about to move to its new account; the commit takes it off this name.
+      if (held.has(key(name))) return;
+      if (byKey.delete(key(name))) void saveNow();
+    },
+    adoptGuest(name, now = Date.now()) {
+      if (byKey.has(key(name))) return null;
+      const secret = randomBytes(32).toString('base64url');
+      const p = freshProfile(name, now);
+      p.owner = sha256(secret);
+      byKey.set(key(name), p);
+      saveSoon();
+      return `${Buffer.from(key(name)).toString('base64url')}.${secret}`;
+    },
+    reserveClaim(token) {
+      const t = parseGuestToken(token);
+      if (!t) return null;
+      const owner = sha256(t.secret);
+      const p = byKey.get(t.key);
+      if (!p || !ownerMatches(p, owner) || held.has(t.key)) return null;
+      held.set(t.key, owner);
+      return { from: t.key, owner, kills: p.kills, deaths: p.deaths, games: p.games };
+    },
+    releaseClaim(claim) {
+      if (held.get(claim.from) === claim.owner) held.delete(claim.from);
+    },
+    async commitClaim(claim, to) {
+      const moved = move(claim, to);
+      await saveNow();
+      return moved;
+    },
+    async reconcile(accounts) {
+      let changed = false;
+      for (const a of accounts) if (a.claim && ownerMatches(byKey.get(a.claim.from), a.claim.owner)) changed = move(a.claim, a.name) || changed;
+      for (const a of accounts) {
+        const p = byKey.get(key(a.name));
+        if (p?.owner) { byKey.delete(key(a.name)); changed = true; }
+      }
+      if (changed) await saveNow();
     },
     flush() {
       if (pending) { clearTimeout(pending); pending = null; void save(); }
@@ -258,11 +359,13 @@ export async function openProfiles(dataDir: string): Promise<Profiles> {
 /** A profile as the API serves it: everything stored, plus the level state, the resolved equipped set and the challenges with their texts and reset times. */
 export function profileView(p: Profile, now = Date.now()) {
   p.challenges = rollChallenges(p.challenges, now, p.name, new Set(p.unlocked));
-  return { ...p, featured: featuredBadge(p), ...levelState(p.xp), equipped: resolveEquipped(p.equipped), challenges: challengesView(p.challenges, now) };
+  const { owner: _owner, ...shown } = p;
+  return { ...shown, featured: featuredBadge(p), ...levelState(p.xp), equipped: resolveEquipped(p.equipped), challenges: challengesView(p.challenges, now) };
 }
 
 /** A profile store that keeps nothing, for rooms and tests that need none. */
 export const NO_PROFILES: Profiles = {
   get: () => null, record: () => [], featured: () => null, reset: () => {}, flush: () => Promise.resolve(),
+  adoptGuest: () => null, reserveClaim: () => null, releaseClaim: () => {}, commitClaim: () => Promise.resolve(false), reconcile: () => Promise.resolve(),
   life: () => {}, round: () => {}, notice: () => null, state: () => null, equip: () => ({ ok: false, rejected: [], equipped: resolveEquipped(undefined) }), cos: () => null,
 };

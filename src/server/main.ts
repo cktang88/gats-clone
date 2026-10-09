@@ -10,7 +10,7 @@ import { WORLD, type ModeId } from '../shared/defs.ts';
 import { cleanName } from '../shared/protocol.ts';
 import { isSlot, parsePicks } from '../shared/cosmetics.ts';
 import { openAccounts, type Accounts } from './accounts.ts';
-import { openProfiles, profileView, type Profiles } from './profiles.ts';
+import { openProfiles, profileView, type GuestClaim, type Profiles } from './profiles.ts';
 import { loadModerator } from './moderation.ts';
 import { LIMITS, makeFaultLog, makeKeyedLimiter, makeWindowGate, type Limits } from './limits.ts';
 import { createRoom, type Room } from './room.ts';
@@ -54,6 +54,15 @@ function parseCredentials(body: unknown): { name: string; password: string } | n
   const clean = cleanName(name);
   if (clean !== name.trim() || clean.length < 3 || password.length < 4 || password.length > 128) return null;
   return { name: clean, password };
+}
+
+export const GUEST_CLAIM_REFUSED = 'That guest progress can’t be carried over (it was already claimed, or isn’t yours). Enlist again to start fresh.';
+
+/** The guest claim token a registration body carries, `undefined` when it carries none; anything there that is not a string is refused as a claim. */
+function guestClaimToken(body: unknown): string | undefined {
+  const g = (body as Record<string, unknown>).guest;
+  if (g === undefined || g === null || g === '') return undefined;
+  return typeof g === 'string' ? g.slice(0, 256) : '';
 }
 
 const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.map', '.json', '.svg']);
@@ -154,13 +163,32 @@ async function route(req: IncomingMessage, res: ServerResponse, rooms: Rooms, ac
   }
   if (req.method === 'POST' && (path === '/api/register' || path === '/api/login')) {
     if (!allowAuth(ipOf(req), Date.now())) return json(res, 429, { error: 'Too many attempts. Try again in a minute.' });
-    const creds = parseCredentials(await readBody(req));
+    const body = await readBody(req);
+    const creds = parseCredentials(body);
     if (!creds) return json(res, 400, { error: 'Name must be 3-16 letters/digits and password at least 4 characters' });
     if (path === '/api/register') {
-      const session = await accounts.register(creds.name, creds.password);
-      if (session) profiles.reset(creds.name);
-      return session ? json(res, 200, session) : json(res, 409, { error: 'Name taken' });
+      // A guest's progress comes along only on the proof of their own claim token (see `adoptGuest`), never on a name.
+      const guest = guestClaimToken(body);
+      if (guest === undefined) {
+        const session = await accounts.register(creds.name, creds.password);
+        if (session) { profiles.reset(creds.name); return json(res, 200, { ...session, carried: false }); }
+        return json(res, 409, { error: 'Name taken' });
+      }
+      const hold: { claim: GuestClaim | null } = { claim: null };
+      const session = await accounts.register(creds.name, creds.password, () => {
+        const held = profiles.reserveClaim(guest);
+        hold.claim = held;
+        return held;
+      });
+      if (session === 'unclaimable') return json(res, 403, { error: GUEST_CLAIM_REFUSED, guest: 'invalid' });
+      if (!session) { if (hold.claim) profiles.releaseClaim(hold.claim); return json(res, 409, { error: 'Name taken' }); }
+      const claim = hold.claim!;
+      const carried = await profiles.commitClaim(claim, session.name);
+      // Guests still seated under the old name stop recording there: it is not theirs to grow back.
+      for (const room of rooms.all.values()) room.forgetGuest(claim.from);
+      return json(res, 200, { ...session, carried });
     }
+    // Logging in never takes a guest's progress, whatever the body carries: only a new account can.
     const session = await accounts.login(creds.name, creds.password);
     return session ? json(res, 200, session) : json(res, 401, { error: 'Wrong name or password' });
   }
@@ -176,6 +204,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const socketsByIp = new Map<string, number>();
   const accounts = await openAccounts(opts.dataDir, limits.sessionMs);
   const profiles = await openProfiles(opts.dataDir);
+  // Finish any guest carry-over a crash cut short between writing accounts.json and profiles.json.
+  await profiles.reconcile(accounts.claims());
   const moderator = await loadModerator(opts.dataDir);
   const publicDir = opts.publicDir ?? PUBLIC_DIR;
   const allowSquad = makeKeyedLimiter(limits.squadsPerMin / 60, limits.squadsPerMin);

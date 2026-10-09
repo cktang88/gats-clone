@@ -41,13 +41,18 @@ export async function fetchStats(name: string): Promise<Stats | null> {
   return { name: s.name, kills: n(s.kills), deaths: n(s.deaths), score: n(s.score), games: n(s.games), best: n(s.best) };
 }
 
-export async function authenticate(kind: 'login' | 'register', name: string, password: string): Promise<Account | { error: string }> {
+/**
+ * Logs in or registers. A registration may carry a guest claim token (from a `welcome`), which brings that guest profile's
+ * progress into the new account; the reply says whether it did (`carried`), or `guestInvalid` when the server refused the claim.
+ * Logging in never sends one: an existing account never takes a guest's progress.
+ */
+export async function authenticate(kind: 'login' | 'register', name: string, password: string, guest?: string): Promise<(Account & { carried: boolean }) | { error: string; guestInvalid?: boolean }> {
   try {
     const r = await getJson(`/api/${kind}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, password }),
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, password, ...(kind === 'register' && guest && { guest }) }),
     });
-    if (isObj(r) && typeof r.token === 'string' && typeof r.name === 'string') return { token: r.token, name: r.name };
-    return { error: isObj(r) && typeof r.error === 'string' ? r.error : 'Unexpected server reply' };
+    if (isObj(r) && typeof r.token === 'string' && typeof r.name === 'string') return { token: r.token, name: r.name, carried: r.carried === true };
+    return { error: isObj(r) && typeof r.error === 'string' ? r.error : 'Unexpected server reply', ...(isObj(r) && r.guest === 'invalid' && { guestInvalid: true }) };
   } catch {
     return { error: 'Could not reach server' };
   }
@@ -75,6 +80,37 @@ export function loadAccount(): Account | null {
 export function saveAccount(a: Account | null) {
   store.set('skirmish.token', a?.token ?? null);
   store.set('skirmish.account', a?.name ?? null);
+}
+
+/**
+ * Guest claim tokens this browser holds, oldest first: one for each guest name whose profile it made (the server sends it in
+ * `welcome`). Registering sends the one for the name last played under, so that profile comes into the new account.
+ */
+const GUEST_CLAIMS_KEY = 'skirmish.guestClaims';
+const GUEST_CLAIMS_MAX = 8;
+/** The lowercased guest name a claim token is for (its first part), or null for something that is not one. */
+export function guestClaimName(token: string): string | null {
+  const m = /^([A-Za-z0-9_-]{1,200})\.[A-Za-z0-9_-]{43}$/.exec(token);
+  if (!m) return null;
+  try { return new TextDecoder().decode(Uint8Array.from(atob(m[1]!.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))); } catch { return null; }
+}
+export function loadGuestClaims(): string[] {
+  try {
+    const v: unknown = JSON.parse(store.get(GUEST_CLAIMS_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string' && guestClaimName(t) !== null) : [];
+  } catch { return []; }
+}
+const saveGuestClaims = (tokens: string[]) => store.set(GUEST_CLAIMS_KEY, tokens.length ? JSON.stringify(tokens.slice(-GUEST_CLAIMS_MAX)) : null);
+/** Keeps a claim token, replacing any older one for the same name. */
+export function addGuestClaim(token: string) {
+  const name = guestClaimName(token);
+  if (name === null) return;
+  saveGuestClaims([...loadGuestClaims().filter((t) => guestClaimName(t) !== name), token]);
+}
+export const dropGuestClaim = (token: string) => saveGuestClaims(loadGuestClaims().filter((t) => t !== token));
+/** The claim to send with a registration: the one for `name` (the guest name last played under), else the newest. */
+export function pickGuestClaim(name: string, tokens = loadGuestClaims()): string | undefined {
+  return tokens.find((t) => guestClaimName(t) === name.trim().toLowerCase()) ?? tokens.at(-1);
 }
 
 export const loadName = () => store.get('skirmish.name') ?? '';

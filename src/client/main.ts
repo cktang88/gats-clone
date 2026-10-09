@@ -2,7 +2,7 @@ import { pickOptions, WORLD, ZOM, type BuildingKind, type ModeId } from '../shar
 import type { MapId } from '../shared/maps.ts';
 import { cleanName, type ClientMsg, type Loadout, type PlayerView, type ServerMsg, type Snapshot, type WallView } from '../shared/protocol.ts';
 import { fillSnapshot } from '../shared/wire.ts';
-import { fetchServers, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
+import { addGuestClaim, fetchServers, loadGuestClaims, loadLoadout, loadMuted, loadName, openSquad, saveLoadout, saveMuted, saveName, type ServerInfo } from './api.ts';
 import { toggleMute } from './chatmute.ts';
 import { boundLean, cursorPush, followLook, lookAhead, makeCamera, NO_LOOKCAM, screenToWorld, viewAspect, visibleHalf, worldToScreen, type Camera, type LookCam, type Point } from './camera.ts';
 import { LOOK_AHEAD, lookReach } from '../shared/lookahead.ts';
@@ -292,6 +292,8 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       setState({ phase: 'menu', status: { kind: 'error', message: msg.message } });
       ws.close();
     } else if (msg.t === 'welcome') {
+      // This join made the guest name's profile: keep its claim, so registering later carries that progress over.
+      if (msg.guest) addGuestClaim(msg.guest);
       const resumed = state.phase === 'reconnecting' ? state.s : null;
       const s = newSession(ws, pending.rejoin, msg);
       enterMap(msg.map);
@@ -1161,6 +1163,7 @@ const enlist = mountEnlist($('enlist'), {
   auth: (kind, name, pass) => account.auth(kind, name, pass),
   suggestName: () => (nameInput.value.trim() ? cleanName(nameInput.value) : ''),
   afterSignIn: () => flow.go('modes'),
+  hasGuestProgress: () => loadGuestClaims().length > 0,
 });
 const deathNudge = $('death-enlist'), deathNudgeText = $('death-enlist-text');
 const syncNudge = () => { const line = guestNudge(!!account.current(), enlist.stakes()); deathNudge.hidden = !line; deathNudgeText.textContent = line ?? ''; };

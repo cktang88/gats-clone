@@ -2,7 +2,8 @@ import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS, type ModeId, ty
 import { HANDLING } from '../shared/handling.ts';
 import type { Loadout } from '../shared/protocol.ts';
 import { CLASS_ROLES } from '../shared/roles.ts';
-import { authenticate, fetchStats, loadAccount, saveAccount, type Account, type ServerInfo } from './api.ts';
+import { authenticate, dropGuestClaim, fetchStats, loadAccount, loadGuestClaims, loadName, pickGuestClaim, saveAccount, type Account, type ServerInfo } from './api.ts';
+import { CARRY_LINE } from './enlist.ts';
 import type { MutedNames } from './chatmute.ts';
 import { CONTROLS } from './input.ts';
 import { drawGunCard } from './gunart.ts';
@@ -247,12 +248,18 @@ export function mountAccount(root: HTMLElement, onChange: (a: Account | null) =>
   let account = loadAccount();
   /** Logs in or registers (from this sheet or the enlist plate); resolves to the server's error, or null once signed in. */
   const auth = async (kind: 'login' | 'register', name: string, password: string): Promise<string | null> => {
-    const r = await authenticate(kind, name, password);
-    if ('error' in r) return r.error;
-    account = r;
-    saveAccount(r);
-    onChange(r);
-    showSignedIn(r);
+    const guest = kind === 'register' ? pickGuestClaim(loadName()) : undefined;
+    const r = await authenticate(kind, name, password, guest);
+    if ('error' in r) {
+      // A spent or refused claim is no use again: forget it, so the next try makes a fresh account.
+      if (guest && r.guestInvalid) dropGuestClaim(guest);
+      return r.error;
+    }
+    if (guest && r.carried) dropGuestClaim(guest);
+    account = { token: r.token, name: r.name };
+    saveAccount(account);
+    onChange(account);
+    showSignedIn(account);
     return null;
   };
 
@@ -284,7 +291,7 @@ export function mountAccount(root: HTMLElement, onChange: (a: Account | null) =>
     };
     form.onsubmit = (e) => { e.preventDefault(); void submit('login'); };
     register.onclick = () => void submit('register');
-    root.replaceChildren(el('h2', {}, 'Account'), el('p', { className: 'muted' }, 'Log in to keep stats across games.'), form);
+    root.replaceChildren(el('h2', {}, 'Account'), el('p', { className: 'muted' }, loadGuestClaims().length ? `Log in to keep stats across games. ${CARRY_LINE}` : 'Log in to keep stats across games.'), form);
   };
 
   if (account) showSignedIn(account);

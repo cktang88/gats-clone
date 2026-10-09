@@ -333,7 +333,8 @@ export const MINIMAP_EVERY = 3;
 
 export type ServerMsg =
   /** `account` is the signed-in account name, or null when the join had no token or an invalid or expired one. */
-  | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; map?: MapId; walls: WallView[]; account: string | null }
+  /** `guest`, sent only to the guest whose join made their name's profile, is the claim token that can carry it into a new account (`/api/register`). */
+  | { t: 'welcome'; id: number; mode: ModeId; worldSize: number; map?: MapId; walls: WallView[]; account: string | null; guest?: string }
   | { t: 'walls'; worldSize: number; map?: MapId; walls: WallView[] }
   | SnapshotWire
   | { t: 'chat'; from: string; text: string; team: Team }

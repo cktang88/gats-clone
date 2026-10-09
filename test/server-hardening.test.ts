@@ -72,6 +72,7 @@ function fakeRoom(id: string, throws: boolean) {
     tick() { room.ticks++; if (room.throws) throw new Error(`tick fault in ${id}`); },
     info: () => ({ id, mode: 'FFA' as const, players: 0, humans: 0 }),
     netStats: () => ({ id, mode: 'FFA' as const, humans: 0, players: 0, queues: [], bytes: 0, snaps: 0, skipped: 0, ticked: 0 }),
+    forgetGuest() {},
     close() { room.closed = true; },
   };
   return room;

@@ -7,11 +7,26 @@ const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number)
 
 type Stats = { kills: number; deaths: number; score: number; games: number; best: number };
 type StatsRow = Stats & { name: string };
-type Account = { name: string; salt: string; hash: string; stats: Stats };
+/**
+ * The guest profile a registration carried over (see `GuestClaim` in profiles.ts), written in the same atomic save that makes
+ * the account, so `Profiles.reconcile` can finish a move a crash cut short and can tell a finished one (the profile no longer has
+ * that owner) from an unfinished one.
+ */
+type Claim = { from: string; owner: string; at: number };
+type Account = { name: string; salt: string; hash: string; stats: Stats; claim?: Claim };
 type Session = { token: string; name: string };
+/** A guest profile held for a registration, with the career numbers that seed the new account's stats. */
+export type HeldClaim = { from: string; owner: string; kills: number; deaths: number; games: number };
 
 export type Accounts = {
+  /**
+   * Makes an account. `claim`, when given, runs once the name is known to be free, in the same synchronous step that takes it,
+   * and must hold the guest profile being carried over (or return null, which refuses the registration with 'unclaimable').
+   */
   register(name: string, password: string): Promise<Session | null>;
+  register(name: string, password: string, claim: () => HeldClaim | null): Promise<Session | null | 'unclaimable'>;
+  /** Every account's name and the guest claim it was registered with, for `Profiles.reconcile`. */
+  claims(): { name: string; claim?: { from: string; owner: string } }[];
   login(name: string, password: string): Promise<Session | null>;
   nameForToken(token: string): string | null;
   stats(name: string): StatsRow | null;
@@ -78,20 +93,25 @@ export async function openAccounts(dataDir: string, sessionMs: number): Promise<
   };
   const row = (a: Account): StatsRow => ({ name: a.name, ...a.stats });
 
+  async function register(name: string, password: string, claim?: () => HeldClaim | null): Promise<Session | null | 'unclaimable'> {
+    if (byKey.has(key(name))) return null;
+    const salt = randomBytes(16);
+    const hash = await scryptAsync(password, salt, 64);
+    if (byKey.has(key(name))) return null;
+    const held = claim ? claim() : null;
+    if (claim && !held) return 'unclaimable';
+    const account: Account = {
+      name, salt: salt.toString('hex'), hash: hash.toString('hex'),
+      stats: { kills: held?.kills ?? 0, deaths: held?.deaths ?? 0, score: 0, games: held?.games ?? 0, best: 0 },
+      ...(held && { claim: { from: held.from, owner: held.owner, at: Date.now() } }),
+    };
+    byKey.set(key(name), account);
+    await save();
+    return issue(account);
+  }
+
   return {
-    async register(name, password) {
-      if (byKey.has(key(name))) return null;
-      const salt = randomBytes(16);
-      const hash = await scryptAsync(password, salt, 64);
-      if (byKey.has(key(name))) return null;
-      const account: Account = {
-        name, salt: salt.toString('hex'), hash: hash.toString('hex'),
-        stats: { kills: 0, deaths: 0, score: 0, games: 0, best: 0 },
-      };
-      byKey.set(key(name), account);
-      await save();
-      return issue(account);
-    },
+    register: register as Accounts['register'],
     async login(name, password) {
       const account = byKey.get(key(name));
       const hash = await scryptAsync(password, account ? Buffer.from(account.salt, 'hex') : UNKNOWN_ACCOUNT_SALT, 64);
@@ -106,6 +126,9 @@ export async function openAccounts(dataDir: string, sessionMs: number): Promise<
       if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
       if (parseInt(expiresAt, 36) * 1000 <= Date.now()) return null;
       return byKey.get(Buffer.from(name, 'base64url').toString())?.name ?? null;
+    },
+    claims() {
+      return [...byKey.values()].map((a) => ({ name: a.name, ...(typeof a.claim?.from === 'string' && typeof a.claim.owner === 'string' && { claim: { from: a.claim.from, owner: a.claim.owner } }) }));
     },
     stats(name) {
       const a = byKey.get(key(name));
