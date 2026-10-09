@@ -134,7 +134,7 @@ const VARIANTS: { label: string; style: HumanStyle; gun: GunId | null }[] = [
   { label: `strafe, always ${GUNS[HUNTED_GUN].name}`, style: 'strafe', gun: HUNTED_GUN },
 ];
 
-console.log(`human (3x health) vs ${WORLD.minPlayers - 1} bots, ${minutes} min x ${seeds} seeds`);
+console.log(`human (same health, bots deal 0.8x to him) vs ${WORLD.minPlayers - 1} bots, ${minutes} min x ${seeds} seeds`);
 for (const { label, style, gun } of minutes > 0 ? VARIANTS : []) {
   const all: Tally = { lives: [], levels: [], botLevels: [], kills: 0, deaths: 0, botOnBotKills: 0, botsKilledByHuman: 0, damageTaken: 0 };
   for (let seed = 1; seed <= seeds; seed++) {

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HP_MULTIPLIER, PROP_FX, PROPS, WORLD, type PropKind } from '../src/shared/defs.ts';
+import { PROP_FX, PROPS, WORLD, type PropKind } from '../src/shared/defs.ts';
 import type { GameEvent } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { damageProp } from '../src/shared/sim/props.ts';
@@ -111,17 +111,16 @@ test('an ammo pack counts the rounds it put back and says when it brought the ab
   assert.equal(g[0]!.ability, true);
 });
 
-test('a person\'s health pack heals in their own scale: twice a bot\'s, as their health counts twice', () => {
+test('a person\'s health pack heals the same as a bot\'s, as their health is the same', () => {
   const w = emptyWorld();
   const by = spawnAt(w, 3000, 3000);
   const me = spawnAt(w, 1000, 1000, { kind: 'human' });
-  const max = effectiveStats(me).maxHp;
-  assert.equal(max, 2 * effectiveStats(by).maxHp);
+  assert.equal(effectiveStats(me).maxHp, effectiveStats(by).maxHp);
   hurt(me, 40); noRegen(me);
   packAt(w, 'medic', 1000, 1000, by);
   const g = gains(runEvents(w, 100), me.id);
-  assert.equal(hpOf(me), 40 + PROP_FX.medic.heal * HP_MULTIPLIER.human);
-  assert.deepEqual(g.map((x) => x.hp), [PROP_FX.medic.heal * HP_MULTIPLIER.human], 'the popup reads the same number the health counter gains');
+  assert.equal(hpOf(me), 40 + PROP_FX.medic.heal);
+  assert.deepEqual(g.map((x) => x.hp), [PROP_FX.medic.heal], 'the popup reads the same number the health counter gains');
 });
 
 // ---- a standing cabinet opens by itself for whoever needs it

@@ -35,6 +35,8 @@ test('every gun that promises a kill in one or two hits keeps that promise throu
     const shooter = spawnAt(w, 1000, 1000, { loadout: { weapon: g.base } });
     shooter.gun = id;
     const target = spawnAt(w, 1000 + (g.pellets > 1 ? 60 : 300), 1000, { loadout: { armor: 'heavy' } });
+    // Settled first, so the test is of damage, not of the spread a gun fired off the spawn has (a bot's is a person's: no tighter).
+    run(w, 1000);
     for (let hit = 1; hit <= g.breakpoint!; hit++) shootOnce(w, shooter, 0, (g.burst ? g.burst.count * g.burst.gapMs : 0) + g.fireMs + (g.mag === 1 ? g.reloadMs : 0) + 100);
     assert.equal(target.life.k, 'dead', `${g.name} kills heavy armor in ${g.breakpoint}`);
   }

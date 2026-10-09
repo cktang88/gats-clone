@@ -11,7 +11,7 @@ import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, watchCloseCall
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
-import { abilityCooldownMs, abilityOf, bloomRecoverMul, BOT_SPREAD_MUL, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, resetProgress, rushMul, settleShare, spreadFor, sprintWanted, easeSpread, easedSpread } from './sim/stats.ts';
+import { abilityCooldownMs, abilityOf, bloomRecoverMul, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, resetProgress, rushMul, settleShare, spreadFor, sprintWanted, easeSpread, easedSpread } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { crateRect, freshFeats, IDLE_INPUT, newId, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
@@ -108,7 +108,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 
   const armed = w.match.k === 'playing';
   const wasReloading = life.reloadUntil !== null;
-  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed: armed && !sprinting, bloomRecover: bloomRecoverMul(p.perks, p.kind === 'bot') }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
+  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed: armed && !sprinting, bloomRecover: bloomRecoverMul(p.perks) }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
   // A fresh magazine starts the count of kills from one mag again.
   if (!wasReloading && life.reloadUntil !== null) p.feats.magKills = 0;
   // The spread eases toward its target every tick (see `easeSpread`), a shot's own bloom kick landing at once; the shot fired this tick takes it as it stands.
@@ -121,7 +121,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   if (fired) {
     life.shieldUntil = -Infinity;
     const muzzle = MUZZLE_PX;
-    const spread = easedSpread(life.spreadHist) * (p.kind === 'bot' ? BOT_SPREAD_MUL : 1);
+    const spread = easedSpread(life.spreadHist);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (spreadPick(p.id, p.fired, i) - 0.5) * spread * 2;

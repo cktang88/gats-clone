@@ -1,4 +1,4 @@
-import { HP_MULTIPLIER, PROP_FX, PROPS, WORLD, type MedalId } from '../defs.ts';
+import { PROP_FX, PROPS, WORLD, type MedalId } from '../defs.ts';
 import type { Team } from '../protocol.ts';
 import { award, explode } from './combat.ts';
 import { clamp, dist2, rectsOverlap, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
@@ -136,8 +136,7 @@ function takePack(w: World, q: Prop, p: Player): boolean {
   const stats = effectiveStats(p);
   if (q.kind === 'medic') {
     const was = life.hp;
-    // In the player's own scale: a person's health counts `HP_MULTIPLIER` times a bot's, so their pack does too (the same share of either).
-    life.hp = Math.min(stats.maxHp, life.hp + PROP_FX.medic.heal * HP_MULTIPLIER[p.kind]);
+    life.hp = Math.min(stats.maxHp, life.hp + PROP_FX.medic.heal);
     w.events.push({ e: 'gain', id: p.id, from: 'medic', hp: Math.round(life.hp - was) });
   } else {
     const cooling = w.now < p.abilityReadyAt;

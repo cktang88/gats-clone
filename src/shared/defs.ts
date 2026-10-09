@@ -379,8 +379,12 @@ export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;
 export type PlayerKind = (typeof PLAYER_KINDS)[number];
-/** Humans carry multiplied health so a person outlasts the bots that fill the room. Regen scales with it, so healing takes the same time. */
-export const HP_MULTIPLIER: Record<PlayerKind, number> = { human: 2, bot: 1 };
+/**
+ * The one rule that tells a bot from a person: a bot's damage to a person counts this share (every path: rounds, blasts, the knife, gas,
+ * fire, mines, turrets). Bot on bot, person on person and person on bot are all at full. Health, speed, spread, bloom and every other stat
+ * are the same for both; the only other difference is the touch aim assist a person on a phone gets (`src/client/aimassist.ts`).
+ */
+export const BOT_DAMAGE_TO_HUMAN = 0.8;
 
 export type Pick = { k: 'perk'; tier: Tier; /** The tier-2 perks offered this life (`TIER2_OFFER` of the pool, drawn at spawn); absent means the whole tier. */ offer?: readonly PerkId[] } | { k: 'evolve' };
 export type PendingPick = { level: number } & Pick;
@@ -635,7 +639,6 @@ export const PROP_FX = {
    * A standing cabinet opens by itself for the first player within `openR` of its centre who needs what it holds: a body pressed to any side
    * of it, corners too, with room to spare.
    */
-  /** `heal` is in a bot's health; a person's pack heals `HP_MULTIPLIER.human` times that, the same share of their bigger pool. */
   medic: { heal: 50, packMs: 25_000, pickR: 40, openR: 70 },
   ammo: { packMs: 25_000, pickR: 40, openR: 70 },
   paint: { radius: 90, picassoPx: 80 },

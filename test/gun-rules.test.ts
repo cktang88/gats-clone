@@ -81,6 +81,7 @@ test('a sniper\'s patient rounds stay inside its still cone standing and stray f
 
 test('an assault rifle held down blooms after its first shots, up to two and a half times, and taps stay tight', () => {
   const { w, p } = shooter('assault');
+  run(w, 400);
   const held: number[][] = [];
   while (held.length < 25) {
     const out = tick(w, p, { fire: true, shots: 1 });
@@ -97,6 +98,7 @@ test('an assault rifle held down blooms after its first shots, up to two and a h
 
   const tapped: number[] = [];
   const t = shooter('assault');
+  run(t.w, 400);
   while (tapped.length < 20) {
     tapped.push(...tick(t.w, t.p, { fire: true, shots: t.p.input.shots + 1 }));
     for (let i = 0; i < 6; i++) tapped.push(...tick(t.w, t.p, {}));
@@ -269,7 +271,7 @@ test('every gun blooms; standing it blooms less than on the move, and a set-down
 
 test('a sniper\'s follow-up is wild and a re-settled shot precise: each round blooms the cone even planted, and it takes seconds to close again', () => {
   for (const gun of ['sniper', 'semiAuto', 'repeater'] as const) {
-    // A person's gun: a bot's bloom settles faster (`BOT_BLOOM_DECAY_MUL`).
+    // A person's gun (a bot's settles the same, see bot-bloom.test.ts).
     const { w, p } = shooter(gun, 'FFA', 'human');
     run(w, 600);
     const sprayNow = () => (p.life.k === 'alive' ? p.life.spray : 0);

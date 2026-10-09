@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BOT_BLOOM_DECAY_MUL, bloomRecoverMul } from '../src/shared/sim/stats.ts';
+import { bloomRecoverMul } from '../src/shared/sim/stats.ts';
 import { fireRhythm, holdsFire, PATIENCE_CAP_MS, TAP_FROM_PX, type ShotRead } from '../src/server/bot/motor.ts';
 import { PERSONALITIES } from '../src/server/bot/intent.ts';
 import { emptyWorld, equip, press, run, spawnAt, TICK_MS } from './helpers.ts';
@@ -9,11 +9,8 @@ import { step } from '../src/shared/sim.ts';
 
 const sprayOf = (p: { life: { k: string; spray?: number } }) => (p.life.k === 'alive' ? p.life.spray! : -1);
 
-test("a bot's bloom comes back down faster than a person's on the same gun, and a person's is unchanged", () => {
-  assert.ok(BOT_BLOOM_DECAY_MUL > 1);
-  assert.equal(bloomRecoverMul({}), 1, 'people recover at the gun\'s own rate');
-  assert.equal(bloomRecoverMul({}, true), BOT_BLOOM_DECAY_MUL);
-  assert.equal(bloomRecoverMul({ t2: 'steadyHands' } as never, true), bloomRecoverMul({ t2: 'steadyHands' } as never) * BOT_BLOOM_DECAY_MUL, 'on top of Steady Hands');
+test("a bot's bloom comes back down exactly as a person's does on the same gun", () => {
+  assert.equal(bloomRecoverMul({}), 1, 'the gun\'s own rate');
   const w = emptyWorld();
   const human = spawnAt(w, 500, 500, { loadout: { weapon: 'sniper' }, kind: 'human' });
   const bot = spawnAt(w, 500, 900, { loadout: { weapon: 'sniper' }, kind: 'bot' });
@@ -22,11 +19,10 @@ test("a bot's bloom comes back down faster than a person's on the same gun, and 
   for (const p of [human, bot]) press(w, p, { fire: false });
   assert.equal(sprayOf(human), 1);
   assert.equal(sprayOf(bot), 1, 'the same kick');
-  run(w, 1000);
-  assert.ok(sprayOf(bot) < sprayOf(human) - 0.2, `bot ${sprayOf(bot)} recovers faster than human ${sprayOf(human)}`);
-  run(w, 600);
-  assert.equal(sprayOf(bot), 0, 'a bolt kick is gone for a bot by the time the bolt is back');
-  assert.ok(sprayOf(human) > 0, 'a person is still settling');
+  for (let t = 0; t < 2000; t += TICK_MS) {
+    step(w, TICK_MS);
+    assert.equal(sprayOf(bot), sprayOf(human), `the same bloom at ${Math.round(t)} ms`);
+  }
 });
 
 const read = (over: Partial<ShotRead>): ShotRead => ({ spray: 0, still: true, d: 700, lateral: 0, sinceShotMs: 300, urgent: false, pausing: false, ...over });

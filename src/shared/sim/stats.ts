@@ -1,5 +1,5 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, SPREAD_EASE, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, VIEW, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
+  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, SPREAD_EASE, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, VIEW, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
 import { loadOf, sprintShareOf, walkMulOf } from '../handling.ts';
 import { rand, type Life, type PerkOfTier, type Player, type World } from './world.ts';
@@ -55,17 +55,6 @@ type Stats = {
 };
 
 /**
- * A bot's rounds leave its gun this much tighter than a person's would (spread, bloom and all), as its hands are already worse than a mouse:
- * a small edge so bots hold their own against people. Humans are unchanged; bot against bot both have it. Tune with `BOT_AIM.errMul` (aim.ts).
- */
-export const BOT_SPREAD_MUL = 0.85;
-/**
- * A bot's bloom comes back down this much faster than a person's (on top of Steady Hands), as it reads its gun off a clock rather than a
- * reticle it can watch shrink: a bolt's kick settles in ~1.5 s, not ~2.4 s. Humans are unchanged; bot against bot both have it.
- */
-export const BOT_BLOOM_DECAY_MUL = 1.8;
-
-/**
  * Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks and `suppression`. Nothing fires tighter than
  * the gun's floor (`minSpreadOf`), however planted or perked; a pinpoint gun planted, steady and unsuppressed sits right on it. Bloom adds on
  * top of that: all of its growth on the move, `bloom.still` of it standing, `deploy.bloom` with a bipod down; a pinpoint gun's grows from
@@ -118,9 +107,9 @@ export function easeSpread(hist: readonly number[], target: number, kick = 0): n
 /** The eased spread a history holds (see `easeSpread`). */
 export const easedSpread = (hist: readonly number[]): number => (hist.length === 0 ? 0 : hist.reduce((a, b) => a + b, 0) / hist.length);
 
-/** How fast spray bloom recovers, as a multiplier (Steady Hands, and `BOT_BLOOM_DECAY_MUL` for a bot). */
-export const bloomRecoverMul = (perks: Partial<Record<Tier, PerkId>>, bot = false): number =>
-  Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomRecoverMul ?? 1), bot ? BOT_BLOOM_DECAY_MUL : 1);
+/** How fast spray bloom recovers, as a multiplier (Steady Hands): the same for a bot as for a person. */
+export const bloomRecoverMul = (perks: Partial<Record<Tier, PerkId>>): number =>
+  Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomRecoverMul ?? 1), 1);
 
 /** How much `suppression` (0..1) widens spread. */
 export const suppressionMul = (suppression: number): number => 1 + suppression * SUPPRESSION.spread;
@@ -222,8 +211,6 @@ export function effectiveStats(p: Player): Stats {
     s.ghillie ||= m.ghillie ?? false;
   }
   s.sprintSpeed = s.speed * sprintMul;
-  s.maxHp *= HP_MULTIPLIER[p.kind];
-  s.regenPerSec *= HP_MULTIPLIER[p.kind];
   return s;
 }
 

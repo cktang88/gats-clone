@@ -6,6 +6,7 @@ import { damagePlayer, explode } from '../src/shared/sim/combat.ts';
 import { applyKnock, blastShove, bulletShove } from '../src/shared/sim/knock.ts';
 import { decayKnock, moveStep } from '../src/shared/sim/movement.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { makeSnapshotEncoder } from '../src/shared/wire.ts';
 import { newId, type Player, type World } from '../src/shared/sim/world.ts';
 import { emptyWorld, equip, press, setWalls, spawnAt, TICK_MS } from './helpers.ts';
@@ -19,6 +20,9 @@ function hitWith(gun: GunId, armor: 'none' | 'heavy' = 'none') {
   const a = spawnAt(w, 500, 500, { loadout: { weapon: GUNS[gun].base } });
   equip(a, gun);
   const b = spawnAt(w, 580, 500, { loadout: { armor }, kind: 'human' });
+  // Thick Skin, so a point-blank blast lands as a shove rather than a kill (only a survivor is shoved).
+  b.perks = { 2: 'thickSkin' };
+  if (b.life.k === 'alive') b.life.hp = effectiveStats(b).maxHp;
   press(w, a, { angle: 0, fire: true, shots: a.input.shots + 1 });
   let peak = 0;
   for (let i = 0; i < 20; i++) { step(w, TICK_MS); peak = Math.max(peak, speedOf(b)); press(w, a, { angle: 0 }); }

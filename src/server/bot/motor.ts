@@ -2,7 +2,7 @@ import { GUNS, rulesOf, WORLD, type AbilityId, type GunId, type PerkId, type Tie
 import { BOT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
 import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
-import { BOT_BLOOM_DECAY_MUL, BOT_SPREAD_MUL, bloomRecoverMul, settleShare, spreadFor } from '../../shared/sim/stats.ts';
+import { bloomRecoverMul, settleShare, spreadFor } from '../../shared/sim/stats.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, wrapAngle, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
 import { clearOfLeaves, doorCentre, leavesCrossed, navAround, takeReplan, type BotArena, type StandingLeaf } from './arena.ts';
 import { doorLeaves, swingArcAt, swingHinges, SWING_MAX } from '../../shared/sim/doors.ts';
@@ -260,20 +260,20 @@ export function tapRhythm(gun: GunId, rushes: boolean): { windowMs: number; paus
   const { bloom } = rulesOf(def);
   if (!bloom || bloom.free > 4 || rushes || def.base === 'lmg') return null;
   const perRound = def.burst ? ((def.burst.count - 1) * def.burst.gapMs + def.fireMs) / def.burst.count : def.fireMs;
-  return { windowMs: bloom.free * perRound - 1, pauseMs: bloom.settleMs + (0.5 * bloom.recoverMs) / BOT_BLOOM_DECAY_MUL };
+  return { windowMs: bloom.free * perRound - 1, pauseMs: bloom.settleMs + 0.5 * bloom.recoverMs };
 }
 
 /**
  * A tapping gun's rhythm with what its bot weighs before each shot (see `holdsFire`): `patienceMs`, the longest it waits on its bloom after a
  * round has left (the gun's pause, scaled by temper: a hothead's `commitMul` is short, a marksman's long, never over `PATIENCE_CAP_MS`), and its
- * perks and suppression for reading its own cone, and `recover` for reading its bloom come back down (Steady Hands and `BOT_BLOOM_DECAY_MUL`).
+ * perks and suppression for reading its own cone, and `recover` for reading its bloom come back down (Steady Hands, as for anyone).
  */
 export type Rhythm = { windowMs: number; pauseMs: number; patienceMs: number; recover: number; perks: Partial<Record<Tier, PerkId>>; suppression: number };
 export const PATIENCE_CAP_MS = 1600;
 export function fireRhythm(gun: GunId, rushes: boolean, commitMul: number, perks: Partial<Record<Tier, PerkId>> = {}, suppression = 0): Rhythm | null {
   const tap = tapRhythm(gun, rushes);
   if (!tap) return null;
-  return { ...tap, patienceMs: Math.min(PATIENCE_CAP_MS, tap.pauseMs * commitMul), recover: bloomRecoverMul(perks, true), perks, suppression };
+  return { ...tap, patienceMs: Math.min(PATIENCE_CAP_MS, tap.pauseMs * commitMul), recover: bloomRecoverMul(perks), perks, suppression };
 }
 
 /**
@@ -291,7 +291,7 @@ const LEAD_SLOP = 0.3;
 /** The odds a round lands, roughly: the body's half-width against the cone's half-width at that range plus the lead it may get wrong. */
 function hitChance(gun: GunId, r: Rhythm, sprayShot: number, s: ShotRead, settle = 0): number {
   const def = GUNS[gun];
-  const cone = spreadFor(gun, r.perks, s.still, sprayShot, r.suppression, settle) * BOT_SPREAD_MUL;
+  const cone = spreadFor(gun, r.perks, s.still, sprayShot, r.suppression, settle);
   const slop = (s.lateral * s.d / def.bulletSpeed) * LEAD_SLOP;
   const body = WORLD.playerRadius;
   return body / Math.max(body, s.d * Math.tan(cone) + slop);

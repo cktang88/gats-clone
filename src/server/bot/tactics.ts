@@ -121,7 +121,7 @@ const OFF_ANGLE_MS = 320;
 export function fightOdds(v: Perception, t: Threat, seen: readonly Sighting[]): number {
   const me = v.me, him = t.p, d = Math.max(30, t.d);
   const mine = dps(me.gun, d, ARMORS[him.armorTier].blockFrac), his = dps(him.gun, d, ARMORS[me.armorTier].blockFrac);
-  // Health by share of a full bar: a person's multiplied health (`HP_MULTIPLIER`) is the game's handicap for the room, not a fight to duck.
+  // Health by share of a full bar.
   let toKillHim = ((WORLD.baseHp * him.hp) / Math.max(1, him.maxHp) / Math.max(1e-3, mine)) * 1000;
   let toKillMe = ((WORLD.baseHp * me.hp) / Math.max(1, me.maxHp) / Math.max(1e-3, his)) * 1000;
   // Who has whom in front of his gun: one turned away loses a reaction and a turn.

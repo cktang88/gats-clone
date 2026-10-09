@@ -1,4 +1,4 @@
-import { ARMORS, GUNS, HP_MULTIPLIER, KNOCK, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
+import { ARMORS, BOT_DAMAGE_TO_HUMAN, GUNS, KNOCK, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
 import { blastDoors } from './doors.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { flightSec, flownAfter } from './ballistics.ts';
@@ -46,8 +46,11 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (victim.life.k === 'dead' || w.match.k === 'over' || w.mode === 'RNG') return;
   const a = src.attacker;
   if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
+  // The one bot/person rule (`BOT_DAMAGE_TO_HUMAN`), here where every path a player is hurt by an attacker meets. It is the health taken
+  // only: the shove and Bloodlust go by the hit as fired (`felt`), the same whoever fires it.
+  const kindMul = a?.kind === 'bot' && victim.kind === 'human' ? BOT_DAMAGE_TO_HUMAN : 1;
   if (victim.life.k === 'downed') {
-    if (w.royale) hurtDowned(w, victim, a?.kind === 'human' ? amount * HP_MULTIPLIER[victim.kind] : amount, a);
+    if (w.royale) hurtDowned(w, victim, amount * kindMul, a);
     return;
   }
   if (w.run && src.team !== null) return;
@@ -62,8 +65,7 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (src.via === 'blast' && hasPerk(victim, 'demolitions')) amount *= PERK_RULES.demolitions.takenMul;
   if (w.now < life.windUntil) amount *= PERK_RULES.secondWind.damageMul;
   const felt = amount;
-  // A human hits as hard as the victim's health is multiplied, so human duels run at bot pace.
-  if (a?.kind === 'human') amount *= HP_MULTIPLIER[victim.kind];
+  amount *= kindMul;
   if (!src.piercing) amount *= 1 - ARMORS[victim.loadout.armor].blockFrac;
   const fromFull = before >= stats.maxHp;
   const pinned = life.suppression;
@@ -84,10 +86,10 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (life.hp <= 0) kill(w, victim, a, src.label, { gun: src.via === 'bullet' ? src.gun ?? null : null, oneHit: fromFull, pinned, ...(src.chain !== undefined && { chain: src.chain }), ...(src.medal && { medal: src.medal }) });
 }
 
-/** Bloodlust heals the attacker by a share of the damage that landed (in the attacker's own health scale), and Tracker marks the victim on their minimap. */
+/** Bloodlust heals the attacker by a share of the damage that landed, and Tracker marks the victim on their minimap. */
 function perkOnHit(w: World, a: Player, felt: number, landed: number, victim: Player) {
   if (a.life.k !== 'alive') return;
-  if (hasPerk(a, 'bloodlust')) a.life.hp = Math.min(effectiveStats(a).maxHp, a.life.hp + PERK_RULES.bloodlust.healShare * felt * landed * HP_MULTIPLIER[a.kind]);
+  if (hasPerk(a, 'bloodlust')) a.life.hp = Math.min(effectiveStats(a).maxHp, a.life.hp + PERK_RULES.bloodlust.healShare * felt * landed);
   if (hasPerk(a, 'tracker')) a.life.tracks[victim.id] = w.now + PERK_RULES.tracker.ms;
 }
 

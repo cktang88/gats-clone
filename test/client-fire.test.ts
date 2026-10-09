@@ -30,7 +30,7 @@ function play(f: Firing, inputs: readonly TriggerInput[]): { firing: Firing; dra
 
 function simAndPageFires(gun: GunId, inputs: readonly TriggerInput[], setup?: (w: World, p: Player) => void): { sim: number[]; page: number[] } {
   const w = emptyWorld();
-  // The page predicts its own player, a person: a bot's bloom settles faster (`BOT_BLOOM_DECAY_MUL`).
+  // The page predicts its own player, a person (a bot's gun runs by the same rules, see bot-bloom.test.ts).
   const p = spawnAt(w, 500, 500, { loadout: { weapon: GUNS[gun].base }, kind: 'human' });
   setup?.(w, p);
   equip(p, gun);

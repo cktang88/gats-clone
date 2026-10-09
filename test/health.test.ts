@@ -5,24 +5,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import WebSocket from 'ws';
-import { ARMOR_IDS, HP_MULTIPLIER, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
-
-const H = HP_MULTIPLIER.human;
+import { ARMOR_IDS, BOT_DAMAGE_TO_HUMAN, WORLD, type ArmorId, type PlayerKind } from '../src/shared/defs.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
 import { damagePlayer } from '../src/shared/sim/combat.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { startServer } from '../src/server/main.ts';
 import { PISTOL, TICK_MS, emptyWorld, grantPerks, hpOf, press, run, spawnAt } from './helpers.ts';
 
-test('humans carry multiplied health and regen, bots keep the base', () => {
+test('humans and bots carry the same health and regen', () => {
   const w = emptyWorld();
   const human = addPlayer(w, 'Hu', PISTOL, { kind: 'human', at: { x: 500, y: 500 } });
   const bot = addPlayer(w, 'Bo', PISTOL, { at: { x: 900, y: 500 } });
-  assert.equal(effectiveStats(human).maxHp, WORLD.baseHp * H);
+  assert.equal(effectiveStats(human).maxHp, WORLD.baseHp);
   assert.equal(effectiveStats(bot).maxHp, WORLD.baseHp);
-  assert.equal(effectiveStats(human).regenPerSec / effectiveStats(human).maxHp, effectiveStats(bot).regenPerSec / effectiveStats(bot).maxHp, 'healing to full takes the same time');
+  assert.equal(effectiveStats(human).regenPerSec, effectiveStats(bot).regenPerSec);
   grantPerks(w, human, ['optics', 'thickSkin']);
-  assert.equal(effectiveStats(human).maxHp, (WORLD.baseHp + 40) * H, 'thick skin is multiplied too');
+  assert.equal(effectiveStats(human).maxHp, WORLD.baseHp + 40, 'thick skin adds the same for anyone');
 });
 
 test('first aid starts healing 1.6s after a hit, three times as fast; without it healing waits 4s', () => {
@@ -42,7 +40,7 @@ test('first aid starts healing 1.6s after a hit, three times as fast; without it
   assert.ok(hpOf(plain) > 50, 'plain heals after 4s');
 });
 
-test('humans kill each other as fast as bots kill each other, armored or not, and bots still need the human multiple of the time on a human', () => {
+test('humans kill each other as fast as bots kill each other, armored or not, and a bot takes 1/0.8 of the time on a human', () => {
   const ttk = (shooterKind: PlayerKind, victimKind: PlayerKind, armor: ArmorId) => {
     const w = emptyWorld();
     const shooter = addPlayer(w, 'S', { ...PISTOL, weapon: 'smg' }, { kind: shooterKind, at: { x: 500, y: 500 } });
@@ -56,8 +54,9 @@ test('humans kill each other as fast as bots kill each other, armored or not, an
   for (const armor of ['none', 'medium'] as const) {
     assert.equal(ttk('human', 'human', armor), ttk('bot', 'bot', armor), `${armor} armor`);
     assert.equal(ttk('human', 'bot', armor), ttk('bot', 'bot', armor), `a human hits a bot for base damage (${armor} armor)`);
-    assert.ok(ttk('bot', 'human', armor) >= 0.9 * H * ttk('bot', 'bot', armor), `a bot needs about the human multiple of the time on a human (${armor} armor)`);
-    assert.ok(ttk('bot', 'human', armor) <= 1.2 * H * ttk('bot', 'bot', armor), `but no more than that (${armor} armor)`);
+    const k = 1 / BOT_DAMAGE_TO_HUMAN;
+    assert.ok(ttk('bot', 'human', armor) >= 0.9 * k * ttk('bot', 'bot', armor), `a bot's rounds count 0.8 on a human (${armor} armor)`);
+    assert.ok(ttk('bot', 'human', armor) <= 1.2 * k * ttk('bot', 'bot', armor), `but no less than that (${armor} armor)`);
   }
 });
 
@@ -77,15 +76,17 @@ function rawDamageToKill(shooterKind: PlayerKind, victimKind: PlayerKind, armor:
   return raw;
 }
 
-test('armor blocks the same share for humans and bots: a bot spends the human multiple of the raw damage on an armored human, and humans duel at bot pace in every armor', () => {
+test('armor blocks the same share for humans and bots: a bot spends 1/0.8 of the raw damage on an armored human, and every other pairing the same', () => {
+  const k = 1 / BOT_DAMAGE_TO_HUMAN;
   for (const armor of ARMOR_IDS) {
     const botOnBot = rawDamageToKill('bot', 'bot', armor);
-    assert.ok(Math.abs(rawDamageToKill('bot', 'human', armor) - H * botOnBot) <= H * RAW_STEP, `${armor}: bot on human ${rawDamageToKill('bot', 'human', armor)} vs ${H} x ${botOnBot}`);
+    assert.ok(Math.abs(rawDamageToKill('bot', 'human', armor) - k * botOnBot) <= k * RAW_STEP, `${armor}: bot on human ${rawDamageToKill('bot', 'human', armor)} vs ${k} x ${botOnBot}`);
     assert.ok(Math.abs(rawDamageToKill('human', 'human', armor) - botOnBot) <= RAW_STEP, `${armor}: human on human ${rawDamageToKill('human', 'human', armor)} vs bot on bot ${botOnBot}`);
+    assert.ok(Math.abs(rawDamageToKill('human', 'bot', armor) - botOnBot) <= RAW_STEP, `${armor}: human on bot ${rawDamageToKill('human', 'bot', armor)} vs bot on bot ${botOnBot}`);
   }
 });
 
-test('a player who joins through the server gets multiplied health while the room bots do not', { timeout: 10_000 }, async () => {
+test('a player who joins through the server gets the same health as the room bots', { timeout: 10_000 }, async () => {
   const server = await startServer({ port: 0, dataDir: await mkdtemp(join(tmpdir(), 'skirmish-hp-')) });
   try {
     const ws = new WebSocket(`ws://localhost:${server.port}/ws?room=ffa`);
@@ -100,8 +101,8 @@ test('a player who joins through the server gets multiplied health while the roo
       });
     });
     const self = snap.msg.players.find((p: { id: number }) => p.id === snap.me);
-    assert.equal(self.maxHp, WORLD.baseHp * H);
-    assert.equal(self.hp, WORLD.baseHp * H, 'spawns at full multiplied health');
+    assert.equal(self.maxHp, WORLD.baseHp);
+    assert.equal(self.hp, WORLD.baseHp, 'spawns at full health');
     for (const other of snap.msg.players.filter((p: { id: number }) => p.id !== snap.me)) assert.equal(other.maxHp, WORLD.baseHp, `${other.name} is a bot at base health`);
     ws.close();
   } finally {

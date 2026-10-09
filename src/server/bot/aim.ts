@@ -34,7 +34,7 @@ const BOT_AIM = {
   fireSlackRad: 2.5 * DEG,
   /**
    * Scales every bot's aim error (its drifting error and the landing error when it takes a target in), keeping each persona's and
-   * sharpness row's share of it: a small edge so bots hold their own against people. Tune with `BOT_SPREAD_MUL` (sim/stats.ts).
+   * sharpness row's share of it: how steady its hand is, a skill (its gun's spread and bloom are a person's).
    */
   errMul: 0.82,
 } as const;
