@@ -156,12 +156,10 @@ function drawAid(ctx: CanvasRenderingContext2D, of: 'depot' | 'post', x: number,
   ctx.globalAlpha = 1;
 }
 
-const FLASH_MS = 70;
 const TRAIL_S = 0.03;
 
-/** The muzzle flash, then the round flying out along its line until it stops `reach` px out. */
+/** The round flying out along its line until it stops `reach` px out; its muzzle flash is the turret's own, at the barrel that fired (turretart.ts). */
 function drawTurretRound(ctx: CanvasRenderingContext2D, kind: TurretKind, x: number, y: number, angle: number, reach: number, ms: number) {
-  if (ms < FLASH_MS) drawMuzzleFlash(ctx, x, y, angle, ms / FLASH_MS);
   if (BUILDINGS[kind].turret.lobbed) return;
   const { bulletSpeed, bullet } = BUILDINGS[kind].turret;
   const head = (bulletSpeed * ms) / 1000;

@@ -29,6 +29,8 @@ export type Settings = {
   /** 0 is Auto; otherwise a percent of the automatic scale, UI_PERCENT.min..max. */
   uiScale: number;
   damageNumbers: boolean;
+  /** Zombies: a faint ring round each of the squad's turrets at night, showing how far it reaches. */
+  turretRanges: boolean;
   crosshair: CrosshairStyle;
   crosshairColor: CrosshairColor;
   touchAssist: boolean;
@@ -37,7 +39,7 @@ export type Settings = {
   mouseSensitivity: number;
 };
 
-export const DEFAULTS: Readonly<Settings> = { quality: 'auto', adv: {}, shake: 'on', motion: 'system', uiScale: 0, damageNumbers: true, crosshair: 'classic', crosshairColor: 'bone', touchAssist: true, lookAhead: 'normal', mouseSensitivity: SENSITIVITY.default };
+export const DEFAULTS: Readonly<Settings> = { quality: 'auto', adv: {}, shake: 'on', motion: 'system', uiScale: 0, damageNumbers: true, turretRanges: true, crosshair: 'classic', crosshairColor: 'bone', touchAssist: true, lookAhead: 'normal', mouseSensitivity: SENSITIVITY.default };
 
 export const UI_PERCENT = { min: 80, max: 150, step: 10 } as const;
 export const SETTINGS_KEY = 'skirmish.settings';
@@ -64,6 +66,7 @@ export function sanitize(raw: unknown): Settings {
     motion: oneOf(MOTION_IDS, r.motion, DEFAULTS.motion),
     uiScale: r.uiScale !== undefined && Number.isFinite(ui) && ui > 0 ? Math.min(UI_PERCENT.max, Math.max(UI_PERCENT.min, Math.round(ui))) : 0,
     damageNumbers: typeof r.damageNumbers === 'boolean' ? r.damageNumbers : DEFAULTS.damageNumbers,
+    turretRanges: typeof r.turretRanges === 'boolean' ? r.turretRanges : DEFAULTS.turretRanges,
     crosshair: oneOf(CROSSHAIR_IDS, r.crosshair, DEFAULTS.crosshair),
     crosshairColor: oneOf(Object.keys(CROSSHAIR_COLORS) as CrosshairColor[], r.crosshairColor, DEFAULTS.crosshairColor),
     touchAssist: typeof r.touchAssist === 'boolean' ? r.touchAssist : DEFAULTS.touchAssist,
@@ -145,6 +148,7 @@ export function useStore(next: Store | null): void {
 // ---- convenience reads the draw code calls every frame ----
 
 export const damageNumbersOn = (): boolean => settings().damageNumbers;
+export const turretRangesOn = (): boolean => settings().turretRanges;
 export const touchAssistOn = (): boolean => settings().touchAssist;
 export const shakeScale = (): number => shakeFactor(settings().shake);
 export const lookAheadScale = (): number => lookAheadFactor(settings().lookAhead);

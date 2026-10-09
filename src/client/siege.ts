@@ -1,4 +1,4 @@
-import { BUILDINGS, isTurretKind, MAX_LEVEL, WORLD, ZOM, type BuildingKind, type TurretKind } from '../shared/defs.ts';
+import { isTurretKind, WORLD, ZOM, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunView, Snapshot, ZombieView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt, costOf, levelOf, maxLevelOf } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
@@ -10,10 +10,16 @@ import { CORE_GLOW, drawCoreBody } from './coreart.ts';
 import { coreFlash, onStrike, siege } from './siegefx.ts';
 import { animateZombies, biteTarget, cellId, drawHorde } from './zombieart.ts';
 import type { Effect } from './state.ts';
-import { buildingSolid, drawSolids, LIGHT } from './tilt.ts';
+import { buildingSolid, drawSolids, LIGHT, standsUp } from './tilt.ts';
 import type { Ghost } from './zombies.ts';
+import type { Rect } from '../shared/sim/movement.ts';
+import { drawPips, drawTurret, drawTurretLit } from './turretart.ts';
+import { drawRangeRings, rangeRings } from './turretrange.ts';
 
 const TAU = Math.PI * 2;
+
+/** What stands on a raised pad: walls (as their tier), depots and posts. A turret is an emplacement sandbagged straight onto the floor (turretart.ts), so it is no block. */
+export const onPad = (b: BuildingView): boolean => standsUp(b) && !isTurretKind(b.kind);
 const R = WORLD.playerRadius;
 
 export const CORE_ALERT_MS = 1500;
@@ -39,6 +45,8 @@ export type TurretAim = { to: number; drawn: number; at: number; firedAt: number
 /** A turret turns only to fire, so each shot's angle is its aim until the next; aims of turrets gone from the snapshot are dropped. */
 export function aimTurrets(aims: Map<string, TurretAim>, snap: Snapshot, now: number) {
   for (const ev of snap.events) {
+    // A coil never turns: its discharge only stamps when it fired, for its crown of sparks.
+    if (ev.e === 'coil') { const key = cellKey(ev.x, ev.y), aim = aims.get(key); if (aim) aim.firedAt = now; else aims.set(key, { to: 0, drawn: 0, at: now, firedAt: now }); continue; }
     if (ev.e !== 'turret') continue;
     const key = cellKey(ev.x, ev.y), aim = aims.get(key);
     if (aim) { aim.to = ev.angle; aim.firedAt = now; } else aims.set(key, { to: ev.angle, drawn: ev.angle, at: now, firedAt: now });
@@ -49,59 +57,18 @@ export function aimTurrets(aims: Map<string, TurretAim>, snap: Snapshot, now: nu
 }
 
 const TURN_PER_SEC = 14;
-const RECOIL_MS = 110;
 
-/** The barrel's drawn angle eases toward its aim; a turret that never fired faces away from the core. */
-function barrelOf(aims: Map<string, TurretAim>, b: BuildingView, core: { x: number; y: number }, now: number): { angle: number; recoil: number } {
+const awayFromCore = (b: Pick<BuildingView, 'cx' | 'cy'>, core: { x: number; y: number }) => Math.atan2((b.cy + 0.5) * ZOM.cell - core.y, (b.cx + 0.5) * ZOM.cell - core.x);
+
+/** The barrel's drawn angle eases toward its aim, and how long ago it last fired; a turret that never fired faces away from the core. */
+function barrelOf(aims: Map<string, TurretAim>, b: BuildingView, core: { x: number; y: number }, now: number): { angle: number; sinceShot: number } {
   const aim = aims.get(`${b.cx},${b.cy}`);
-  if (!aim) return { angle: Math.atan2((b.cy + 0.5) * ZOM.cell - core.y, (b.cx + 0.5) * ZOM.cell - core.x), recoil: 0 };
+  if (!aim) return { angle: awayFromCore(b, core), sinceShot: Infinity };
+  if (b.kind === 'tesla') return { angle: 0, sinceShot: now - aim.firedAt };
   const d = aim.to - aim.drawn;
   aim.drawn += Math.atan2(Math.sin(d), Math.cos(d)) * Math.min(1, ((now - aim.at) / 1000) * TURN_PER_SEC);
   aim.at = now;
-  return { angle: aim.drawn, recoil: Math.max(0, 1 - (now - aim.firedAt) / RECOIL_MS) };
-}
-
-/**
- * A turret wears the world's kit: a gunmetal mount on its pad, outlined in ink and cel-shaded in two hard steps toward the
- * world's light, with a gun on top in the guns' own tones (gunart.ts) that turns to aim. The kind's accent is a muted
- * stripe on the gun and its ammo gauge, one colour per kind so the four read apart at a glance.
- */
-const TURRET_LOOK: Record<TurretKind, { gun: string; accent: string }> = {
-  sentry: { gun: '#555c67', accent: '#e0a43a' },
-  cannon: { gun: '#6a7255', accent: '#d0573a' },
-  scatter: { gun: '#666b74', accent: '#5fa595' },
-  mortar: { gun: '#b19d72', accent: '#9a86c4' },
-  tesla: { gun: '#5b6b7d', accent: '#8fb8ff' },
-};
-/** Armour plates bolted on at the second and third level, a plate tone each. */
-const PLATE = [null, '#6c7356', '#9aa3b0'] as const;
-const MOUNT = { top: '#4f5560', dark: '#2c3037', r: 15 } as const;
-const BARREL = '#2c3037';
-const TURRET_SHINE = 'rgba(255, 255, 255, 0.28)';
-
-/** An octagon, the clipped-corner plate of the interface turned into a mount. */
-function octagon(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
-  const c = r * 0.42;
-  ctx.beginPath();
-  ctx.moveTo(cx - r + c, cy - r); ctx.lineTo(cx + r - c, cy - r); ctx.lineTo(cx + r, cy - r + c); ctx.lineTo(cx + r, cy + r - c);
-  ctx.lineTo(cx + r - c, cy + r); ctx.lineTo(cx - r + c, cy + r); ctx.lineTo(cx - r, cy + r - c); ctx.lineTo(cx - r, cy - r + c);
-  ctx.closePath();
-}
-
-/** One gun part in the turret's turning frame: base tone, a light band on the side toward the light, a dark band away, ink edge. */
-function turretPart(ctx: CanvasRenderingContext2D, base: string, x: number, y: number, w: number, h: number, angle: number) {
-  // Which local side faces the world's light, so the bands stay put as the gun turns.
-  const lit = Math.sin(angle) * LIGHT.x - Math.cos(angle) * LIGHT.y < 0 ? -1 : 1;
-  ctx.fillStyle = base;
-  ctx.fillRect(x, y, w, h);
-  const band = Math.max(1.2, h * 0.28);
-  ctx.fillStyle = tint(base, 0.24);
-  ctx.fillRect(x, lit < 0 ? y : y + h - band, w, band);
-  ctx.fillStyle = tint(base, -0.3);
-  ctx.fillRect(x, lit < 0 ? y + h - band : y, w, band);
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 1.2;
-  ctx.strokeRect(x, y, w, h);
+  return { angle: aim.drawn, sinceShot: now - aim.firedAt };
 }
 
 /** A raised box seen three-quarter: its top face, then a darker front face hanging below it, each ink-edged, with a lit top edge. */
@@ -120,71 +87,6 @@ function box3d(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h
   ctx.lineWidth = 1.6;
   ctx.strokeRect(x, y, w, h);
   ctx.strokeRect(x, y + h, w, depth);
-}
-
-/** The armour a turret wears from its second level: plates bolted to the mount's sides, and from the third to its top and bottom too, each ink-edged and riveted. */
-function drawArmour(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number) {
-  if (lv < 2) return;
-  const r = MOUNT.r, tone = PLATE[Math.min(lv, MAX_LEVEL) - 1]!;
-  const plates: [number, number, number, number][] = [[cx - r - 5, cy - 7, 6, 14], [cx + r - 1, cy - 7, 6, 14]];
-  if (lv >= 3) plates.push([cx - 7, cy - r - 5, 14, 6], [cx - 7, cy + r - 1, 14, 6]);
-  for (const [x, y, w, h] of plates) {
-    ctx.fillStyle = tone;
-    ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = tint(tone, 0.26);
-    ctx.fillRect(x, y, w, 1.6);
-    ctx.fillRect(x, y, 1.6, h);
-    ctx.fillStyle = tint(tone, -0.3);
-    ctx.fillRect(x, y + h - 1.6, w, 1.6);
-    ctx.fillRect(x + w - 1.6, y, 1.6, h);
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 1.4;
-    ctx.strokeRect(x, y, w, h);
-    ctx.fillStyle = INK;
-    ctx.beginPath();
-    ctx.arc(x + w / 2, y + 2.6, 0.9, 0, TAU);
-    ctx.arc(x + w / 2, y + h - 2.6, 0.9, 0, TAU);
-    ctx.fill();
-  }
-}
-
-/** The coil: a drum with copper rings (one more at each level) and a glowing orb on top that crackles faster as the level rises. */
-function drawCoil(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: number, now: number) {
-  const rings = lv + 1, top = cy - 13 - 3 * lv, copper = '#b87333';
-  box3d(ctx, cx - 8, top + 4, 16, 16 + 3 * lv, 4, '#5b6b7d', '#3d4859');
-  for (let i = 0; i < rings; i++) {
-    const y = top + 7 + i * ((12 + 3 * lv) / rings);
-    ctx.fillStyle = copper;
-    ctx.fillRect(cx - 10, y, 20, 3.4);
-    ctx.fillStyle = 'rgba(255, 236, 200, 0.45)';
-    ctx.fillRect(cx - 10, y, 20, 1.2);
-    ctx.fillStyle = 'rgba(40, 18, 4, 0.4)';
-    ctx.fillRect(cx - 10, y + 2.4, 20, 1);
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 1.2;
-    ctx.strokeRect(cx - 10, y, 20, 3.4);
-  }
-  const pulse = 0.5 + 0.5 * Math.sin(now / (260 - 50 * lv));
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.16 + 0.16 * pulse;
-  ctx.fillStyle = '#8fb8ff';
-  ctx.beginPath();
-  ctx.arc(cx, top, 14 + 2 * lv, 0, TAU);
-  ctx.fill();
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = INK;
-  ctx.beginPath();
-  ctx.arc(cx, top, 8.5, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = '#bfe3ff';
-  ctx.beginPath();
-  ctx.arc(cx, top, 6.5, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(cx - 2, top - 2.2, 1.8, 0, TAU);
-  ctx.fill();
 }
 
 /** An ammo depot: two olive ammo crates, one stacked on the other, with an orange band and a stencilled round on the front. */
@@ -234,121 +136,12 @@ function drawPost(ctx: CanvasRenderingContext2D, cx: number, cy: number, lv: num
   ctx.fillRect(cx - w / 2 + 4, cy - h / 2 + 1.8, 5, 1.4);
 }
 
-function drawTurretHead(ctx: CanvasRenderingContext2D, kind: TurretKind, cx: number, cy: number, angle: number, recoil: number, lv = 1, now = 0) {
-  const look = TURRET_LOOK[kind];
-  const r = MOUNT.r;
-  drawArmour(ctx, cx, cy, lv);
-  // The mount: a crisp drop shadow, the plate, its two cel steps and an ink outline.
-  ctx.fillStyle = 'rgba(20, 22, 28, 0.35)';
-  octagon(ctx, cx + LIGHT.x * 4, cy + LIGHT.y * 4, r);
-  ctx.fill();
-  octagon(ctx, cx, cy, r);
-  ctx.fillStyle = MOUNT.top;
-  ctx.fill();
-  ctx.save();
-  ctx.clip();
-  ctx.fillStyle = tint(MOUNT.top, 0.2);
-  ctx.fillRect(cx - r, cy - r, r * 2, 3);
-  ctx.fillRect(cx - r, cy - r, 3, r * 2);
-  ctx.fillStyle = tint(MOUNT.top, -0.3);
-  ctx.fillRect(cx - r, cy + r - 3, r * 2, 3);
-  ctx.fillRect(cx + r - 3, cy - r, 3, r * 2);
-  ctx.restore();
-  octagon(ctx, cx, cy, r);
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  if (kind === 'tesla') { drawCoil(ctx, cx, cy, lv, now); return; }
-  // The gun, in its own turning frame.
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(angle);
-  ctx.translate(-recoil * 5, 0);
-  const reach = BUILDINGS[kind].turret.muzzle;
-  switch (kind) {
-    case 'sentry': {
-      // One more barrel at each level, spread over the same width.
-      const n = lv + 1, ys = n === 2 ? [-4.5, 4.5] : n === 3 ? [-6, 0, 6] : [-7.5, -2.5, 2.5, 7.5];
-      for (const y of ys) turretPart(ctx, BARREL, 6, y - (n === 4 ? 1.6 : 2), reach - 6, n === 4 ? 3.2 : 4, angle);
-      turretPart(ctx, look.gun, -9, -8, 17, 16, angle);
-      break;
-    }
-    case 'cannon':
-      turretPart(ctx, BARREL, 6, -4 - (lv - 1), reach - 12, 8 + 2 * (lv - 1), angle);
-      turretPart(ctx, BARREL, reach - 9, -6 - (lv - 1), 9, 12 + 2 * (lv - 1), angle);
-      if (lv >= 2) turretPart(ctx, BARREL, reach - 20, -6, 6, 12, angle);
-      if (lv >= 3) for (const y of [-11, 6]) turretPart(ctx, look.gun, 8, y, 16, 5, angle);
-      turretPart(ctx, look.gun, -10, -9, 19, 18, angle);
-      break;
-    case 'scatter':
-      ctx.beginPath();
-      ctx.moveTo(6, -4); ctx.lineTo(reach, -8.5); ctx.lineTo(reach, 8.5); ctx.lineTo(6, 4); ctx.closePath();
-      ctx.fillStyle = BARREL;
-      ctx.fill();
-      ctx.strokeStyle = INK;
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-      ctx.fillStyle = TURRET_SHINE;
-      ctx.fillRect(9, -1, reach - 11, 1.4);
-      if (lv >= 2) {
-        ctx.beginPath();
-        for (const x of [12, 17, 22].filter((v) => v < reach - 1)) { ctx.moveTo(x, -5 - (x - 6) * 0.1); ctx.lineTo(x, 5 + (x - 6) * 0.1); }
-        ctx.stroke();
-      }
-      if (lv >= 3) {
-        ctx.beginPath();
-        ctx.moveTo(8, -2.5); ctx.lineTo(reach - 3, -5.5); ctx.lineTo(reach - 3, 5.5); ctx.lineTo(8, 2.5); ctx.closePath();
-        ctx.fillStyle = look.gun;
-        ctx.fill();
-        ctx.stroke();
-      }
-      turretPart(ctx, look.gun, -8, -8, 16, 16, angle);
-      break;
-    case 'mortar': {
-      turretPart(ctx, look.gun, -9, -10, 16, 20, angle);
-      // A second tube at the second level and a third at the third, side by side.
-      const tubes = lv === 1 ? [[0, 14]] : lv === 2 ? [[-5.5, 9], [5.5, 9]] : [[-8, 8], [0, 8], [8, 8]];
-      for (const [y, w] of tubes as [number, number][]) {
-        turretPart(ctx, BARREL, 0, y! - w! / 2, reach, w!, angle);
-        ctx.fillStyle = INK;
-        ctx.beginPath();
-        ctx.arc(reach - 3.5, y!, Math.min(4.5, w! / 3), 0, TAU);
-        ctx.fill();
-      }
-      break;
-    }
-  }
-  // The kind's accent stripe across the gun's back.
-  ctx.fillStyle = look.accent;
-  ctx.fillRect(-6, -5, 3, 10);
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 0.8;
-  ctx.strokeRect(-6, -5, 3, 10);
-  ctx.restore();
-}
-
-/** What stands on a cell, drawn over its pad: a turret's mount and gun turned to `angle`, a coil, a depot's crates or a post's locker. */
-function drawHead(ctx: CanvasRenderingContext2D, b: { kind: BuildingKind; lv?: number }, cx: number, cy: number, angle: number, recoil: number, now: number) {
+/** What stands on a cell, drawn over its pad (centred on `cx`, `cy`): a turret's emplacement and gun turned to `angle` (turretart.ts), a coil, a depot's crates or a post's locker. */
+function drawHead(ctx: CanvasRenderingContext2D, b: { kind: BuildingKind; lv?: number; hp: number }, cx: number, cy: number, angle: number, sinceShot: number, now: number, pxPerUnit: number) {
   const lv = levelOf(b);
-  if (b.kind === 'depot') drawDepot(ctx, cx, cy + 2, lv);
-  else if (b.kind === 'post') drawPost(ctx, cx, cy + 2, lv, now);
-  else if (isTurretKind(b.kind)) drawTurretHead(ctx, b.kind, cx, cy, angle, recoil, lv, now);
-}
-
-/** The level in pips under a building's corner: a gold one for each level it has, a dark empty one for each it could still gain. */
-function drawPips(ctx: CanvasRenderingContext2D, b: BuildingView, x: number, y: number) {
-  const lv = levelOf(b), top = maxLevelOf(b.kind);
-  for (let i = 0; i < top; i++) {
-    const px = x + 8 + i * 8, py = y + 8;
-    ctx.fillStyle = i < lv ? PALETTE.gold : 'rgba(20, 22, 28, 0.7)';
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(px, py - 3.8); ctx.lineTo(px + 3.8, py); ctx.lineTo(px, py + 3.8); ctx.lineTo(px - 3.8, py);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  }
+  if (b.kind === 'depot') drawDepot(ctx, cx, cy, lv);
+  else if (b.kind === 'post') drawPost(ctx, cx, cy, lv, now);
+  else if (isTurretKind(b.kind)) drawTurret(ctx, { kind: b.kind, lv, hp: b.hp, x: cx, y: cy, angle, sinceShot }, pxPerUnit);
 }
 
 /** A spike strip: a steel rail with a row of spikes standing up from it, ink-edged, lit on one side and shaded on the other, fewer of them as it is trampled. */
@@ -389,57 +182,6 @@ export function drawFloorItems(ctx: CanvasRenderingContext2D, items: readonly Bu
   for (const b of items) if (b.kind === 'spikes') drawSpikes(ctx, b, now);
 }
 
-/**
- * A worn turret: gashes across its mount from the claws (one more at each step of wear, fixed per cell), and once badly
- * hurt a red damage lamp blinking on it. Its smoke rises from siegefx.ts.
- */
-function drawTurretWear(ctx: CanvasRenderingContext2D, b: BuildingView, cx: number, cy: number, now: number) {
-  const marks = b.hp <= 2 ? 3 : b.hp <= 3 ? 2 : 1;
-  let seed = (b.cx * 73856093) ^ (b.cy * 19349663);
-  const rnd = () => { seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 1.6;
-  ctx.beginPath();
-  for (let i = 0; i < marks; i++) {
-    // Three parallel claw rakes across one side of the mount.
-    const a = rnd() * TAU, ox = cx + Math.cos(a) * 9, oy = cy + Math.sin(a) * 9, d = a + Math.PI / 2;
-    for (let k = -1; k <= 1; k++) {
-      const px = ox + Math.cos(a) * k * 2.4, py = oy + Math.sin(a) * k * 2.4;
-      ctx.moveTo(px - Math.cos(d) * 5, py - Math.sin(d) * 5);
-      ctx.lineTo(px + Math.cos(d) * 5, py + Math.sin(d) * 5);
-    }
-  }
-  ctx.stroke();
-  if (b.hp <= 3 && Math.floor(now / 300) % 2) {
-    ctx.fillStyle = PALETTE.hunted;
-    ctx.globalAlpha = 0.4;
-    ctx.beginPath();
-    ctx.arc(cx - 11, cy - 11, 5, 0, TAU);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.beginPath();
-    ctx.arc(cx - 11, cy - 11, 2.2, 0, TAU);
-    ctx.fill();
-  }
-}
-
-/** The ammo gauge: an ink-edged slot under the mount, filled in the kind's accent, flashing red when dry. */
-function drawAmmo(ctx: CanvasRenderingContext2D, b: BuildingView & { kind: TurretKind; ammo: number }, now: number) {
-  const { x, y, w, h } = cellRect(b.cx, b.cy);
-  const empty = b.ammo === 0;
-  const gx = x + 8, gy = y + h - 9, gw = w - 16, gh = 5;
-  ctx.fillStyle = 'rgba(20, 22, 28, 0.8)';
-  ctx.fillRect(gx, gy, gw, gh);
-  if (!(empty && Math.floor(now / 250) % 2)) {
-    ctx.fillStyle = empty ? PALETTE.hpBad : TURRET_LOOK[b.kind].accent;
-    ctx.fillRect(gx + 1, gy + 1, empty ? gw - 2 : Math.max(2, ((gw - 2) * b.ammo) / 10), gh - 2);
-  }
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(gx, gy, gw, gh);
-}
-
 export function drawSiegeTops(
   ctx: CanvasRenderingContext2D, buildings: readonly BuildingView[], flashes: ReadonlyMap<string, number>, aims: Map<string, TurretAim>, core: { x: number; y: number }, now: number, pxPerUnit: number,
 ) {
@@ -447,10 +189,7 @@ export function drawSiegeTops(
     const { x, y, w, h } = cellRect(b.cx, b.cy);
     if (b.kind !== 'wall') {
       const barrel = barrelOf(aims, b, core, now);
-      drawHead(ctx, b, x + w / 2, y + h / 2 - 2, barrel.angle, barrel.recoil, now);
-      if (b.hp <= 5) drawTurretWear(ctx, b, x + w / 2, y + h / 2 - 2, now);
-      if ('ammo' in b) drawAmmo(ctx, b, now);
-      drawPips(ctx, b, x, y);
+      drawHead(ctx, b, x + w / 2, y + h / 2, barrel.angle, barrel.sinceShot, now, pxPerUnit);
     }
     const hit = flashes.get(`${b.cx},${b.cy}`);
     if (hit !== undefined) {
@@ -459,6 +198,59 @@ export function drawSiegeTops(
       ctx.fillRect(x, y, w, h);
       ctx.globalAlpha = 1;
     }
+  }
+}
+
+/** The sim's cover (turrets.ts aims past walls and crates), as one array that only changes when the walls or crates do, so blind spots are worked out once. */
+let cover: { walls: readonly Rect[]; crates: string; rects: Rect[] } | null = null;
+function coverOf(walls: readonly Rect[], crates: readonly { x: number; y: number; size: number }[]): Rect[] {
+  const key = crates.map((c) => `${c.x},${c.y}`).join(';');
+  if (!cover || cover.walls !== walls || cover.crates !== key) cover = { walls, crates: key, rects: [...walls, ...crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))] };
+  return cover.rects;
+}
+
+/** What the lit pass over the night needs to draw the siege's lights and turret ranges this frame. */
+export type SiegeLights = {
+  /** Standing buildings in view. */
+  buildings: readonly BuildingView[];
+  /** Every building, for the rings (a turret's ring reaches into view from off screen). */
+  all: readonly BuildingView[];
+  aims: Map<string, TurretAim>;
+  core: { x: number; y: number };
+  day: boolean;
+  ghost: Ghost | null;
+  cursor: { x: number; y: number } | null;
+  upgrade: BuildingView | null;
+  /** The night's faint rings round every turret: the Turret ranges setting, once it is dark. */
+  squadRings: boolean;
+  /** The map's walls and crates: the cover a direct-fire turret cannot see through. */
+  walls: readonly Rect[];
+  crates: readonly { x: number; y: number; size: number }[];
+  now: number;
+  pxPerUnit: number;
+  scale: number;
+  reduced: boolean;
+  /** How dark the night is, 0..1. */
+  dark: number;
+};
+
+/**
+ * The siege's lit layer, drawn over the night's shade: turret ranges (turretrange.ts), then on each turret what it lights
+ * (muzzle flash and floor pool, status lamp, ammo gauge, the coil's orb; turretart.ts), then every building's level pips,
+ * so a turret reads at a glance in the dark.
+ */
+export function drawSiegeLights(ctx: CanvasRenderingContext2D, l: SiegeLights) {
+  const rings = rangeRings({ ghost: l.ghost, buildings: l.all, day: l.day, cursor: l.cursor, upgrade: l.upgrade, squad: l.squadRings });
+  if (rings.length) drawRangeRings(ctx, rings, coverOf(l.walls, l.crates), l.scale, l.now, l.reduced);
+  for (const b of l.buildings) {
+    if (b.kind === 'wall') continue;
+    const { x, y, w, h } = cellRect(b.cx, b.cy);
+    if ('ammo' in b) {
+      const aim = l.aims.get(`${b.cx},${b.cy}`);
+      const angle = !aim ? awayFromCore(b, l.core) : b.kind === 'tesla' ? 0 : aim.drawn;
+      drawTurretLit(ctx, { kind: b.kind, lv: levelOf(b), hp: b.hp, x: x + w / 2, y: y + h / 2, angle, sinceShot: aim ? l.now - aim.firedAt : Infinity, ammo: b.ammo }, l.now, l.pxPerUnit, l.reduced, l.dark);
+    }
+    drawPips(ctx, levelOf(b), maxLevelOf(b.kind), x, y);
   }
 }
 
@@ -581,15 +373,15 @@ export function drawDowned(ctx: CanvasRenderingContext2D, p: PlayerView, color: 
 const GHOST_LOOK = { ok: PALETTE.hpGood, no: PALETTE.hpBad, down: '#ff9f43' } as const;
 
 /** One cell of the ghost: the building seen through where it would stand (unless one stands there), washed and edged in `color`. */
-function drawGhostCell(ctx: CanvasRenderingContext2D, ghost: Ghost, cx: number, cy: number, color: string, preview: boolean, core: { x: number; y: number }, now: number) {
+function drawGhostCell(ctx: CanvasRenderingContext2D, ghost: Ghost, cx: number, cy: number, color: string, preview: boolean, core: { x: number; y: number }, now: number, pxPerUnit: number) {
   const { x, y, w, h } = cellRect(cx, cy);
   if (preview) {
     ctx.globalAlpha = 0.6;
     const at = { cx, cy, hp: 10, kind: ghost.kind, lv: ghost.lv } as BuildingView;
     if (ghost.kind === 'spikes') drawSpikes(ctx, at, now);
     else {
-      drawSolids(ctx, [buildingSolid(at)]);
-      if (ghost.kind !== 'wall') drawHead(ctx, at, x + w / 2, y + h / 2 - 2, Math.atan2(y + h / 2 - core.y, x + w / 2 - core.x), 0, now);
+      if (onPad(at)) drawSolids(ctx, [buildingSolid(at)]);
+      if (ghost.kind !== 'wall') drawHead(ctx, at, x + w / 2, y + h / 2, awayFromCore(at, core), Infinity, now, pxPerUnit);
     }
   }
   ctx.globalAlpha = 0.3 + 0.1 * Math.sin(now / 160);
@@ -620,7 +412,7 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
   if (ghost.line) {
     // A dragged line: every cell its own ghost, green where it goes up and red where it is passed over, each tagged with what it costs.
     const cost = costOf(ghost.kind, ghost.lv);
-    for (const c of ghost.line) drawGhostCell(ctx, ghost, c.cx, c.cy, c.refusal === null ? GHOST_LOOK.ok : GHOST_LOOK.no, c.refusal !== 'taken', core, now);
+    for (const c of ghost.line) drawGhostCell(ctx, ghost, c.cx, c.cy, c.refusal === null ? GHOST_LOOK.ok : GHOST_LOOK.no, c.refusal !== 'taken', core, now, pxPerUnit);
     ctx.font = '800 13px "Barlow Condensed", system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -633,7 +425,7 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
       ctx.fillStyle = c.refusal === null ? '#ffffff' : '#ffb3a8';
       ctx.fillText(`${cost}`, at.x + at.w / 2, at.y + at.h / 2);
     }
-  } else drawGhostCell(ctx, ghost, ghost.cx, ghost.cy, color, ghost.refusal !== 'taken', core, now);
+  } else drawGhostCell(ctx, ghost, ghost.cx, ghost.cy, color, ghost.refusal !== 'taken', core, now, pxPerUnit);
   if (!ghost.label) return;
   const lines = ghost.detail ? [ghost.label, ghost.detail] : [ghost.label];
   // The plate is drawn in the world, so zoomed out it grows to stay readable.

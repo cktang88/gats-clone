@@ -9,7 +9,7 @@ import { glow, INK, NIGHT, PALETTE, TEAM_COLORS, teamColor } from './palette.ts'
 import { serverNow } from './interp.ts';
 import { INTERP_DELAY_MS } from '../shared/protocol.ts';
 import { drawHordeEyes } from './zombieart.ts';
-import { drawCoreGlow, drawCoreTop, drawDowned, drawFloorItems, drawGhost, drawSiegeTops, drawZombies, wallFlashes } from './siege.ts';
+import { drawCoreGlow, drawCoreTop, drawDowned, drawFloorItems, drawGhost, drawSiegeLights, drawSiegeTops, drawZombies, onPad, wallFlashes } from './siege.ts';
 import { drawSiegeFx } from './siegefx.ts';
 import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from './bodies.ts';
 import { stepCarry, swingMsOf } from './raise.ts';
@@ -46,7 +46,8 @@ import { leavesFromViews } from '../shared/sim/doors.ts';
 import './themes/index.ts';
 import { drawAmbientGround, drawAmbientSky } from './ambientfeed.ts';
 import { mapOf, themeOf } from './themes/registry.ts';
-import type { Ghost } from './zombies.ts';
+import { upgradeTarget, type Ghost } from './zombies.ts';
+import { turretRangesOn } from './settings.ts';
 import { TRACER } from './rounds.ts';
 import { heftOf } from './shake.ts';
 import { drawCorpses, drawZombieCorpses, liveCorpses, zombieField } from './corpses.ts';
@@ -67,7 +68,7 @@ const CULL_MARGIN = 80;
 
 export const bodyColor = (p: Pick<PlayerView, 'color' | 'team'>): string => (p.team ? TEAM_COLORS[p.team] : COLORS[p.color]);
 
-type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; /** The real clock, for juice that keeps moving through a hit-stop. */ fxNow?: number; selfAngle: number | null; killerId: number | null; ghost?: Ghost | null; /** Only the world: no names, health bars, chatter, emote bubbles, marks or damage numbers (the menu's attract mode). */ bare?: boolean };
+type Frame = { snap: Snapshot; s: Session; cam: Camera; dpr: number; now: number; /** The real clock, for juice that keeps moving through a hit-stop. */ fxNow?: number; selfAngle: number | null; killerId: number | null; ghost?: Ghost | null; /** The cursor in the world, for the turret under it to show its range. */ cursor?: { x: number; y: number } | null; /** Only the world: no names, health bars, chatter, emote bubbles, marks or damage numbers (the menu's attract mode). */ bare?: boolean };
 type View = { x0: number; y0: number; x1: number; y1: number };
 
 const inView = (v: View, x: number, y: number, w: number, h: number) => x + w >= v.x0 && x <= v.x1 && y + h >= v.y0 && y <= v.y1;
@@ -111,7 +112,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const mood = moodOf(snap.match.map);
   setMood(mood);
   const dark = easeNight(snap.run, now, mood?.dusk ?? themeOf(mapOf(snap.match.map)?.theme)?.dusk);
-  const siege = snap.run ? [...(snap.buildings ?? []).filter(standsUp).map(buildingSolid), coreSolid(snap.run)] : 'static';
+  const siege = snap.run ? [...(snap.buildings ?? []).filter(onPad).map(buildingSolid), coreSolid(snap.run)] : 'static';
   drawGround(ctx, ground.get(`${snap.match.map}|${mapWallsKey(s.walls)}`, s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege, floorPlanOf(snap.match.map)), view.x0, view.y0, view.x1, view.y1);
   // A theme's ground-level animation (water, decks) goes under every wall, shadow and body.
   { const t0 = themeOf(mapOf(snap.match.map)?.theme), m0 = mapOf(snap.match.map); if (t0?.ground && m0) t0.ground(ctx, now, view, m0); }
@@ -195,6 +196,15 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawVignette(ctx, cam.w, cam.h, dpr, 0.36 + 0.2 * dark);
   ctx.setTransform(k, 0, 0, k, dpr * (cam.w / 2 - cam.x * cam.scale), dpr * (cam.h / 2 - cam.y * cam.scale));
   drawRadioOverlay(ctx, now, reducedMotion());
+  // Turret ranges and what the siege's guns light (muzzle flashes, lamps, gauges) stand over the night, so they read in the dark.
+  if (snap.run && snap.buildings) {
+    const day = snap.run.phase === 'day', all = snap.buildings;
+    drawSiegeLights(ctx, {
+      buildings: all.filter((b) => standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), all, aims: s.turretAims, core: snap.run.core, day, ghost: f.ghost ?? null,
+      cursor: day && !f.ghost ? f.cursor ?? null : null, upgrade: day && !f.ghost ? upgradeTarget(snap, s.lastSelf)?.b ?? null : null, squadRings: dark > 0.5 && turretRangesOn(),
+      walls: s.walls, crates: snap.crates, now, pxPerUnit: k, scale: cam.scale, reduced: reducedMotion(), dark,
+    });
+  }
   if (rangeLayout && reach && mine && snap.targets) {
     const at = serverNow(s.snaps, now);
     drawReachOverlay(ctx, rangeLayout, s.worldSize, snap.targets, at === null ? 0 : at - INTERP_DELAY_MS, { x0: tl.x, y0: tl.y, x1: br.x, y1: br.y }, cam.scale, mine, reach, now);

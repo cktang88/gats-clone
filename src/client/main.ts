@@ -799,7 +799,7 @@ function drawFrame(realNow: number) {
     overlays.update(state, s, latest, now, muted);
     return;
   }
-  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, fxNow: realNow, selfAngle, killerId, ghost });
+  drawWorld(ctx, { snap, s, cam: shakenCamera, dpr: view.dpr, now, fxNow: realNow, selfAngle, killerId, ghost, cursor: mouseAiming && state.phase === 'playing' ? screenToWorld(aimCamera, mouse) : null });
   // The shader pass takes the finished world; the HUD then draws over a cleared canvas, crisp and unprocessed.
   const glWorld = processFrame(canvas, { night: nightAmount(), storm: !!snap.royale }, now, view.w, view.h, view.dpr);
   if (glWorld) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }

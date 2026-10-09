@@ -348,6 +348,7 @@ export function createPauseMenu(hud: HTMLElement, deps: PauseDeps) {
     section('Gameplay',
       row('Soldier chatter', 'C', toggle(chatterOn, setChatterOn, 'set-chatter')),
       row('Damage numbers', null, toggle(() => settings().damageNumbers, (on) => setSetting('damageNumbers', on), 'set-dmgnums')),
+      row('Turret ranges at night', null, toggle(() => settings().turretRanges, (on) => setSetting('turretRanges', on), 'set-turret-ranges')),
       row('Crosshair', null, segmented<CrosshairStyle>({
         id: 'set-crosshair',
         options: CROSSHAIR_IDS.map((c) => [c, c === 'classic' ? 'Classic' : c === 'dot' ? 'Dot' : c === 'ring' ? 'Ring' : 'Open'] as const),
