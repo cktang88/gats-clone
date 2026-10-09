@@ -8,11 +8,11 @@ import type { Snapshot } from '../src/shared/protocol.ts';
 
 const self = (over: Partial<Snapshot['self']>) => ({ ammo: 12, mag: 12, reloading: false, reloadFrac: 0, ability: null, abilityReadyIn: 0, pending: null, ...over }) as Snapshot['self'];
 
-test('the ability button shows a lock and the unlocking score, then the ability with its cooldown and seconds left', () => {
-  assert.deepEqual(buttonFaces(self({}), 40).ability, { icon: 'lock', sweep: 0, label: '40', ready: false });
-  assert.equal(buttonFaces(self({}), undefined).ability.label, '', 'no score while the pick waits in the dock');
+test('the ability button is hidden until an ability is picked, then shows it with its cooldown and seconds left', () => {
+  assert.equal(buttonFaces(self({}), 40).ability, null, 'a locked ability takes no room');
+  assert.equal(buttonFaces(self({ pending: { level: 4, k: 'perk', tier: 3 } }), undefined).ability, null, 'nor while its pick waits in the dock');
   const full = ABILITY_COOLDOWN_MS.grenade;
-  const cooling = buttonFaces(self({ ability: 'grenade', abilityReadyIn: full * 0.75 }), 40).ability;
+  const cooling = buttonFaces(self({ ability: 'grenade', abilityReadyIn: full * 0.75 }), 40).ability!;
   assert.equal(cooling.icon, 'grenade');
   assert.ok(Math.abs(cooling.sweep - 0.25) < 1e-9, 'a quarter of the cooldown has run');
   assert.equal(cooling.label, String(Math.ceil((full * 0.75) / 1000)));

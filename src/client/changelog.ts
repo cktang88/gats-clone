@@ -8,6 +8,7 @@ export const CHANGELOG: ChangelogDay[] = [
   {
     date: '2026-10-09',
     items: [
+      'Your picks this life in a clear row of slots top left, with what unlocks next',
       'Zombies: drag to lay a whole line of wall',
       'New catchy synthesized music on every map',
       'Bots fight smarter: they pre-aim corners, weigh the odds and avoid 1v2s',
@@ -42,7 +43,6 @@ export const CHANGELOG: ChangelogDay[] = [
     date: '2026-10-06',
     items: [
       'New mode: Last Squad, six squads of three in a shrinking ring',
-      'Zombies: night waves, new zombie kinds, mortars and the Bastion',
     ],
   },
 ];

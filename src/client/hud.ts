@@ -22,7 +22,8 @@ import { drawFlashOverlay } from './flashsmoke.ts';
 import type { Session } from './state.ts';
 import { uiScaleFor } from './uiscale.ts';
 import { crosshairLook } from './settings.ts';
-import { isPhoneLandscape, phoneLayout, STICK_REST, type Box, type PhoneLayout } from './phonelayout.ts';
+import { inside, isPhoneLandscape, phoneLayout, STICK_REST, type Box, type PhoneLayout } from './phonelayout.ts';
+import { loadoutSlots, progressLine, slotBoxes, type LoadoutSlot, type Progress, type SlotBox, type SlotKind } from './loadout.ts';
 import { FOCUS, feedKeeps, labelsOn, phoneFocus, type PhoneElement } from './phonefocus.ts';
 import { phoneDomState, syncPhoneFocus } from './phonehud.ts';
 
@@ -1555,136 +1556,7 @@ function drawArmorChip(ctx: CanvasRenderingContext2D, x: number, cy: number, tie
   return w;
 }
 
-/** The level as a ring badge: the ring fills with XP toward the next level. */
-function drawLevelRing(ctx: CanvasRenderingContext2D, cx: number, cy: number, level: number, frac: number, pop: number) {
-  ctx.fillStyle = CEL.ink;
-  ctx.beginPath();
-  ctx.arc(cx, cy, 13, 0, TAU);
-  ctx.fill();
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = '#2a2f38';
-  ctx.beginPath();
-  ctx.arc(cx, cy, 10.5, 0, TAU);
-  ctx.stroke();
-  if (frac > 0.01) {
-    ctx.strokeStyle = PALETTE.gold;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 10.5, -Math.PI / 2, -Math.PI / 2 + Math.min(1, frac) * TAU);
-    ctx.stroke();
-  }
-  ctx.fillStyle = '#3d4450';
-  ctx.beginPath();
-  ctx.arc(cx, cy, 8.5, 0, TAU);
-  ctx.fill();
-  text(ctx, String(level), cx, cy + 1, level > 9 ? 12 : 14, pop > 0 ? mixHex(PANEL_INK, PALETTE.gold, pop) : PANEL_INK, 'center', 800);
-}
-
 type SelfView = Snapshot['self'];
-
-/** The ability as a medallion: its icon on a lit face, a radial sweep while it cools, READY with a glow and the key once it is up, a lock before it is earned. */
-function drawAbility(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, self: SelfView, now: number, opts: { side?: boolean; ribbon?: boolean } = {}) {
-  const t = performance.now();
-  const ready = self.ability !== null && self.abilityReadyIn <= 0;
-  const cooling = self.ability !== null && !ready;
-  const pick = self.ability === null && self.pending?.k === 'perk' && self.pending.tier === ABILITY_TIER;
-  const left = cooling ? Math.max(0, Math.min(1, self.abilityReadyIn / abilityCooldownMs(self.ability!, self.perks ?? {}))) : 0;
-  const denied = cooling && t - abilityDeniedAt < ABILITY_CUE.deniedMs;
-  const cx = x + deniedShake(t);
-  const lip = 4;
-  const face = ready ? ACCENT : pick ? PALETTE.gold : denied ? PALETTE.hpBad : '#4c535f';
-  if (ready && !REDUCED) {
-    ctx.globalAlpha = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(now / 420));
-    ctx.fillStyle = '#ffb347';
-    ctx.beginPath();
-    ctx.arc(cx, y + 1, r + 6, 0, TAU);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-  if (opts.ribbon) {
-    for (const [sx, ink] of [[-1, '#a63a12'], [1, '#d9d1bd']] as const) {
-      ctx.beginPath();
-      ctx.moveTo(cx + sx * 3, y + r - 4);
-      ctx.lineTo(cx + sx * 14, y + r - 2);
-      ctx.lineTo(cx + sx * 12, y + r + 16);
-      ctx.lineTo(cx + sx * 8, y + r + 11);
-      ctx.lineTo(cx + sx * 2, y + r + 15);
-      ctx.closePath();
-      ctx.fillStyle = ink;
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = CEL.ink;
-      ctx.stroke();
-    }
-  }
-  ctx.fillStyle = CEL.shadow;
-  ctx.beginPath();
-  ctx.arc(cx + 2, y + lip + 3, r + 2, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = CEL.ink;
-  ctx.beginPath();
-  ctx.arc(cx, y + lip, r + 2, 0, TAU);
-  ctx.arc(cx, y, r + 2, 0, TAU);
-  ctx.rect(cx - r - 2, y, (r + 2) * 2, lip);
-  ctx.fill();
-  ctx.fillStyle = mixHex(face, '#000000', 0.4);
-  ctx.beginPath();
-  ctx.arc(cx, y + lip, r, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = face;
-  ctx.beginPath();
-  ctx.arc(cx, y, r, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.26)';
-  ctx.beginPath();
-  ctx.ellipse(cx - 1, y - r * 0.5, r * 0.62, r * 0.32, 0, 0, TAU);
-  ctx.fill();
-  if (self.ability) strokeIcon(ctx, PERK_ICONS[self.ability], cx, y, 20, cooling ? 'rgba(236, 230, 214, 0.5)' : CEL.ink, 2.6);
-  else if (pick) text(ctx, '!', cx, y + 1, 24, CEL.ink, 'center', 800);
-  else strokeIcon(ctx, UI_ICONS.lock, cx, y, 17, PANEL_MUTED, 2.6);
-  if (cooling) {
-    // The wedge still to wait covers the face, shrinking clockwise as the cooldown runs.
-    ctx.fillStyle = 'rgba(14, 16, 21, 0.68)';
-    ctx.beginPath();
-    ctx.moveTo(cx, y);
-    ctx.arc(cx, y, r, -Math.PI / 2 + (1 - left) * TAU, -Math.PI / 2 + TAU);
-    ctx.closePath();
-    ctx.fill();
-    outlined(ctx, (self.abilityReadyIn / 1000).toFixed(self.abilityReadyIn >= 10000 ? 0 : 1), cx, y + 1, TYPE.label, PANEL_INK, 800);
-  }
-  const pulse = (t - abilityBackAt) / ABILITY_CUE.readyPulseMs;
-  if (ready && pulse >= 0 && pulse < 1) {
-    if (!REDUCED && vfx.abilitySpark !== abilityBackAt) { vfx.abilitySpark = abilityBackAt; burst(vitalsAt.x + cx, vitalsAt.y + y, 9, PALETTE.gold, 34, t, 4.5); }
-    ctx.globalAlpha = 1 - pulse;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = PALETTE.gold;
-    ctx.beginPath();
-    ctx.arc(cx, y, r + 3 + pulse * 14, 0, TAU);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-  // The label under it: the key when ready (a keycap), a dimmer one while cooling, or the unlock note before it is earned.
-  if (opts.side) {
-    const lx = cx + r + 9;
-    if (self.ability) {
-      const label = touchScreen ? 'READY' : 'SPACE';
-      setFont(ctx, 800, TYPE.micro);
-      const kw = ctx.measureText(label).width + 12;
-      cel(ctx, lx, y - 8, kw, 15, ready ? '#ece6d6' : '#2f343d', 4, 2);
-      text(ctx, label, lx + kw / 2, y, TYPE.micro, ready ? CEL.ink : PANEL_MUTED, 'center', 800);
-    } else inked(ctx, pick ? 'PICK' : abilityHint(self.pending)[1], lx, y + 1, TYPE.micro, pick ? PALETTE.gold : PANEL_INK, 800);
-    return;
-  }
-  const ly = y + r + 12;
-  if (self.ability) {
-    const label = touchScreen ? 'READY' : 'SPACE';
-    setFont(ctx, 800, TYPE.micro);
-    const kw = ctx.measureText(label).width + 12;
-    cel(ctx, cx - kw / 2, ly - 8, kw, 15, ready ? '#ece6d6' : '#2f343d', 4, 2);
-    text(ctx, label, cx, ly, TYPE.micro, ready ? CEL.ink : PANEL_MUTED, 'center', 800);
-  } else {
-    text(ctx, pick ? 'PICK' : abilityHint(self.pending)[1], cx, ly, TYPE.micro, pick ? PALETTE.gold : PANEL_INK, 'center', 800);
-  }
-}
 
 function streakBadgeWidth(ctx: CanvasRenderingContext2D, streak: number): number {
   setFont(ctx, 850, TYPE.body);
@@ -1750,8 +1622,7 @@ export const abilityHint = (pending: PendingPick | null): [string, string] =>
 /* ---------------------------------------------------------------------------------------------------------------------------
  * Toy-box vitals: no panel. Each readout is its own drawn object in the game's ink-and-cel style, so the HUD reads as part of the
  * toy-soldier world yet stays apart from the floor (ink outline, hard down-right shadow): a health cross bottom left (see HEALTH),
- * an inked count for ammo, an enamel medal token for the ability and round pins for level and perks. The corner kit sits top
- * left; the ammo count rides beside the reticle (a near-the-gun readout is read fastest), or beside your soldier on a touch screen,
+ * an inked count for ammo, and the loadout strip of picked tiles under a plain progress line top left (see drawLoadout); the ammo count rides beside the reticle (a near-the-gun readout is read fastest), or beside your soldier on a touch screen,
  * where there is no cursor to follow.
  * ------------------------------------------------------------------------------------------------------------------------- */
 let hudCrosshair: Point = { x: 0, y: 0 };
@@ -1795,24 +1666,276 @@ function pin(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, f
   ctx.fill();
 }
 
-/** The ability as an enamel medal: ribbon tails, a lit face with its icon, the cooldown wedge, READY glow, and its key stamped beside it. */
-function drawMedalToken(ctx: CanvasRenderingContext2D, x: number, y: number, self: SelfView, now: number) {
-  drawAbility(ctx, x, y, 17, self, now, { side: true, ribbon: true });
+/* ---------------------------------------------------------------------------------------------------------------------------
+ * The loadout strip, top left on a desktop (loadout.ts says what is in it): one plain progress line ("LV 2  Next: Perk · 520 / 700")
+ * and under it a tile for each thing picked this life (the evolved gun, the attachment, the perk, the ability), each with its icon
+ * and a short name. Nothing is drawn for what is still locked; a tile stamps in as its pick lands. Hovering a tile with the cursor
+ * shows its name and what it does. The ability's tile is the ability readout: a sweep while it cools, orange with a glow and its key
+ * when it is ready. On a phone the ability lives on its button, so the picks fold to small pins beside the level, on demand.
+ * ------------------------------------------------------------------------------------------------------------------------- */
+const RANK = { h: 26, gap: 10, bar: 3 } as const;
+const SLOT_POP_MS = 320;
+const SLOT_LABEL_H = 18;
+type SeenSlot = { born: number; x: number; sparked: boolean };
+const slotsSeen = new Map<string, SeenSlot>();
+let slotsLife = -1;
+type DrawnSlot = SlotBox & { kind: SlotKind; label: string; name: string };
+let loadoutDrawn: { rank: Rect | null; slots: DrawnSlot[]; card: Rect | null } = { rank: null, slots: [], card: null };
+/** Where the strip was last drawn, in screen px (the dev probe and the verify scripts hover its tiles with this). */
+export const drawnLoadout = (): { rank: Rect | null; slots: DrawnSlot[]; card: Rect | null } => {
+  const z = (r: Rect) => ({ x: r.x * hudScale, y: r.y * hudScale, w: r.w * hudScale, h: r.h * hudScale });
+  return { rank: loadoutDrawn.rank && z(loadoutDrawn.rank), slots: loadoutDrawn.slots.map((s) => ({ ...s, ...z(s) })), card: loadoutDrawn.card && z(loadoutDrawn.card) };
+};
+
+/** The text that fits `maxW`, cut with an ellipsis if it must be. */
+function fitted(ctx: CanvasRenderingContext2D, s: string, maxW: number): string {
+  if (ctx.measureText(s).width <= maxW) return s;
+  let t = s;
+  while (t.length > 1 && ctx.measureText(`${t}…`).width > maxW) t = t.slice(0, -1);
+  return `${t.trimEnd()}…`;
 }
 
-/** Level as a pin ringed in XP, the XP count beside it, and the perks as small pins. Returns the width used. */
-function drawRankRow(ctx: CanvasRenderingContext2D, x: number, y: number, lp: { displayLevel: number; frac: number }, owned: PerkId[], now: number): number {
-  const lvPop = popOf(now - vfx.levelAt, 380);
-  if (vfx.levelBurst) { vfx.levelBurst = false; burst(x + 13, y, 16, PALETTE.gold, 80, now, 5.5); }
-  drawLevelRing(ctx, x + 13, y, lp.displayLevel, vfx.shownFrac, lvPop);
-  const xp = String(Math.round(vfx.shownScore));
-  inked(ctx, xp, x + 33, y + 1, TYPE.body, PALETTE.gold, 800);
-  setFont(ctx, 800, TYPE.body);
-  let px = x + 33 + ctx.measureText(xp).width + 14;
-  for (const perk of owned) {
-    pin(ctx, px + 11, y - 1, 11, '#4c535f');
-    strokeIcon(ctx, PERK_ICONS[perk], px + 11, y - 1, 14, PANEL_INK, 2.4);
+/** The level chip: "LV" and the number, gold, stamping larger for a moment when it climbs. */
+function levelChip(ctx: CanvasRenderingContext2D, x: number, cy: number, level: number, now: number): number {
+  const pop = popOf(now - vfx.levelAt, 380);
+  setFont(ctx, 700, TYPE.micro);
+  const lw = ctx.measureText('LV').width;
+  setFont(ctx, 850, TYPE.body);
+  const nw = ctx.measureText(String(level)).width;
+  const w = lw + nw + 4;
+  const sc = 1 + 0.35 * pop * pop;
+  ctx.translate(x + w / 2, cy);
+  ctx.scale(sc, sc);
+  text(ctx, 'LV', -w / 2, 0.5, TYPE.micro, PANEL_MUTED, 'left', 700);
+  text(ctx, String(level), -w / 2 + lw + 4, 0.5, TYPE.body, pop > 0 ? mixHex(PALETTE.gold, '#fff6c8', pop) : PALETTE.gold, 'left', 850);
+  ctx.scale(1 / sc, 1 / sc);
+  ctx.translate(-x - w / 2, -cy);
+  return w;
+}
+
+/** The progress line on its plate: the level, then what is next and how far ("Next: Perk · 520 / 700") over a thin bar. */
+function drawRankLine(ctx: CanvasRenderingContext2D, x: number, y: number, prog: Progress, now: number): Rect {
+  const pad = 10;
+  setFont(ctx, 700, TYPE.micro);
+  const lvW = ctx.measureText('LV').width + 4 + (setFont(ctx, 850, TYPE.body), ctx.measureText(String(prog.level)).width);
+  const [head, rest] = prog.pick ? ['', prog.text] : prog.next ? ['Next:', prog.text.slice('Next: '.length)] : ['Score', prog.text.slice('Score '.length)];
+  setFont(ctx, 700, TYPE.label);
+  const headW = head ? ctx.measureText(head).width + 5 : 0;
+  setFont(ctx, 800, TYPE.label);
+  const restW = ctx.measureText(rest).width;
+  const w = pad + lvW + RANK.gap + headW + restW + pad;
+  celPlate(ctx, x, y, w, RANK.h);
+  const cy = y + (prog.next ? RANK.h / 2 - 2 : RANK.h / 2);
+  if (vfx.levelBurst) { vfx.levelBurst = false; if (!REDUCED) burst(x + pad + lvW / 2, cy, 14, PALETTE.gold, 70, now, 5); }
+  levelChip(ctx, x + pad, cy, prog.level, now);
+  const tx = x + pad + lvW + RANK.gap;
+  ctx.fillStyle = 'rgba(236, 230, 214, 0.16)';
+  ctx.fillRect(tx - RANK.gap / 2 - 1, y + 6, 2, RANK.h - 12);
+  if (head) text(ctx, head, tx, cy + 0.5, TYPE.label, PANEL_MUTED, 'left', 700);
+  text(ctx, rest, tx + headW, cy + 0.5, TYPE.label, prog.pick ? PALETTE.gold : PANEL_INK, 'left', 800);
+  if (prog.next) bar(ctx, tx, y + RANK.h - 6, headW + restW, RANK.bar, prog.frac, PALETTE.gold, 'rgba(236, 230, 214, 0.14)');
+  return { x, y, w, h: RANK.h + 3 };
+}
+
+/** One tile: a cel plate with the item's icon (the gun's art for the gun) over its short name; the ability's carries its cooldown. */
+function drawSlot(ctx: CanvasRenderingContext2D, b: SlotBox, slot: LoadoutSlot, me: PlayerView, self: SelfView, now: number, pop: number, hover: boolean) {
+  const t = performance.now();
+  const ability = slot.kind === 'ability' && self.ability !== null;
+  const ready = ability && self.abilityReadyIn <= 0;
+  const cooling = ability && !ready;
+  const shake = cooling && t - abilityDeniedAt < ABILITY_CUE.deniedMs ? deniedShake(t) : 0;
+  const cx = b.x + b.w / 2 + shake;
+  const iconCy = b.y + (b.h - SLOT_LABEL_H) / 2 + 2;
+  const sc = pop > 0 ? 0.55 + 0.45 * easeOutBack(1 - pop) : 1;
+  if (sc !== 1) { ctx.save(); ctx.translate(cx, b.y + b.h / 2); ctx.scale(sc, sc); ctx.translate(-cx, -b.y - b.h / 2); ctx.globalAlpha = Math.min(1, (1 - pop) * 3); }
+  if (ready && !REDUCED) {
+    const a0 = ctx.globalAlpha;
+    ctx.globalAlpha = a0 * (0.3 + 0.3 * (0.5 + 0.5 * Math.sin(now / 420)));
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath();
+    ctx.roundRect(b.x - 5 + shake, b.y - 5, b.w + 10, b.h + 12, 8);
+    ctx.fill();
+    ctx.globalAlpha = a0;
+  }
+  const face = ready ? ACCENT : hover ? '#4a515c' : undefined;
+  celPlate(ctx, b.x + shake, b.y, b.w, b.h, face);
+  // The name, on a dark well along the bottom of the tile.
+  ctx.fillStyle = ready ? 'rgba(28, 31, 38, 0.32)' : 'rgba(14, 16, 21, 0.45)';
+  ctx.fillRect(b.x + shake + 2, b.y + b.h - SLOT_LABEL_H, b.w - 4 - Math.min(PANEL_CUT, b.h / 3) / 2, SLOT_LABEL_H - 2);
+  setFont(ctx, 800, TYPE.label);
+  text(ctx, fitted(ctx, slot.label, b.w - 8), cx, b.y + b.h - SLOT_LABEL_H / 2 - 0.5, TYPE.label, ready ? CEL.ink : PANEL_INK, 'center', 800);
+  if (slot.gun) {
+    drawGunArt(ctx, slot.gun, b.x + 7 + shake, iconCy - 11, b.w - 14, 22, { align: 'center', golden: me.golden === true, skin: me.cos?.g });
+    // Its evolution as gold pips in the top-left corner: one for stage 1, two for stage 2.
+    for (let i = 0; i < GUNS[slot.gun].stage; i++) {
+      ctx.fillStyle = PALETTE.gold;
+      ctx.strokeStyle = CEL.ink;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(b.x + 9 + i * 9, b.y + 5);
+      ctx.lineTo(b.x + 13 + i * 9, b.y + 9);
+      ctx.lineTo(b.x + 9 + i * 9, b.y + 13);
+      ctx.lineTo(b.x + 5 + i * 9, b.y + 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  } else if (slot.perk) {
+    strokeIcon(ctx, PERK_ICONS[slot.perk], cx, iconCy, 24, ready ? CEL.ink : cooling ? 'rgba(236, 230, 214, 0.45)' : PANEL_INK, 2.6);
+  }
+  if (cooling) {
+    // The wedge still to wait covers the icon, shrinking clockwise as the cooldown runs, with the seconds over it.
+    const left = Math.max(0, Math.min(1, self.abilityReadyIn / abilityCooldownMs(self.ability!, self.perks ?? {})));
+    const r = Math.min(b.w, b.h - SLOT_LABEL_H) / 2 - 3;
+    ctx.fillStyle = 'rgba(14, 16, 21, 0.62)';
+    ctx.beginPath();
+    ctx.moveTo(cx, iconCy);
+    ctx.arc(cx, iconCy, r, -Math.PI / 2 + (1 - left) * TAU, -Math.PI / 2 + TAU);
+    ctx.closePath();
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(236, 230, 214, 0.22)';
+    ctx.beginPath();
+    ctx.arc(cx, iconCy, r, 0, TAU);
+    ctx.stroke();
+    outlined(ctx, (self.abilityReadyIn / 1000).toFixed(self.abilityReadyIn >= 10000 ? 0 : 1), cx, iconCy + 1, TYPE.body, PANEL_INK, 800);
+  }
+  // Its key, as a keycap on the tile's top edge: lit when it can be pressed.
+  if (ability && !touchScreen) {
+    setFont(ctx, 800, TYPE.micro);
+    const kw = ctx.measureText('SPACE').width + 10;
+    cel(ctx, cx - kw / 2, b.y - 9, kw, 15, ready ? '#ece6d6' : '#2f343d', 4, 2);
+    text(ctx, 'SPACE', cx, b.y - 1.5, TYPE.micro, ready ? CEL.ink : PANEL_MUTED, 'center', 800);
+  }
+  const back = (t - abilityBackAt) / ABILITY_CUE.readyPulseMs;
+  if (ready && back >= 0 && back < 1 && !REDUCED) {
+    if (vfx.abilitySpark !== abilityBackAt) { vfx.abilitySpark = abilityBackAt; burst(cx, iconCy, 9, PALETTE.gold, 34, t, 4.5); }
+    const a0 = ctx.globalAlpha;
+    ctx.globalAlpha = a0 * (1 - back);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = PALETTE.gold;
+    ctx.beginPath();
+    ctx.roundRect(b.x - 3 - back * 8, b.y - 3 - back * 8, b.w + 6 + back * 16, b.h + 6 + back * 16, 6);
+    ctx.stroke();
+    ctx.globalAlpha = a0;
+  }
+  if (sc !== 1) { ctx.restore(); hudFont = ''; }
+}
+
+/** Words wrapped to `maxW` at the current font. */
+function wrap(ctx: CanvasRenderingContext2D, s: string, maxW: number): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const word of s.split(' ')) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(next).width > maxW) { lines.push(line); line = word; } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/** The hover card under the strip: the item's name, what kind of pick it is, and what it does. */
+function drawSlotCard(ctx: CanvasRenderingContext2D, slot: LoadoutSlot, x: number, y: number, maxX: number): Rect {
+  const w = 248, pad = 10, lineH = 18;
+  setFont(ctx, 600, TYPE.label);
+  const lines = wrap(ctx, slot.desc, w - pad * 2);
+  const h = pad + 20 + 17 + lines.length * lineH + pad - 4;
+  const cx = Math.max(EDGE, Math.min(x, maxX - w));
+  celPlate(ctx, cx, y, w, h);
+  ctx.fillStyle = ACCENT;
+  ctx.fillRect(cx, y, 3, h - Math.min(PANEL_CUT, h / 3));
+  text(ctx, slot.name, cx + pad, y + pad + 9, TYPE.title, PANEL_INK, 'left', 800);
+  text(ctx, slot.kindLabel, cx + pad, y + pad + 27, TYPE.micro, slot.kind === 'gun' && slot.gun && GUNS[slot.gun].stage === 2 ? PALETTE.hunted : PALETTE.gold, 'left', 700);
+  lines.forEach((l, i) => text(ctx, l, cx + pad, y + pad + 46 + i * lineH, TYPE.label, '#cfc7b3', 'left', 600));
+  return { x: cx, y, w, h: h + 5 };
+}
+
+/** What the strip draws this frame, and when each tile first showed (for its stamp-in), reset with each life. */
+function seenSlots(me: PlayerView, slots: readonly LoadoutSlot[], boxes: readonly SlotBox[], now: number, dt: number): SeenSlot[] {
+  // Tiles already there on the first frame drawn for this player (a page joined mid-life) are not new: they show without a stamp.
+  const fresh = slotsLife !== me.id;
+  if (fresh) slotsSeen.clear();
+  slotsLife = me.id;
+  const keep = new Set(slots.map((s) => s.key));
+  for (const key of [...slotsSeen.keys()]) if (!keep.has(key)) slotsSeen.delete(key);
+  return slots.map((s, i) => {
+    const b = boxes[i]!;
+    let seen = slotsSeen.get(s.key);
+    if (!seen) slotsSeen.set(s.key, (seen = { born: fresh ? -1e9 : now, x: b.x, sparked: fresh }));
+    seen.x = REDUCED || Math.abs(seen.x - b.x) < 0.5 ? b.x : seen.x + (b.x - seen.x) * (1 - Math.exp(-dt / 90));
+    return seen;
+  });
+}
+
+/**
+ * The desktop strip at (`x`, `y`): the progress line, then the tiles under it. Returns the strip's bottom, where the status tabs
+ * go. On the range, which has no level ladder, only the tiles show.
+ */
+type StripEnd = { bottom: number; beside: { x: number; y: number }[]; card?: () => void };
+function drawLoadout(hud: Hud, x: number, y: number, compact: boolean): StripEnd {
+  const { ctx, snap, me, now, dt, w } = hud;
+  const self = snap.self;
+  loadoutDrawn = { rank: null, slots: [], card: null };
+  if (!me) return { bottom: y, beside: [{ x, y: y + RANK.h / 2 }] };
+  let top = y;
+  const beside: { x: number; y: number }[] = [];
+  if (!snap.range) {
+    const r = drawRankLine(ctx, x, y, progressLine(me.level, vfx.shownScore, self.pending), now);
+    loadoutDrawn.rank = r;
+    panels.push(r);
+    top = y + r.h + (compact ? 9 : 11);
+    beside.push({ x: r.x + r.w + 10, y: y + RANK.h / 2 });
+  }
+  const slots = loadoutSlots(me.gun, self.perks ?? {}, self.ability, touchScreen ? '' : 'Space');
+  if (!slots.length) { slotsSeen.clear(); slotsLife = me.id; return { bottom: loadoutDrawn.rank ? top - 6 : y, beside: beside.length ? beside : [{ x, y: y + RANK.h / 2 }] }; }
+  const boxes = slotBoxes(slots, x, top, compact);
+  const seen = seenSlots(me, slots, boxes, now, dt);
+  let hovered: number | null = null;
+  slots.forEach((slot, i) => {
+    const b = { ...boxes[i]!, x: seen[i]!.x };
+    const age = now - seen[i]!.born;
+    const pop = popOf(age, SLOT_POP_MS);
+    if (pop > 0 && !seen[i]!.sparked) { seen[i]!.sparked = true; burst(b.x + b.w / 2, b.y + b.h / 2, 12, PALETTE.gold, 70, now, 4.5); }
+    const hover = !touchScreen && !spreadOff && inside(hudCrosshair, b);
+    if (hover) hovered = i;
+    drawSlot(ctx, b, slot, me, self, now, pop, hover);
+    loadoutDrawn.slots.push({ ...b, kind: slot.kind, label: slot.label, name: slot.name });
+    panels.push({ x: b.x - 2, y: b.y - (slot.kind === 'ability' ? 10 : 0), w: b.w + 5, h: b.h + 8 });
+  });
+  const last = boxes.at(-1)!;
+  const bottom = top + last.h + 6;
+  beside.push({ x: last.x + last.w + 10, y: top + last.h / 2 });
+  // The hover card is drawn last, over the status tabs (drawVitals calls it).
+  const hov: number | null = hovered;
+  const card = hov === null ? undefined : () => { loadoutDrawn.card = drawSlotCard(ctx, slots[hov]!, boxes[hov]!.x, bottom + 6, w - EDGE); panels.push(loadoutDrawn.card); };
+  return { bottom, beside, card };
+}
+
+/** The phone's level row beside the cross, on demand: the level, a pin for each picked attachment and perk, and the score where no board chip shows it. */
+function drawPhoneRank(hud: Hud, x: number, cy: number, maxX: number, showScore: boolean): number {
+  const { ctx, snap, me, now } = hud;
+  if (!me) return 0;
+  const prog = progressLine(me.level, vfx.shownScore, snap.self.pending);
+  if (vfx.levelBurst) { vfx.levelBurst = false; if (!REDUCED) burst(x + 14, cy, 12, PALETTE.gold, 60, now, 4.5); }
+  setFont(ctx, 700, TYPE.micro);
+  const lw = ctx.measureText('LV').width + 4 + (setFont(ctx, 850, TYPE.body), ctx.measureText(String(prog.level)).width) + 14;
+  cel(ctx, x, cy - 11, lw, 22, '#2f343d', 5, 2);
+  levelChip(ctx, x + 7, cy, prog.level, now);
+  let px = x + lw + 6;
+  const picks = loadoutSlots(me.gun, snap.self.perks ?? {}, null).filter((s) => s.kind === 'attachment' || s.kind === 'perk');
+  const seen = seenSlots(me, picks, picks.map(() => ({ x: 0, y: 0, w: 0, h: 0 })), now, hud.dt);
+  picks.forEach((s, i) => {
+    if (px + 24 > maxX) return;
+    const pop = popOf(now - seen[i]!.born, SLOT_POP_MS);
+    const r = 11 * (pop > 0 ? 0.55 + 0.45 * easeOutBack(1 - pop) : 1);
+    pin(ctx, px + 11, cy - 1, r, '#4c535f');
+    strokeIcon(ctx, PERK_ICONS[s.perk!], px + 11, cy - 1, 14 * (r / 11), PANEL_INK, 2.4);
     px += 28;
+  });
+  if (showScore) {
+    const score = String(Math.round(vfx.shownScore));
+    setFont(ctx, 800, TYPE.body);
+    if (px + ctx.measureText(score).width <= maxX) { inked(ctx, score, px + 2, cy + 1, TYPE.body, PALETTE.gold, 800); px += ctx.measureText(score).width + 6; }
   }
   return px - x;
 }
@@ -1933,7 +2056,6 @@ function drawVitals(hud: Hud, compact: boolean) {
   vitalsAt.y = Y0;
   const lp = levelProgress(me.level, me.score);
   stepVitals(hud, me, self, lp.displayLevel, lp.frac);
-  const owned = ([1, 2, 3] as Tier[]).flatMap((t) => (self.perks[t] && t !== ABILITY_TIER ? [self.perks[t]!] : []));
   const look = healthLook(me.hp, me.maxHp, vfx.shownHp, now, vfx.hurtAt, vfx.healAt);
   const lowHp = look.state === 'low' || look.state === 'critical';
   // The ring: full while low, otherwise a few seconds after a hit, fading out.
@@ -1954,24 +2076,40 @@ function drawVitals(hud: Hud, compact: boolean) {
   const healthTabs: [string, string, string][] = [];
   if (shield) healthTabs.push([shield === 'spawn' ? 'SPAWN' : 'SHIELD', STATUS.shield, PERK_ICONS.shield]);
   if (me.rush) healthTabs.push(self.perks[2] === 'secondWind' ? ['WIND', STATUS.rush, PERK_ICONS.secondWind] : ['RUSH', STATUS.rush, PERK_ICONS.adrenaline]);
-  // The corner kit: ability medal, then level and perks; beside the cross on a touch screen.
+  // The corner kit: on a desktop the loadout strip top left (the progress line, then a tile per pick); beside the cross on a
+  // touch screen. On a phone the ability lives on its touch button, so the kit beside the small cross is just the level and the
+  // picked perks as pins, and only for a moment after the level or score changes (or a tap on the cross: phonefocus.ts); the
+  // tabs then take its row.
   const kitX = P ? X0 + S + 12 : touchScreen ? X0 + S + 16 : X0;
   const rowY = P ? Y0 + 13 : Y0 + 22;
-  // On a phone the ability lives on its touch button, so the kit beside the small cross is just the level ring and score, and
-  // only for a moment after either changes (or a tap on the cross: phonefocus.ts); the tabs then take its row.
   const rank = !P || !hud.F || hud.F.level || hud.F.score;
-  if (!P) drawMedalToken(ctx, kitX + 18, rowY, self, now);
-  if (rank) {
-    const kitW = drawRankRow(ctx, P ? kitX : kitX + 98, rowY, lp, P ? [] : owned, now);
-    panels.push(P ? { x: kitX, y: rowY - 14, w: kitW, h: 28 } : { x: kitX, y: rowY - 20, w: 98 + kitW, h: 52 });
+  let rows: { x: number; y: number }[];
+  let card: (() => void) | undefined;
+  if (P) {
+    if (rank) {
+      const kitW = drawPhoneRank(hud, kitX, rowY, P.vitals.x + P.vitals.w, !hud.F?.board);
+      panels.push({ x: kitX, y: rowY - 14, w: kitW, h: 28 });
+    }
+    rows = [{ x: kitX, y: rank ? rowY + 26 : rowY }];
+  } else {
+    const strip = drawLoadout(hud, kitX, Y0, compact || touchScreen);
+    card = strip.card;
+    // Tabs while in effect: under the strip on a desktop; to its right on a touch screen, where the minimap sits under it.
+    rows = touchScreen ? strip.beside : Array.from({ length: 4 }, (_, i) => ({ x: kitX, y: strip.bottom + 14 + i * 24 }));
   }
-  // Tabs while in effect, in a row under the kit; on a desktop the health ones sit by the cross instead.
-  let cx = kitX;
-  let sy = P ? (rank ? rowY + 26 : rowY) : rowY + 40;
+  let row = 0;
+  let cx = rows[0]!.x;
+  let sy = rows[0]!.y;
   // Each tab goes on the row, wrapping before it would reach `limit`: on a phone, the vitals box's edge (one row only; the rest wait).
   const limit = P ? P.vitals.x + P.vitals.w : touchScreen ? w / 2 - Math.min(360, 0.44 * w * hudScale) / 2 / hudScale - 6 : Infinity;
   const put = (width: number, draw: (x: number, y: number) => void) => {
-    if (cx > kitX && cx + width > limit) { if (P) return; cx = kitX; sy += 24; }
+    if (cx > rows[row]!.x && cx + width > limit) {
+      if (row + 1 >= rows.length) return;
+      row++;
+      cx = rows[row]!.x;
+      sy = rows[row]!.y;
+      if (cx + width > limit) return;
+    }
     draw(cx, sy);
     cx += width + 6;
   };
@@ -2007,6 +2145,8 @@ function drawVitals(hud: Hud, compact: boolean) {
   };
   const [fx, fy, flip] = spots.find(free) ?? spots[0]!;
   drawAmmoCluster(ctx, fx, Math.min(h - ch - 8, Math.max(EDGE, fy)), self, now, flip);
+  // The hover card over everything in the corner, the ammo count included: the cursor is on the strip, not the fight.
+  card?.();
   drawSparks(ctx, now);
 }
 let spreadOff = false;

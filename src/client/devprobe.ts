@@ -3,7 +3,7 @@ import type { Snapshot } from '../shared/protocol.ts';
 import { worldToScreen, type Camera } from './camera.ts';
 import { kicks } from './effects.ts';
 import { NUMBER_MS, numberHeight } from './feedback.ts';
-import { drawnBuildChips, drawnPanels, drawnReticleGap, forceVitals } from './hud.ts';
+import { drawnBuildChips, drawnLoadout, drawnPanels, drawnReticleGap, forceVitals } from './hud.ts';
 import { forceZones } from './zoneart.ts';
 import { pickupDebug } from './pickups.ts';
 import { newestSnap, renderTime, TICK_MS as SNAP_TICK_MS } from './interp.ts';
@@ -150,5 +150,5 @@ export function installDevProbe(page: Page) {
     maxCorrection = 0;
     return out;
   };
-  Object.assign(window, { skirmishDev: { net, forceVitals, forceZones, drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, pickups: pickupDebug, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, tags: drawnTags, shadowBakes, toScreen, trigger, reloadLog: () => reloadLog.splice(0) } });
+  Object.assign(window, { skirmishDev: { net, forceVitals, forceZones, drawnSelf: () => drawnSelf, drawnOthers: () => drawnOthers, pickups: pickupDebug, liveNumbers, firstRounds: () => firstRounds.splice(0), fireFeel: () => fireFeel.splice(0), takeFrameCosts: () => frameCosts.splice(0), benchFrames, zombies, panels: drawnPanels, loadout: drawnLoadout, loadoutSlots: () => drawnLoadout().slots, tags: drawnTags, shadowBakes, toScreen, trigger, reloadLog: () => reloadLog.splice(0) } });
 }

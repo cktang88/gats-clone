@@ -7,11 +7,12 @@ import type { GameEvent } from '../shared/protocol.ts';
  * the test read one answer.
  *
  * Always on (while you are alive and playing): your health (the cross and its armor), the rounds left (on the reload button),
- * the ability (on its button), the two sticks, the pause cog, the minimap folded small, and one slim status line where the
+ * the ability (on its button, once you have picked one; touchbuttons.ts hides it until then), the two sticks, the pause cog, the minimap folded small, and one slim status line where the
  * mode needs one: Domination's zones and score, the zombies run's day or night with the core and survivors, and Last Squad's
  * ring and squads.
  *
- * On demand: the level and score chips beside the cross for a moment after they change (or a tap on the cross); the minimap
+ * On demand: the level ("LV 2") with a pin for each perk picked this life, and the score where no board chip shows it, beside the
+ * cross for a moment after they change (or a tap on the cross); the minimap
  * grows for a few seconds on a tap; the chat folds to a small pip while there is something to read, and a tap shows the lines;
  * the kill feed keeps only your own kills and deaths and the big events, briefly; the clock comes up for an FFA or TDM round's
  * final minute, and TDM's team score for a moment after it moves; the emote (GG) button only as a round nears its end; the
