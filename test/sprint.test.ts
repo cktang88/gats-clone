@@ -129,7 +129,8 @@ test('every class blooms to ~4x off a sprint, wider than walking; the pistol and
   const ms = (gun: GunId) => settleRulesOf(GUNS[gun]).ms;
   assert.ok(ms('pistol') <= 550 && ms('smg') <= 650, `the sidearm and the rusher settle in about half a second (${ms('pistol')}, ${ms('smg')})`);
   assert.ok(ms('gunslinger') <= 400 && ms('skirmisher') <= 400, 'their quickest variants faster still');
-  assert.ok(ms('shotgun') >= 2 * ms('smg'), 'a shotgun is as long and heavy as a rifle, and settles like one');
+  assert.ok(ms('shotgun') >= 1100 && ms('shotgun') <= 1400, `the shotgun's one exception: quicker off a sprint than its build gives (${ms('shotgun')})`);
+  assert.ok(ms('shotgun') > ms('smg') && ms('shotgun') < ms('assault'), 'between the rusher and the anchor');
   assert.ok(ms('assault') >= 1900 && ms('assault') <= 2100, 'the anchor takes ~2 s');
   assert.ok(ms('sniper') >= 2200 && ms('lmg') >= 2200 && ms('sniper') <= 2500 && ms('lmg') <= 2500, 'the long guns longest');
   assert.ok(ms('smg') * 3 <= ms('assault'), 'quick off a sprint is the SMG\'s edge');

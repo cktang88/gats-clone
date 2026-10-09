@@ -260,7 +260,8 @@ export const roundsPerSec = (def: { fireMs: number; burst?: { count: number; gap
 export const handlingOfGun = (def: GunSpec): Handling => {
   const spec = specOf(def);
   const h = handlingOf({ kg: def.kg, cm: def.cm, calibre: def.calibre, spread: def.spread, rps: roundsPerSec(def), pinpoint: spec.pinpoint, bolt: def.base === 'sniper' && def.fireMs >= 1000 });
-  return { ...h, ...def.overrides };
+  const settleMs = def.base === 'shotgun' ? Math.round(h.settleMs * HANDLING.shotgunSettleMul) : h.settleMs;
+  return { ...h, settleMs, ...def.overrides };
 };
 const round4 = (x: number): number => Math.round(x * 1e4) / 1e4;
 /** The written rules with the derived ones filled in: sway, floor, the post-sprint settle and the bloom's kick (relative to the gun's spread), cap, recovery and standing share. */

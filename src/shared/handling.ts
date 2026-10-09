@@ -63,6 +63,8 @@ export const HANDLING = {
   sprintBloom: 4,
   /** settleMs = min + span x inertia^n / (inertia^n + mid^n): a Hill curve, light guns near min, heavy ones near min + span */
   settle: { min: 300, span: 2200, mid: 2.14, n: 2.32 },
+  /** The one class exception to the build: a shotgun is meant to come off a sprint and blast, so every shotgun settles in this share of what its weight and length would give (a pump gun about 1.3 s, not 2.1). */
+  shotgunSettleMul: 0.6,
   /** swingMs = min + span x inertia / (inertia + mid) */
   swing: { min: 150, span: 150, mid: 4 },
   /** A scoped gun's and a bolt-action's kick, cap and recovery multipliers (see the module note). */
