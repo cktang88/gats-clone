@@ -41,7 +41,7 @@ function railWheels(m: Model, xs: readonly number[], y: number, r: number, rim =
 
 type SteamLivery = { body: string; line: string; smoke: string; beam: string; name: string };
 const STEAM: Record<string, SteamLivery> = {
-  green: { body: '#3f6a4a', line: '#d9b24a', smoke: '#26292e', beam: '#b4524a', name: 'SKIRMISH EXPRESS' },
+  green: { body: '#3f6a4a', line: '#d9b24a', smoke: '#26292e', beam: '#b4524a', name: 'TINWAR EXPRESS' },
   mail: { body: '#5a5f66', line: '#c9c2b0', smoke: '#1f2226', beam: '#b4524a', name: 'NIGHT MAIL' },
 };
 
@@ -239,7 +239,7 @@ export function boxcar(livery = 'rust', variant?: string): Model {
   railWheels(m, [-8.4, -7.2, 7.2, 8.4], 1.3, 0.45);
   const ladder = m.part('#c9a23c');
   for (const e of [-1, 1]) for (const s of [-1, 1]) m.box(ladder, e * 9.75 - 0.05, s * 1.1 - 0.25, 0.9, e * 9.75 + 0.05, s * 1.1 + 0.25, 3.35, 0.01);
-  m.sideDecals(-10, 0.9, 10, 3.3, 40, [bod], (g) => { stencil(g, 'SKIRMISH RAIL', -5.6, -2.5, 0.48, '#e2dccb', 0, 0.1); stencil(g, '40 TONS', 5.6, -1.4, 0.28, '#e2dccb', 0, 0.08); });
+  m.sideDecals(-10, 0.9, 10, 3.3, 40, [bod], (g) => { stencil(g, 'TINWAR RAIL', -5.6, -2.5, 0.48, '#e2dccb', 0, 0.1); stencil(g, '40 TONS', 5.6, -1.4, 0.28, '#e2dccb', 0, 0.08); });
   void rotZ;
   return m;
 }

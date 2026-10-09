@@ -1,11 +1,11 @@
 ---
 name: verify
-description: Drive the Skirmish browser game (top-down multiplayer shooter, Node server + Canvas client) against a real, isolated server to prove gameplay and UI behavior. Use after any change to src/client, src/server, src/shared, or public/, before declaring a gameplay or UI change done, or when asked to run, check, or screenshot the game.
+description: Drive the Tinwar browser game (top-down multiplayer shooter, Node server + Canvas client) against a real, isolated server to prove gameplay and UI behavior. Use after any change to src/client, src/server, src/shared, or public/, before declaring a gameplay or UI change done, or when asked to run, check, or screenshot the game.
 ---
 
-# Verify Skirmish
+# Verify Tinwar
 
-Skirmish is a browser game. The user touches the web page served by `src/server/main.ts`: the menu (loadout, rooms, account) and the canvas game (HUD, chat, death screen). The server also exposes `/api/*` JSON routes and a WebSocket at `/ws?room=<ffa|tdm|dom|br>`, or `?room=<code>` for a zombies squad opened with `POST /api/squads`. Bots fill every room, so a single driver always has opponents.
+Tinwar is a browser game. The user touches the web page served by `src/server/main.ts`: the menu (loadout, rooms, account) and the canvas game (HUD, chat, death screen). The server also exposes `/api/*` JSON routes and a WebSocket at `/ws?room=<ffa|tdm|dom|br>`, or `?room=<code>` for a zombies squad opened with `POST /api/squads`. Bots fill every room, so a single driver always has opponents.
 
 All helpers live in `.claude/skills/verify/scripts/` and take one argument, a run directory you choose. Put it in your session scratchpad, for example `RUN=<scratchpad>/verify-$(date +%s)`. Every instance gets its own port and data dir, so parallel runs never share state. Never drive a server this run did not start, and never touch the user's `data/` directory.
 
@@ -15,7 +15,7 @@ All helpers live in `.claude/skills/verify/scripts/` and take one argument, a ru
 .claude/skills/verify/scripts/launch.sh "$RUN"
 ```
 
-It runs `npm install` if `node_modules` is missing, rebuilds `public/game.js` with `npm run build`, picks a free port, and starts `node src/server/main.ts` with `PORT` and `DATA_DIR=$RUN/data`. Ready means it printed `ready: http://localhost:<port>`, which follows the server's `Skirmish listening on` log line. The server log is `$RUN/server.log`. Rerunning launch on a live run is a no-op.
+It runs `npm install` if `node_modules` is missing, rebuilds `public/game.js` with `npm run build`, picks a free port, and starts `node src/server/main.ts` with `PORT` and `DATA_DIR=$RUN/data`. Ready means it printed `ready: http://localhost:<port>`, which follows the server's `Tinwar listening on` log line. The server log is `$RUN/server.log`. Rerunning launch on a live run is a no-op.
 
 ## Doctor
 

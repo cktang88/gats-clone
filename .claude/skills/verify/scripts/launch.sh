@@ -15,7 +15,7 @@ PORT="$PORT" DATA_DIR="$RUN/data" nohup node src/server/main.ts >"$RUN/server.lo
 echo $! >"$RUN/pid"
 echo "$PORT" >"$RUN/port"
 for _ in $(seq 1 50); do
-  if grep -q "Skirmish listening on" "$RUN/server.log" 2>/dev/null; then
+  if grep -qE "(Tinwar|Skirmish) listening on" "$RUN/server.log" 2>/dev/null; then
     echo "ready: http://localhost:$PORT (pid $(cat "$RUN/pid"), data $RUN/data)"; exit 0
   fi
   sleep 0.2

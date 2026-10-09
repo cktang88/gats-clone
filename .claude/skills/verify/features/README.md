@@ -1,6 +1,6 @@
-# Skirmish verification map
+# Tinwar verification map
 
-This directory is the maintained source for verifying what a Skirmish player can do. Read this index before driving the game, then use the matching feature file as the recipe.
+This directory is the maintained source for verifying what a Tinwar player can do. Read this index before driving the game, then use the matching feature file as the recipe.
 
 ## Baseline preconditions
 

@@ -1,6 +1,6 @@
-# Skirmish
+# Tinwar
 
-Skirmish is a top-down multiplayer arena shooter for the browser. Its gameplay is modeled on gats.io. The name, art and code are original.
+Tinwar is a top-down multiplayer arena shooter for the browser. Its gameplay is modeled on gats.io. The name, art and code are original. Play it at https://tinwar.io.
 
 ## Run
 
@@ -267,7 +267,7 @@ Every human has an account-level profile (a signed-in account's, or a guest's un
 ```bash
 npx tsc --noEmit
 npm test
-RUN=/tmp/skirmish-verify
+RUN=/tmp/tinwar-verify
 .claude/skills/verify/scripts/launch.sh "$RUN"
 .claude/skills/verify/scripts/doctor.sh "$RUN"
 node .claude/skills/verify/scripts/drive.ts "$RUN"
@@ -297,19 +297,19 @@ node .claude/skills/verify/scripts/range-ui.ts "$RUN" "$RUN/shots"
 The `Dockerfile` builds the client, drops dev dependencies, and runs the server as a non-root user on port 8080. Mount a volume at `/data` to keep accounts. The server saves and exits cleanly on SIGTERM.
 
 ```bash
-docker build -t skirmish .
-docker run -p 8080:8080 -v skirmish-data:/data skirmish
+docker build -t tinwar .
+docker run -p 8080:8080 -v skirmish-data:/data tinwar
 ```
 
 The server limits WebSocket connections, login attempts and new guest profiles per IP address. Behind a reverse proxy every player arrives from the proxy's address, so they all share one limit. Set `TRUST_PROXY=1` to key the limits on the last `X-Forwarded-For` address instead, which is the one your proxy appends. Enable it only when exactly one proxy you control sits in front of the server, because clients can put any value they like at the front of that header.
 
 ```bash
-docker run -p 8080:8080 -e TRUST_PROXY=1 -v skirmish-data:/data skirmish
+docker run -p 8080:8080 -e TRUST_PROXY=1 -v skirmish-data:/data tinwar
 ```
 
 ### Fly.io
 
-`fly.toml` runs the Docker image on one always-on machine with a volume at `/data`, `TRUST_PROXY=1` (Fly's edge is the one proxy in front), and a `/healthz` check. Keep it to one machine: rooms live in memory and the accounts file is not shared between machines.
+`fly.toml` runs the Docker image (its volume, `skirmish_data`, keeps the name it was created under) on one always-on machine with a volume at `/data`, `TRUST_PROXY=1` (Fly's edge is the one proxy in front), and a `/healthz` check. Keep it to one machine: rooms live in memory and the accounts file is not shared between machines.
 
 ```bash
 fly launch --no-deploy --copy-config --name <your-app-name>

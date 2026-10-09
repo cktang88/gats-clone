@@ -1,4 +1,4 @@
-# Skirmish art bible
+# Tinwar art bible
 
 **One idea: toy soldiers fighting a real night op.** Chunky, tactile figures in the spirit of Advanced Wars 1+2 Re-Boot Camp, set in a diorama that is lit with intent, as Intravenous lights its levels. Every pixel answers one of three questions: *what is it made of, where is the light, and what does the player need to see.* If a detail answers none of them, cut it.
 

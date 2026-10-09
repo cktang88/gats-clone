@@ -1,6 +1,6 @@
 # Map rotation
 
-Skirmish has four 6000 px versus maps, Causeway, Plaza, Old Town and Quarry. Each is drawn in `src/shared/maps/` as the west half of a 50px-cell text grid, and `src/shared/mapgrid.ts` builds the east half by a half turn, so the map's size comes from its row count. The 3000 px Outpost (`src/shared/maps.ts`) is the zombies map. Each versus mode rotates through its own order. The Tab view names the current map, and a pill warns before the next one.
+Tinwar has four 6000 px versus maps, Causeway, Plaza, Old Town and Quarry. Each is drawn in `src/shared/maps/` as the west half of a 50px-cell text grid, and `src/shared/mapgrid.ts` builds the east half by a half turn, so the map's size comes from its row count. The 3000 px Outpost (`src/shared/maps.ts`) is the zombies map. Each versus mode rotates through its own order. The Tab view names the current map, and a pill warns before the next one.
 
 ## Sub-features
 

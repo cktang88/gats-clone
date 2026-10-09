@@ -339,7 +339,7 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const port = Number(process.env.PORT ?? 8080);
   const dataDir = process.env.DATA_DIR ?? resolve(import.meta.dirname, '../../data');
   const server = await startServer({ port, dataDir, trustProxy: process.env.TRUST_PROXY === '1' });
-  console.log(`Skirmish listening on http://localhost:${server.port}`);
+  console.log(`Tinwar listening on http://localhost:${server.port}`);
   // Lay out every map's bot nav and cover now, a map at a time, so no room stalls a tick building one when it wakes or rotates.
   warmLayouts([...new Set(Object.values(ROTATION).flat())], (go) => void setTimeout(go, 200).unref());
   const shutdown = async (signal: string) => {

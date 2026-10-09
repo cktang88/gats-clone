@@ -102,7 +102,7 @@ function renderLocker(raw: unknown) {
 }
 
 function render(p: ProfileJson) {
-  document.title = `${p.name} · Skirmish`;
+  document.title = `${p.name} · Tinwar`;
   const head = $('profile-head');
   head.replaceChildren();
   const worn = el('div', 'profile-worn');

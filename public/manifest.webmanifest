@@ -1,6 +1,6 @@
 {
-  "name": "Skirmish",
-  "short_name": "Skirmish",
+  "name": "Tinwar",
+  "short_name": "Tinwar",
   "start_url": "/",
   "display": "fullscreen",
   "display_override": ["fullscreen", "standalone"],
