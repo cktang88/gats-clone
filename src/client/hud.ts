@@ -2286,7 +2286,7 @@ function drawTeamBanner(hud: Hud, y: number, compact: boolean, left: number | nu
  * slim line under the clock chip, which then goes back to the mode's own status; hints and the downed plate keep to one line low
  * between the sticks.
  * ------------------------------------------------------------------------------------------------------------------------- */
-const PHONE = { boardOpenMs: 4500, calloutMs: 2000, introMs: 2600, fadeMs: 260 } as const;
+const PHONE = { boardOpenMs: 3000, calloutMs: 2000, introMs: 2600, fadeMs: 260 } as const;
 let phoneShown: PhoneLayout | null = null;
 const boardChip = { rect: null as Rect | null, openUntil: 0 };
 
