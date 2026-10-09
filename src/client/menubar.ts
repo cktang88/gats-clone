@@ -80,7 +80,11 @@ export function applyDiscord(a: { hidden: boolean | string; href: string }, url:
   if (url) a.href = url;
 }
 
-/** The What's new panel: a modal dialog over the menu, readable on a phone, closed by its button, Esc or a tap outside. */
+/**
+ * The What's new panel: a dialog over the menu, readable on a phone, closed by its button, Esc or a tap outside. It opens
+ * non-modally (`show`, not `showModal`) so it stays out of the browser's top layer, under the cursor layer; the dimming is
+ * its own wide shadow.
+ */
 export function mountChangelog(opener: HTMLElement): { open(): void; close(): void } {
   const dialog = document.createElement('dialog');
   dialog.id = 'changelog';
@@ -88,13 +92,23 @@ export function mountChangelog(opener: HTMLElement): { open(): void; close(): vo
   dialog.setAttribute('aria-labelledby', 'changelog-title');
   dialog.innerHTML = `<header class="cl-head"><h2 id="changelog-title">What's new</h2><button type="button" class="cl-close" aria-label="Close">Close</button></header><div class="cl-body">${changelogHtml()}</div>`;
   document.body.append(dialog);
-  const close = () => { if (dialog.open) dialog.close(); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
+  const onDown = (e: PointerEvent) => { if (!dialog.contains(e.target as Node) && e.target !== opener) close(); };
+  function close() {
+    if (!dialog.open) return;
+    dialog.close();
+    document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('pointerdown', onDown, true);
+    opener.focus({ preventScroll: true });
+  }
   dialog.querySelector<HTMLButtonElement>('.cl-close')!.onclick = close;
-  dialog.addEventListener('click', (e) => { if (e.target === dialog) close(); });
-  // Esc closes the dialog without also stepping the menu back.
-  dialog.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.stopPropagation(); });
-  dialog.addEventListener('close', () => opener.focus({ preventScroll: true }));
-  const open = () => { if (!dialog.open) dialog.showModal(); };
+  const open = () => {
+    if (dialog.open) return;
+    dialog.show();
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onDown, true);
+    dialog.querySelector<HTMLButtonElement>('.cl-close')!.focus({ preventScroll: true });
+  };
   opener.addEventListener('click', (e) => { e.preventDefault(); open(); });
   return { open, close };
 }
