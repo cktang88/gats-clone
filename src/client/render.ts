@@ -39,6 +39,7 @@ import { lightBackdrop, lightWorld } from './lightfeed.ts';
 import { drawFixtures } from './fixtures.ts';
 import { floorPlanOf } from './floor.ts';
 import { doorOccluders, drawDoors, drawGeoDebug, drawPolys, drawRoofs, geoDebug, polyOccluders, type GeoInfo } from './geoart.ts';
+import { drawDoorwayFloors, drawDoorwayJambs } from './doorwayart.ts';
 import { leavesFromViews } from '../shared/sim/doors.ts';
 import './themes/index.ts';
 import { drawAmbientGround, drawAmbientSky } from './ambientfeed.ts';
@@ -111,6 +112,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawGround(ctx, ground.get(`${snap.match.map}|${mapWallsKey(s.walls)}`, s.worldSize, () => [...curbSolids(s.worldSize), ...wallSolids(s.walls.filter((w) => !w.built))], siege, floorPlanOf(snap.match.map)), view.x0, view.y0, view.x1, view.y1);
   // A theme's ground-level animation (water, decks) goes under every wall, shadow and body.
   { const t0 = themeOf(mapOf(snap.match.map)?.theme), m0 = mapOf(snap.match.map); if (t0?.ground && m0) t0.ground(ctx, now, view, m0); }
+  // Every doorway's sill, worn passage and doormat (doorwayart.ts), baked per doorway.
+  { const m0 = mapOf(snap.match.map); if (m0) drawDoorwayFloors(ctx, m0, view); }
 
   if (snap.targets) { const layout = layoutOf(snap.match.map); if (layout) drawRangeFloor(ctx, layout, s.worldSize, view); }
   const mine = snap.players.find((p) => p.id === s.myId);
@@ -146,6 +149,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const leaves = geo ? leavesFromViews(geoMap!.doors, snap.doors) : [];
   if (geo) {
     drawPolys(ctx, geo);
+    drawDoorwayJambs(ctx, geoMap!, view);
     drawDoors(ctx, geo, snap.doors);
     if (geoDebug()) drawGeoDebug(ctx, geo, leaves);
   }

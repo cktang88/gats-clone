@@ -14,6 +14,7 @@ import { LIGHT } from './tilt.ts';
 import { themeOf } from './themes/registry.ts';
 import { kitShadowed } from './vehicleshadow.ts';
 import { paintRoofMaterial } from './roofart.ts';
+import { clipNotches, drawNotchRims, roofNotches } from './doorwayart.ts';
 
 export type GeoView = { x0: number; y0: number; x1: number; y1: number };
 export type PolyLook = { top: string; front: string; lit: string; shade: string };
@@ -348,7 +349,10 @@ export function drawRoofs(g: CanvasRenderingContext2D, info: GeoInfo, who: reado
     if (x1 < info.view.x0 || x0 > info.view.x1 || y1 < info.view.y0 - 20 || y0 > info.view.y1) continue;
     g.save();
     g.globalAlpha = a;
-    if (theme?.roof?.(g, r, a, info) || (r.material && paintRoofMaterial(g, r, info))) { g.restore(); continue; }
+    // From outside, each doorway shows through a notch in the roof's edge (doorwayart.ts).
+    const notches = roofNotches(info.map, r.id);
+    clipNotches(g, notches, { x0, y0, x1, y1 });
+    if (theme?.roof?.(g, r, a, info) || (r.material && paintRoofMaterial(g, r, info))) { drawNotchRims(g, notches); g.restore(); continue; }
     const pts = [...r.points];
     const area = pts.reduce((s, p, i) => s + (p.x * pts[(i + 1) % pts.length]!.y - pts[(i + 1) % pts.length]!.x * p.y), 0);
     const ccw = area < 0 ? pts.reverse() : pts;
@@ -378,6 +382,7 @@ export function drawRoofs(g: CanvasRenderingContext2D, info: GeoInfo, who: reado
     g.strokeStyle = INK;
     g.lineWidth = 2;
     g.stroke();
+    drawNotchRims(g, notches);
     g.restore();
   }
 }

@@ -106,6 +106,10 @@ type MapRoof = { id: string; points: readonly Pt[]; material?: string; tint?: st
 
 A roof is drawn above players over an interior. It fades to ~12% alpha while you (or a teammate) stand inside it, and is opaque elsewhere. It never reveals enemies: visibility is still the normal line of sight. A roof must cover the whole room including its wall tops; doors on its boundary are fine.
 
+## Doorways
+
+Every way into a building is marked so it reads from any side, not only through a south wall's front face (`src/client/doorways.ts` finds them, `src/client/doorwayart.ts` draws them). A doorway is a door that is not locked, or a gap in the walls along a roof's edge with wall on both sides (between 56 and 340 px wide, on an edge that is at least 30% wall, so a canopy's open sides are not doorways). Each gets a darker worn passage through the wall with a steel sill at each face and, outside a building, a doormat; a door-frame jamb at each side, standing proud of both wall faces and a step above the wall top; and, from outside, a notch in its roof's edge so the frame and the door show through the roof. Floors and jambs are baked once per doorway into small sprites the first time they come into view. Author nothing for it: cut the gap and put the door in it as above. `test/doorways.test.ts` checks every door that opens is marked, no locked one is, every marker sits on a clear opening between two walls, and every doorway from outside shows through a notch in its roof.
+
 ## Themes
 
 `Theme` (src/client/themes/registry.ts) gains optional hooks; each returns true when it drew the thing (anything else falls back to the generic extrusion):
