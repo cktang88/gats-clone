@@ -61,7 +61,7 @@ const until = async (fn: () => unknown, ms = 4000) => { const end = Date.now() +
 const mouse = (type: string, x: number, y: number, button: 'left' | 'right' | 'none' = 'none') => cdp('Input.dispatchMouseEvent', { type, x, y, button, clickCount: type === 'mouseMoved' ? 0 : 1 });
 const click = async (x: number, y: number, button: 'left' | 'right' = 'left') => { await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, button); await mouse('mouseReleased', x, y, button); };
 const clickEl = async (selector: string) => {
-  const at = await js(`(() => { const b = document.querySelector('${selector}'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+  const at = await js(`(() => { const b = document.querySelector('${selector}'); if (!b || !b.getClientRects().length) return null; b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
   if (!at) return false;
   await click(at[0], at[1]);
   return true;
@@ -139,7 +139,15 @@ const openMenu = async (query = '') => {
   await serversListed(page);
   await js(`document.getElementById('name').value = '${NAME}'`);
 };
-const showSquadMenu = () => js(`document.getElementById('squad').scrollIntoView({ block: 'center' })`);
+const showSquadMenu = () => js(`document.getElementById('mode-pick').scrollIntoView({ block: 'nearest' })`);
+/** Picks Zombies in the mode card's dropdown with real clicks (the button, then the option), then presses Next for the loadout step. */
+const pickZombies = async () => {
+  if (!(await clickEl('#mode-trigger'))) return false;
+  await sleep(200);
+  if (!(await clickEl('#mode-opt-zom'))) return false;
+  await sleep(150);
+  return clickEl('#mode-next');
+};
 
 /** Clear of the HUD panels and DOM overlays round the edges, so a press always reaches the canvas. */
 const AIM_BOX = { x0: 200, y0: 150, x1: VIEW.w - 240, y1: VIEW.h - 150 };
@@ -190,8 +198,8 @@ async function fight(done: () => Promise<boolean> | boolean, ms: number, onTick:
 const STEPS: Record<string, () => Promise<void>> = {
   async menu() {
     await openMenu();
-    expect('menu offers to start a zombies squad', await js(`!!document.getElementById('squad-start')`));
-    expect('the Zombies card is a mode card', await clickEl('#squad .mc-hit'));
+    expect('the mode dropdown offers a zombies squad', await js(`!!document.getElementById('mode-opt-zom')`));
+    expect('Zombies is picked from the dropdown and Next goes on', await pickZombies());
     expect('choosing it opens the gear-up step', await until(() => js(`!document.getElementById('play-form').hidden`)));
     await clickEl('#loadout-menu .weapon:nth-child(6)');
     expect('the shared loadout picker takes the LMG', await js(`document.querySelector('#loadout-menu .weapon:nth-child(6)').getAttribute('aria-pressed') === 'true'`));
@@ -214,7 +222,7 @@ const STEPS: Record<string, () => Promise<void>> = {
   },
   async squad() {
     await openMenu();
-    await clickEl('#squad .mc-hit');
+    expect('Zombies is picked from the dropdown and Next goes on', await pickZombies());
     await sleep(300);
     await clickEl('#loadout-menu .weapon:nth-child(6)');
     await clickEl('#play');

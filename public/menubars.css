@@ -4,60 +4,167 @@
  * orange for what you can act on, Barlow Condensed in bone.
  */
 
-/* ---- Backdrop: one container behind everything in the menu, for the yard scene or a live match. The plates stay solid over it. */
+/* ---- Backdrop: one container behind everything in the menu, for the yard scene or a live match. It is the hero of the front page:
+ * the plates are compact and a little see-through, and leave most of the screen to it. */
 #menu .menu-backdrop { position: fixed; inset: 0; z-index: 0; }
 
-/* ---- Top bar, right: Log in and Register (guest) or the name chip, service record and Log out. */
-#menu .menu-auth { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
+/* ---- The page is one column the height of the screen: the top bar, the step (the mode card sits at its foot), the bottom bar. */
+#menu .menu-card { display: flex; flex-direction: column; min-height: calc((100dvh - 52px - var(--st) - var(--sb)) / var(--ui, 1)); }
+#menu .deploy:not([hidden]) { flex: 1 0 auto; display: flex; flex-direction: column; }
+#menu .step-modes:not([hidden]) { flex: 1 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 18px; }
+#menu .menu-footer { margin-top: auto; padding-top: 18px; }
+
+/* ---- Top bar, right: Log in and Register (guest) or the name chip, Account and Log out. Every one is a .top-btn: one height, one
+ * padding, one baseline, and the bar packs itself tighter (data-fit, menubar.ts) before anything can spill past the edge. */
+#menu { --top-h: 44px; }
+#menu .menu-top { grid-template-columns: auto minmax(0, 1fr) auto; }
+#menu .menu-tabs button { box-sizing: border-box; height: var(--top-h); padding-top: 0; padding-bottom: 0; }
+#menu .menu-auth { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; flex-wrap: nowrap; }
+#menu .menu-auth .top-btn {
+  box-sizing: border-box; height: var(--top-h); margin: 0; padding: 0 16px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; vertical-align: top; white-space: nowrap;
+  font: 800 16px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; text-decoration: none;
+}
 #menu .top-pitch { max-width: 180px; font: 700 14px/1.15 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--m-gold); text-align: right; text-shadow: 2px 2px 0 var(--m-ink); }
-#menu .top-register {
-  --lip: 4px; padding: 9px 16px; border: 2px solid var(--m-ink); border-radius: 6px; cursor: pointer;
-  font: 800 17px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: #160a04;
+#menu .menu-auth .top-register {
+  --lip: 4px; border: 2px solid var(--m-ink); border-radius: 6px; cursor: pointer; color: #160a04;
   background: linear-gradient(var(--m-accent-hi) 0 5px, var(--m-accent) 5px) !important;
   box-shadow: 0 var(--lip) 0 0 var(--m-accent-lip), 0 var(--lip) 0 2px var(--m-ink), 5px calc(var(--lip) + 5px) 0 0 var(--m-shadow) !important;
 }
-#menu .top-register:hover { background: linear-gradient(#ff9468 0 5px, var(--m-accent-hi) 5px) !important; }
-#menu .top-register:active { transform: translateY(3px); --lip: 1px; }
-#menu .top-link { padding: 6px 4px; font: 700 15px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--m-accent-text); text-decoration: none; white-space: nowrap; background: none; border: 0; cursor: pointer; }
-#menu .top-link:hover { color: var(--m-text); }
-/* Signed in: your name and level over a slim XP bar, to your service record. */
-#menu .top-me { display: grid; gap: 5px; min-width: 120px; max-width: 220px; padding: 6px 10px 7px; text-decoration: none; color: var(--m-text); background: linear-gradient(var(--m-top) 0 5px, var(--m-face) 5px); border: 2px solid var(--m-ink); border-radius: 6px; box-shadow: 0 4px 0 0 var(--m-lip), 0 4px 0 2px var(--m-ink), 5px 9px 0 0 var(--m-shadow); }
+#menu .menu-auth .top-register:hover { background: linear-gradient(#ff9468 0 5px, var(--m-accent-hi) 5px) !important; }
+#menu .menu-auth .top-register:active { transform: translateY(3px); --lip: 1px; }
+/* Signed in: your level and name over a slim XP bar, to your service record; a plate like Account beside it. */
+#menu .menu-auth .top-me {
+  flex-direction: column; align-items: stretch; gap: 4px; min-width: 120px; max-width: 230px; padding: 0 12px; color: var(--m-text);
+  background: linear-gradient(var(--m-top) 0 5px, var(--m-face) 5px); border: 2px solid var(--m-ink); border-radius: 6px;
+  box-shadow: 0 4px 0 0 var(--m-lip), 0 4px 0 2px var(--m-ink), 5px 9px 0 0 var(--m-shadow);
+}
 #menu .top-me:hover { border-color: var(--m-accent); }
 #menu .top-me-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-#menu .top-me .acct-lv { flex: none; }
-#menu .top-me-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 17px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
-#menu .top-me-bar { display: block; height: 6px; background: var(--m-well); border: 1px solid var(--m-ink); border-radius: 3px; overflow: hidden; }
+#menu .top-me .acct-lv { flex: none; padding: 2px 6px 1px; font-size: 13px; }
+#menu .top-me-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 16px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+#menu .top-me-bar { display: block; height: 5px; background: var(--m-well); border: 1px solid var(--m-ink); border-radius: 3px; overflow: hidden; }
 #menu .top-me-bar i { display: block; height: 100%; min-width: 2px; background: var(--m-gold); }
+/* Log out is a plate button like Account, a shade quieter. */
+#menu .menu-auth .top-logout { color: var(--m-sub); }
+#menu .menu-auth .top-logout:hover { color: var(--m-text); }
 /* A guest's chip reads as the plain Log in button beside Register. */
 #menu .menu-auth[data-signed-in="false"] .acct-chip .acct-name::before { display: none; }
+/* Packing, tightest last: no pitch; tighter tabs; the emblem without the word; a shorter name and slimmer padding. */
+#menu .menu-top:is([data-fit="1"], [data-fit="2"], [data-fit="3"], [data-fit="4"]) .top-pitch { display: none; }
+#menu .menu-top:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) { gap: 12px; }
+#menu .menu-top:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) .menu-tabs { gap: 8px; }
+#menu .menu-top:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) .menu-tabs button { padding: 0 13px; letter-spacing: 0.08em; }
+#menu .menu-top:is([data-fit="3"], [data-fit="4"]) .logo { display: none; }
+#menu .menu-top[data-fit="4"] .menu-tabs button { padding: 0 9px; letter-spacing: 0.04em; }
+#menu .menu-top[data-fit="4"] .menu-auth { gap: 8px; }
+#menu .menu-top[data-fit="4"] .menu-auth .top-btn { padding: 0 10px; letter-spacing: 0.05em; }
+#menu .menu-top[data-fit="4"] .top-me { min-width: 0; max-width: 150px; }
 
-/* ---- Mode picker: the dropdown and Play on a plate, beside the picked mode's card. */
-#menu .mode-pick-row { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 30px; align-items: stretch; padding: 6px 4px 26px; }
-#menu .mode-pick { display: flex; flex-direction: column; gap: 10px; padding: 18px 18px 20px; }
-#menu .mode-pick-label { font: 800 14px/1 var(--display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--m-sub); }
-#menu .mode-select {
-  width: 100%; min-height: 48px; padding: 8px 40px 8px 12px; appearance: none; -webkit-appearance: none; cursor: pointer;
-  font: 800 19px/1.1 var(--display); letter-spacing: 0.04em; color: var(--m-text);
-  background: var(--m-well) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23ff5a1f' stroke-width='2.4'/%3E%3C/svg%3E") no-repeat right 14px center / 14px 10px;
-  border: 2px solid var(--m-ink); border-radius: 5px; box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.5);
+/* ---- The guest's reason to register: one slim strip, left-aligned, so the scene shows beside it. */
+#menu .step-modes .enlist { margin: 0; max-width: 100%; }
+#menu .enlist[data-form="closed"] .enlist-plate {
+  width: fit-content; max-width: 100%; box-sizing: border-box; grid-template-columns: auto auto minmax(0, auto) auto; gap: 4px 18px; padding: 8px 14px 8px 12px;
+  background: linear-gradient(rgba(79, 85, 96, 0.94) 0 6px, rgba(42, 47, 56, 0.86) 6px);
 }
-#menu .mode-select:focus-visible { outline: 3px solid var(--m-accent-text); outline-offset: 3px; border-color: var(--m-accent); }
-#menu .mode-select option { background: #23272e; color: var(--m-text); }
-#menu .mode-detail { margin: 0; min-height: 1.2em; font: 700 15px/1.2 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--m-ok); }
-#menu .mode-pick-actions { display: grid; gap: 18px; margin-top: auto; }
-#menu button.mode-play { width: 100%; font-size: 30px; padding: 14px 18px 13px; }
-#menu .mode-gear { justify-self: center; padding: 4px 6px; font: 700 15px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--m-accent-text); }
-#menu .mode-gear:hover { color: var(--m-text); }
-#menu .mode-grid.picking { display: block; padding: 0; }
-#menu .mode-grid.picking .mc-wrap.mc-off { display: none; }
-#menu .mode-grid.picking .mc-wrap { height: 100%; }
-/* The picked mode's info, in type alone: chip, name and who is in, the pitch, and its own buttons. */
-#menu .mode-grid.picking .mode-card { height: 100%; }
-#menu .mode-grid.picking .mc-face { width: 100%; align-self: stretch; }
-#menu .mode-grid.picking .mc-plate, #menu .mode-grid.picking .range-pitch { align-content: center; gap: 12px; padding: 22px 26px; }
-#menu .mode-grid.picking .mc-head { flex-wrap: wrap; row-gap: 8px; }
-#menu .mode-grid.picking .mc-name { font-size: 38px; }
-#menu .mode-grid.picking .mc-pitch { display: block; max-width: 56ch; font-size: 17px; }
+#menu .enlist[data-form="closed"] .enlist-tag { width: 30px; margin: 0; }
+#menu .enlist[data-form="closed"] .enlist-head { max-width: 280px; padding: 0; }
+#menu .enlist[data-form="closed"] .enlist-title { font-size: 22px; }
+#menu .enlist[data-form="closed"] .enlist-sub { margin-top: 3px; font-size: 13px; line-height: 1.2; }
+#menu .enlist[data-form="closed"] .enlist-body { grid-column: auto; padding: 0; grid-template-columns: minmax(0, auto) auto; gap: 8px 18px; }
+#menu .enlist[data-form="closed"] .enlist-perks { padding: 0 0 0 16px; gap: 5px 18px; }
+#menu .enlist[data-form="closed"] .enlist-perks li { font-size: 14px; gap: 7px; }
+#menu .enlist[data-form="closed"] .enlist-icon { width: 20px; height: 20px; }
+#menu .enlist[data-form="closed"] .enlist-actions { grid-auto-flow: column; padding: 0; gap: 14px; align-items: center; }
+#menu .enlist[data-form="closed"] .enlist-go { padding: 9px 16px 8px !important; font-size: 16px; --lip: 4px; }
+#menu .enlist[data-form="closed"] .enlist-alt { font-size: 14px; }
+#menu .enlist[data-form="closed"] .enlist-x { position: static; align-self: center; font-size: 13px; }
+
+/* ---- The mode card: what you are about to play, in one compact plate at the foot of the screen. Title and steps, the dropdown,
+ * the pitch, a squad's invite link, and Next. A little see-through, so the match behind still reads around and through it. */
+#menu .mode-pick {
+  margin-top: auto; width: min(400px, 100%); box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px 16px 20px;
+  background: linear-gradient(rgba(79, 85, 96, 0.95) 0 7px, rgba(42, 47, 56, 0.84) 7px);
+}
+#menu .mode-pick::before { content: ""; position: absolute; left: 6px; top: 6px; width: 14px; height: 14px; border-top: 3px solid var(--m-accent); border-left: 3px solid var(--m-accent); border-top-left-radius: 2px; pointer-events: none; }
+#menu .mode-pick-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0 2px 8px; }
+#menu .mode-pick-title::before { display: none; }
+#menu .mode-pick-title { display: block; margin: 0; font: italic 900 23px/1 var(--display); letter-spacing: 0.02em; text-transform: uppercase; color: var(--m-text); text-shadow: 2px 2px 0 var(--m-ink); white-space: nowrap; }
+#menu .mode-pick-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* The steps, small, in the card's corner: 1 Mode, then 2 Loadout (reachable once a mode is chosen). */
+#menu .mode-pick .steps { position: static; display: flex; align-items: center; gap: 4px; list-style: none; margin: 0; padding: 0; }
+#menu .mode-pick .steps li + li::before { content: "\203A"; margin-right: 4px; color: var(--m-sub); font: 800 14px/1 var(--display); }
+#menu .mode-pick .crumb { gap: 5px; padding: 3px 7px 3px 3px; font-size: 12px; letter-spacing: 0.12em; border-width: 2px; box-shadow: none; background: rgba(21, 23, 28, 0.7); }
+#menu .mode-pick .crumb b { width: 17px; height: 17px; font-size: 11px; }
+
+/* The dropdown: a dark well with the mode's chip, name and who is in, and an orange caret. */
+#menu .mode-dd { position: relative; }
+#menu .mode-trigger {
+  width: 100%; min-height: 52px; box-sizing: border-box; padding: 6px 12px 6px 10px; cursor: pointer; text-align: left;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  color: var(--m-text); background: rgba(21, 23, 28, 0.92) !important; border: 2px solid var(--m-ink); border-radius: 6px;
+  box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.5) !important; transform: none !important;
+}
+#menu .mode-trigger:hover { border-color: #6a7482; }
+#menu .mode-trigger[aria-expanded="true"] { border-color: var(--m-accent); }
+#menu .mode-trigger:focus-visible { outline: 3px solid var(--m-accent-text); outline-offset: 3px; border-color: var(--m-accent); }
+#menu .mdd-caret { width: 14px; height: 10px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23ff5a1f' stroke-width='2.4'/%3E%3C/svg%3E") no-repeat center / contain; transition: transform 0.12s; }
+#menu .mode-trigger[aria-expanded="true"] .mdd-caret { transform: rotate(180deg); }
+#menu .mdd-text { display: grid; gap: 3px; min-width: 0; }
+#menu .mdd-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: italic 900 22px/1 var(--display); letter-spacing: 0.02em; text-transform: uppercase; color: var(--m-text); text-shadow: 2px 2px 0 var(--m-ink); }
+#menu .mdd-pitch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13.5px/1.25 var(--text); color: var(--m-sub); }
+#menu .mdd-live { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font: 700 13px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--m-sub); }
+#menu .mdd-live i { width: 8px; height: 8px; flex: none; background: var(--m-ok); border: 1px solid var(--m-ink); border-radius: 50%; }
+#menu .mode-dd .mode { width: 56px; padding-left: 0; padding-right: 0; text-align: center; box-sizing: border-box; }
+
+/* The list: a dark plate that opens over the scene (above or below the button, wherever there is room), never in the top layer. */
+#menu .mode-list {
+  position: absolute; left: -6px; top: calc(100% + 8px); z-index: 40; width: 600px; max-width: calc(100vw / var(--ui, 1) - 60px); margin: 0; padding: 6px; list-style: none;
+  overflow-y: auto; overscroll-behavior: contain; display: grid; gap: 2px; box-sizing: border-box;
+  background: linear-gradient(#3d4450 0 6px, #23272e 6px); border: 2px solid var(--m-ink); border-radius: 7px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.1), 0 5px 0 0 var(--m-lip), 0 5px 0 2px var(--m-ink), 8px 13px 0 0 var(--m-shadow);
+  animation: mdd-in 0.12s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+#menu .mode-list[hidden] { display: none; }
+#menu .mode-list[data-place="up"] { top: auto; bottom: calc(100% + 8px); }
+/* Beside the card (no room above or below): positioned against the card itself, its foot level with the card's. */
+#menu .mode-pick:has(.mode-list[data-place="side"]) .mode-dd { position: static; }
+#menu .mode-list[data-place="side"] { top: auto; bottom: 0; left: calc(100% + 14px); width: min(560px, calc(100vw / var(--ui, 1) - 100% - 70px - var(--sl) - var(--sr))); }
+#menu .mode-list:focus { outline: none; }
+#menu .mode-list:focus-visible { outline: 3px solid var(--m-accent-text); outline-offset: 3px; }
+@keyframes mdd-in { from { transform: translateY(4px); opacity: 0; } to { transform: none; opacity: 1; } }
+#menu .mdd-opt {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 54px; box-sizing: border-box;
+  padding: 7px 12px 7px 10px; border-radius: 5px; cursor: pointer; border: 2px solid transparent; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+#menu .mdd-opt .mdd-name { font-size: 19px; }
+#menu .mdd-opt.active { background: #3d4450; border-color: var(--m-ink); }
+#menu .mode-list:focus-visible .mdd-opt.active { border-color: var(--m-accent-text); }
+#menu .mdd-opt[aria-selected="true"] { box-shadow: inset 4px 0 0 var(--m-accent); }
+#menu .mdd-opt[aria-selected="true"] .mdd-name { color: var(--m-accent-text); }
+
+/* The pitch under the dropdown, and a squad's own controls (its room and invite link) when Zombies is picked. */
+#menu .mode-detail { margin: 0; padding: 0 2px; min-height: 2.7em; font: 500 15px/1.35 var(--text); color: var(--m-sub); }
+#menu .mode-pick .mode-grid { display: block; padding: 0; gap: 0; }
+#menu .mode-pick .mode-grid .mc-wrap { display: none; }
+#menu .mode-pick .mode-grid[data-pick="ZOM"] .mc-wrap:has(#squad-room) { display: block; }
+#menu .mode-pick .mode-grid .mc-wrap::before, #menu .mode-pick .mode-grid .mc-hit, #menu .mode-pick .mode-grid .mc-head,
+#menu .mode-pick .mode-grid .mc-pitch, #menu .mode-pick .mode-grid .mc-cta { display: none; }
+#menu .mode-pick .mode-grid .mode-card { background: none; border: 0; box-shadow: none; transform: none; cursor: default; }
+#menu .mode-pick .mode-grid .mc-plate { padding: 0; background: none; }
+#menu .mode-pick .mode-grid .mc-actions { margin: 0; gap: 8px; }
+
+/* Next: the orange plate. Its label and chevrons sit side by side, so they can never overlap at any size. */
+#menu button.mode-next {
+  display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 4px; padding: 13px 18px 12px;
+  font-size: 27px; letter-spacing: 0.14em; text-indent: 0;
+}
+#menu button.mode-next::after { display: none; }
+#menu .mode-next-label { white-space: nowrap; }
+#menu .mode-next-chev { flex: none; letter-spacing: -0.05em; opacity: 0.55; font-size: 1.15em; line-height: 0.8; transition: transform 0.18s, opacity 0.18s; }
+#menu button.mode-next:hover:not(:disabled) .mode-next-chev { transform: translateX(4px); opacity: 0.8; }
+/* Every other big orange button keeps its chevrons clear of its centred label. */
+#menu button.primary:not(.mode-next) { padding-left: 64px; padding-right: 64px; }
 
 /* ---- Bottom bar: What's new · Discord · Give feedback · Look up a player · Privacy. */
 #menu .menu-footer { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 0; }
@@ -106,36 +213,46 @@
 .profile-settings { display: inline-block; margin-top: 10px; font: 700 var(--t-label) var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); text-decoration: none; }
 .profile-settings:hover { color: var(--text, #ece6d6); }
 
-/* ---- Narrower screens: the picker sits over the card; the guest's pitch drops out (the enlist plate below says it in full). */
-@media (max-width: 1240px) { #menu .top-pitch { display: none; } }
+/* ---- Narrow screens: the card spans the width, the guest's strip wraps to two rows. */
 @media (max-width: 860px) {
-  #menu .mode-pick-row { grid-template-columns: minmax(0, 1fr); gap: 22px; }
-  #menu .mode-pick { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 14px; }
-  #menu .mode-pick-label, #menu .mode-detail { grid-column: 1 / -1; }
-  #menu .mode-pick-actions { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-  #menu .mode-grid.picking .mc-name { font-size: 30px; }
-  #menu .top-link { font-size: 14px; }
-}
-/* A phone on its side: picker and card side by side and short, so Play shows on the first screen. */
-@media (max-height: 520px) and (min-width: 600px) {
-  #menu #step-modes .step-head { display: none; }
-  #menu .mode-pick-row { grid-template-columns: minmax(220px, 290px) minmax(0, 1fr); gap: 18px; padding: 2px 4px 16px; }
-  #menu .mode-pick { display: flex; gap: 7px; padding: 10px 12px 12px; }
-  #menu .mode-pick-label { font-size: 12px; }
-  #menu .mode-select { min-height: 42px; font-size: 17px; }
-  #menu .mode-detail { display: none; }
-  #menu .mode-pick-actions { gap: 12px; }
-  #menu button.mode-play { font-size: 22px; padding: 8px 12px 7px; }
-  #menu .mode-gear { font-size: 13px; }
-  #menu .mode-grid.picking .mc-plate, #menu .mode-grid.picking .range-pitch { padding: 12px 16px; gap: 8px; }
-  #menu .mode-grid.picking .mc-name { font-size: 26px; }
-  #menu .mode-grid.picking .mc-pitch { display: block; font-size: 14px; }
-  #menu .menu-auth { gap: 8px; }
-  #menu .top-register { padding: 7px 12px; font-size: 15px; }
-  #menu .top-me { padding: 4px 8px 5px; gap: 4px; }
-  #menu .top-me-name { font-size: 15px; }
+  #menu .enlist[data-form="closed"] .enlist-plate { grid-template-columns: auto minmax(0, 1fr) auto; }
+  #menu .enlist[data-form="closed"] .enlist-body { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; }
 }
 @media (max-width: 640px) {
-  #menu .menu-auth .top-link { display: none; }
+  #menu .mode-pick { width: 100%; }
   #menu .menu-footer .foot-item + .foot-item::before { margin: 0 8px; }
+}
+/* A phone on its side: a shorter bar and card, the guest's strip in one line with no benefits, and slimmer options (the list opens
+ * beside the card there, over the empty scene, since it fits neither above nor below). */
+@media (max-height: 520px) and (min-width: 600px) {
+  #menu { --top-h: 38px; }
+  #menu .menu-top { grid-template-columns: auto minmax(0, 1fr) auto; }
+  #menu .menu-tabs { grid-column: auto; grid-row: auto; justify-content: center; }
+  #menu .menu-tabs button { flex: none; }
+  #menu .top-pitch { display: none; }
+  #menu .menu-auth .top-btn { padding: 0 12px; font-size: 14px; }
+  #menu .menu-auth .top-me { gap: 3px; padding: 0 9px; }
+  #menu .top-me-name { font-size: 14px; }
+  #menu .top-me .acct-lv { font-size: 12px; }
+  #menu .menu-tabs button { font-size: 14px; }
+  #menu .step-modes:not([hidden]) { gap: 10px; }
+  #menu .menu-footer { padding-top: 10px; }
+  #menu .enlist[data-form="closed"] .enlist-plate { grid-template-columns: auto auto auto auto; padding: 5px 12px 6px 10px; gap: 4px 14px; }
+  #menu .enlist[data-form="closed"] .enlist-sub, #menu .enlist[data-form="closed"] .enlist-perks { display: none; }
+  #menu .enlist[data-form="closed"] .enlist-title { font-size: 19px; }
+  #menu .enlist[data-form="closed"] .enlist-tag { width: 24px; }
+  #menu .enlist[data-form="closed"] .enlist-body { grid-column: auto; grid-template-columns: auto; }
+  #menu .mode-pick .steps { display: none; }
+  #menu .enlist[data-form="closed"] .enlist-go { padding: 7px 12px 6px !important; font-size: 14px; }
+  #menu .enlist[data-form="closed"] .enlist-alt { font-size: 13px; }
+  #menu .mode-pick { width: 340px; gap: 7px; padding: 8px 12px 14px; }
+  #menu .mode-pick-title { font-size: 19px; }
+  #menu .mode-trigger { min-height: 44px; }
+  #menu .mdd-name { font-size: 19px; }
+  #menu .mode-detail { min-height: 0; font-size: 13px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #menu button.mode-next { font-size: 21px; padding: 8px 14px 7px; --lip: 6px; }
+  #menu .mdd-opt { min-height: 42px; padding: 3px 10px 3px 8px; gap: 10px; }
+  #menu .mdd-opt .mdd-text { gap: 2px; }
+  #menu .mdd-opt .mdd-name { font-size: 17px; }
+  #menu .mdd-pitch { font-size: 12.5px; }
 }

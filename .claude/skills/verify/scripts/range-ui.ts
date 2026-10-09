@@ -75,17 +75,26 @@ async function goTo(x: number, y: number, tol = 14) {
 // ---- the menu card
 await cdp('Page.navigate', { url: `${BASE}/?dev` });
 await serversListed(page, 8000);
-check(!!(await js(`!!document.querySelector('#range-card #range-start')`)), 'the menu has a Shooting range card with a button');
-check((await js(`document.querySelector('#range-card .range-title b')?.textContent`)) === 'Shooting range', 'the card is titled');
+check(!!(await js(`!!document.getElementById('mode-opt-rng')`)), 'the mode dropdown offers the Shooting range');
+check((await js(`document.querySelector('#mode-opt-rng .mdd-name')?.textContent`)) === 'Shooting range', 'the option is titled');
 check(!(await js(`[...document.querySelectorAll('#servers .server')].some((s) => s.textContent.includes('RNG'))`)), 'ranges stay off the public server list');
-await js(`document.getElementById('range-card').scrollIntoView({ block: 'center' })`);
-await sleep(500);
+/** A real mouse press and release on an element's centre. */
+const press = async (sel: string) => {
+  const at = await js(`(() => { const b = document.querySelector('${sel}'); if (!b || !b.getClientRects().length) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+  if (!at) return false;
+  await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: at[0], y: at[1], button: 'left', clickCount: 1 });
+  await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at[0], y: at[1], button: 'left', clickCount: 1 });
+  return true;
+};
+check(await press('#mode-trigger'), 'the mode dropdown opens');
+await sleep(300);
+check(await press('#mode-opt-rng'), 'the range is picked');
+await sleep(300);
+check((await js(`document.querySelector('#mode-next .mode-next-label')?.textContent`)) === 'Open the range', 'the card offers to open the range');
 await shot('01-menu-card');
 
 // ---- into the range
-const [bx, by] = await js(`(() => { const b = document.getElementById('range-start'); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
-await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: bx, y: by, button: 'left', clickCount: 1 });
-await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: bx, y: by, button: 'left', clickCount: 1 });
+check(await press('#mode-next'), 'Open the range is pressed');
 for (let i = 0; i < 100 && !(full?.targets && me()); i++) await sleep(100);
 check(!!full?.targets && full.targets.length === MAPS.range.range!.targets.length, `joined a range with ${full?.targets?.length ?? 0} targets`);
 check(full?.match.mode === 'RNG', 'the room is mode RNG');

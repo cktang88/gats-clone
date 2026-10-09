@@ -126,16 +126,10 @@ const playBtn = $<HTMLButtonElement>('play');
 const nameInput = $<HTMLInputElement>('name');
 const serversEl = $('servers');
 const squadEl = $('squad');
-/** The mode dropdown over the cards: Play deploys into the picked mode at once, Gear up goes to the loadout step first. */
+/** The mode card: first a mode, then Next goes on to its loadout step, whose Deploy joins the match (the range opens at once). */
 const roomFor = (mode: SceneId) => servers?.find((x) => x.mode === mode) ?? null;
 const modePicker = mountModePicker($('mode-grid'), {
-  play: (mode) => {
-    if (mode === 'RNG') { void startRange(); return; }
-    if (mode === 'ZOM') chooseZombies();
-    else { const sv = roomFor(mode); if (!sv) return; chooseRoom(sv.id, sv.mode); }
-    $<HTMLFormElement>('play-form').requestSubmit();
-  },
-  gear: (mode) => {
+  next: (mode) => {
     if (mode === 'RNG') { void startRange(); return; }
     if (mode === 'ZOM') chooseZombies();
     else { const sv = roomFor(mode); if (sv) chooseRoom(sv.id, sv.mode); }

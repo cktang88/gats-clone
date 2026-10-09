@@ -74,37 +74,34 @@
       </aside>
       <div id="deploy-panel" class="deploy">
         <p id="menu-status" class="status menu-status" role="status"></p>
-        <ol class="steps" aria-label="Deploy steps">
-          <li><button id="crumb-modes" type="button" class="crumb" aria-current="step"><b>1</b> Mode</button></li>
-          <li><button id="crumb-gear" type="button" class="crumb" disabled><b>2</b> Gear up</button></li>
-        </ol>
         <section id="step-modes" class="step step-modes" aria-labelledby="modes-title">
-          <div class="step-head">
-            <h2 id="modes-title" class="step-title">Choose your fight</h2>
-            <p class="step-sub">Pick a mode. You gear up next.</p>
-          </div>
           <section id="enlist" class="enlist" hidden></section>
-          <div class="mode-pick-row">
           <div id="mode-pick" class="mode-pick plate">
-            <label class="mode-pick-label" for="mode-select">Mode</label>
-            <select id="mode-select" class="mode-select"></select>
-            <p id="mode-detail" class="mode-detail" aria-live="polite"></p>
-            <div class="mode-pick-actions">
-              <button id="mode-play" type="button" class="primary mode-play">Play</button>
-              <button id="mode-gear" type="button" class="link mode-gear">Gear up first &#8250;</button>
+            <header class="mode-pick-head">
+              <h2 id="modes-title" class="mode-pick-title">Choose your fight</h2>
+              <ol class="steps" aria-label="Deploy steps">
+                <li><button id="crumb-modes" type="button" class="crumb" aria-current="step"><b>1</b> Mode</button></li>
+                <li><button id="crumb-gear" type="button" class="crumb" disabled><b>2</b> Loadout</button></li>
+              </ol>
+            </header>
+            <span id="mode-label" class="mode-pick-label">Mode</span>
+            <div class="mode-dd">
+              <button id="mode-trigger" type="button" class="mode-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="mode-list" aria-labelledby="mode-label mode-trigger"></button>
+              <ul id="mode-list" class="mode-list" role="listbox" tabindex="-1" aria-labelledby="mode-label" hidden></ul>
             </div>
-          </div>
-          <div id="mode-grid" class="mode-grid">
-            <div id="servers" class="servers"></div>
-            <div class="mc-wrap"><div id="squad" class="squad mode-card plate mc-zom"></div></div>
-            <div class="mc-wrap"><div id="range-card" class="range-card mode-card plate mc-rng"></div></div>
-          </div>
+            <p id="mode-detail" class="mode-detail" aria-live="polite"></p>
+            <div id="mode-grid" class="mode-grid">
+              <div id="servers" class="servers"></div>
+              <div class="mc-wrap"><div id="squad" class="squad mode-card plate mc-zom"></div></div>
+              <div class="mc-wrap"><div id="range-card" class="range-card mode-card plate mc-rng"></div></div>
+            </div>
+            <button id="mode-next" type="button" class="primary mode-next"><span class="mode-next-label">Next: Loadout</span><span class="mode-next-chev" aria-hidden="true">&#8250;&#8250;&#8250;</span></button>
           </div>
         </section>
         <form id="play-form" class="step step-gear" hidden aria-labelledby="gear-title">
           <div class="step-head gear-head">
             <button id="gear-back" type="button" class="back-btn" aria-label="Back to modes"><span aria-hidden="true">&#8249;</span> Modes</button>
-            <h2 id="gear-title" class="step-title">Gear up</h2>
+            <h2 id="gear-title" class="step-title">Loadout</h2>
             <div id="mission" class="mission" aria-live="polite"></div>
           </div>
           <div class="gear-grid">

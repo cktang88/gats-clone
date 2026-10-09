@@ -45,7 +45,7 @@ export function createMenuFlow(d: Deps) {
     if (opts.focus === false) return;
     requestAnimationFrame(() => {
       if (next === 'gear') (gear.querySelector<HTMLElement>('.weapon[aria-pressed="true"]') ?? gear.querySelector<HTMLElement>('button'))?.focus({ preventScroll: true });
-      else (lastCard && lastCard.isConnected && lastCard.getClientRects().length ? (lastCard.matches('button') ? lastCard : lastCard.querySelector<HTMLElement>('.mc-hit')) : modes.querySelector<HTMLElement>('#mode-select') ?? modes.querySelector<HTMLElement>('.server'))?.focus({ preventScroll: true });
+      else (lastCard && lastCard.isConnected && lastCard.getClientRects().length ? (lastCard.matches('button') ? lastCard : lastCard.querySelector<HTMLElement>('.mc-hit')) : modes.querySelector<HTMLElement>('#mode-trigger') ?? modes.querySelector<HTMLElement>('.server'))?.focus({ preventScroll: true });
     });
   }
 

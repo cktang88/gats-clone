@@ -103,9 +103,9 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('menu lists four rooms', (await js(`[...document.querySelectorAll('#servers .server')].map(b => b.textContent).join('|')`)).match(/FFA|TDM|DOM|BR/g)?.length === 4);
     // A guest sees the enlist plate on the first screen, with its benefits and both ways in, and the mode cards still in view under it.
     if (!(await js(`localStorage.getItem('skirmish.account')`))) {
-      const plate = await js(`(() => { const e = document.getElementById('enlist'), r = e.getBoundingClientRect(), card = document.querySelector('#servers .server').getBoundingClientRect(); return { shown: !e.hidden && r.height > 0, perks: e.querySelectorAll('.enlist-perks li').length, create: !!document.getElementById('enlist-create'), login: !!document.getElementById('enlist-login'), cardTop: Math.round(card.top), vh: innerHeight }; })()`);
+      const plate = await js(`(() => { const e = document.getElementById('enlist'), r = e.getBoundingClientRect(), card = document.getElementById('mode-pick').getBoundingClientRect(); return { shown: !e.hidden && r.height > 0, perks: e.querySelectorAll('.enlist-perks li').length, create: !!document.getElementById('enlist-create'), login: !!document.getElementById('enlist-login'), cardTop: Math.round(card.top), cardBottom: Math.round(card.bottom), vh: innerHeight }; })()`);
       expect('signed out: the enlist plate shows on the first screen with its benefits, Create account and Log in', plate.shown && plate.perks >= 3 && plate.create && plate.login, JSON.stringify(plate));
-      expect('signed out: the first mode card still starts inside the first screen', plate.cardTop < plate.vh, `card top ${plate.cardTop} viewport ${plate.vh}`);
+      expect('signed out: the mode card still fits the first screen under it', plate.cardBottom <= plate.vh, `card ${plate.cardTop}-${plate.cardBottom} viewport ${plate.vh}`);
     }
     await cdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 2, mobile: true });
     await sleep(300);
@@ -113,7 +113,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await shot('menu-phone');
     if (!(await js(`localStorage.getItem('skirmish.account')`))) expect('the enlist plate fits the phone without a horizontal scroll', await js(`(() => { const r = document.getElementById('enlist').getBoundingClientRect(); return r.right <= innerWidth && r.left >= 0; })()`));
     // Step one lists the rooms as mode cards; picking one goes on to the gear-up step, where Deploy waits (sticky, always in view).
-    await js(`document.querySelector('#servers .server').click()`);
+    await js(`document.getElementById('mode-next').click()`);
     await sleep(300);
     expect('picking a mode card opens the gear-up step', await js(`!document.getElementById('play-form').hidden && document.getElementById('step-modes').hidden`));
     expect('gear-up has no horizontal scroll at 375px', await js(`document.documentElement.scrollWidth <= innerWidth`));
@@ -127,7 +127,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await shot('menu-desktop');
     await js(`document.getElementById('gear-back').click()`);
     expect('Back returns to the mode cards', await js(`document.getElementById('play-form').hidden && !document.getElementById('step-modes').hidden`));
-    await js(`document.querySelector('#servers .server').click()`);
+    await js(`document.getElementById('mode-next').click()`);
   },
   async account() {
     // Register through the first screen's enlist plate: Create account opens the form inline, without leaving the mode cards.
@@ -141,7 +141,7 @@ const STEPS: Record<string, () => Promise<void>> = {
     await shot('enlist-form-error');
     await js(`(() => { document.getElementById('enlist-pass').value = 'verify-pass'; document.getElementById('enlist-submit').click(); })()`);
     expect('UI shows signed-in name', await until(async () => (await js(`document.getElementById('account').textContent`)).includes(`Signed in as ${NAME}`)));
-    expect('signed in: the enlist plate folds away and the top bar chip shows the name', await until(async () => js(`document.getElementById('enlist').hidden && document.getElementById('acct-name').textContent === '${NAME}'`)));
+    expect('signed in: the enlist plate folds away and the top bar shows the name', await until(async () => js(`document.getElementById('enlist').hidden && document.querySelector('#top-me .top-me-name')?.textContent === '${NAME}'`)));
     if (onGear) await js(`document.querySelector('#servers .server').click()`);
     expect('token stored in localStorage', !!(await js(`localStorage.getItem('skirmish.token')`)));
     const stats = await fetch(`${BASE}/api/stats/${NAME}`);
