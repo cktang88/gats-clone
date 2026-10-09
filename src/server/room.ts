@@ -31,7 +31,7 @@ const CHAT_INTERVAL_MS = 1000;
 const RTT_SAMPLES = 5;
 /**
  * A side short of humans gets this many bots for each one it lacks: one, now that people and bots carry the same health (a bot's hits
- * count 0.8 on a human, `BOT_DAMAGE_TO_HUMAN`), so a bot fills a missing human's seat one for one.
+ * count 0.75 on a human, `BOT_DAMAGE_TO_HUMAN`), so a bot fills a missing human's seat one for one.
  * It was 3 when humans carried triple health (24 seeded TDM rounds with bot-driven humans then put 1v0, 2v0, 0v2, 3v0 and 2v1 each between a
  * third and two thirds of wins).
  */

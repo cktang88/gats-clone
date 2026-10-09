@@ -55,7 +55,7 @@ test('a bot and a person with the same loadout, perks, spot and inputs get the s
   }
 });
 
-test('the one rule between them: a bot\'s damage to a person counts 0.8, every other pairing full', () => {
+test('the one rule between them: a bot\'s damage to a person counts 0.75, every other pairing full', () => {
   const on = (shooter: PlayerKind, victim: PlayerKind) => trace(shooter, 'assault', victim).dealt;
   const base = on('bot', 'bot');
   assert.ok(base > 0);
