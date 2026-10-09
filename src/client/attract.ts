@@ -16,7 +16,10 @@ import { holdForAttract, processFrame, skipFrame } from './postfx.ts';
 import { NO_PREDICTION } from './predict.ts';
 import { effectivePreset, probing } from './qualityrt.ts';
 import type { PresetId } from './quality.ts';
-import { nightAmount } from './render.ts';
+import { mapWallsKey, nightAmount } from './render.ts';
+import { createGroundAhead } from './groundahead.ts';
+import type { GroundPrep } from './tilt.ts';
+import { settings } from './settings.ts';
 import { frameAt, serverMs } from './replaybuf.ts';
 import { advanceStage, createStage, drawStage, type Stage } from './replaystage.ts';
 import { dilatedView, intensityAt, speedAt, SLOWMO } from './slowmo.ts';
@@ -34,7 +37,11 @@ import type { Session } from './state.ts';
  * - It draws at most `fps` frames a second at a fraction of the screen's resolution (`attractTier`), and asks the worker for ticks
  *   only as far as it will draw, so it does nothing while the tab is hidden. A hidden tab pauses it; a match (or any stop with the
  *   menu gone) ends it: the worker is terminated, the map's art caches let go and the canvas handed back at full size.
- * - Reduced motion gets one still frame of the match and nothing after it.
+ * - A map's ground layer (tilt.ts: the floor, occlusion and shadows, baked once per map) is baked ahead, the next map's while
+ *   this one plays: in a worker on an OffscreenCanvas where the browser has one, else on the page a few ms a frame
+ *   (groundahead.ts), so a map change never stops the menu for a bake; the next map fades in only once its ground is whole.
+ * - Reduced motion from the system keeps the match playing under a camera that only eases slowly after the fight (no drift,
+ *   breathing, slow motion or zoom); the game's own Motion setting at Reduced gets one still frame and nothing after it.
  */
 
 export const ATTRACT_MAPS: readonly MapId[] = ['market', 'causeway', 'plaza', 'museum', 'oldtown', 'subpen'];
@@ -46,7 +53,7 @@ export const SHOW = {
    * How much of a day map shows through: the rest is a dark veil, so the menu's plates stay readable over it. A night map is dark
    * already, and its lamps are the show, so the veil lifts by `nightLift` of itself there.
    */
-  opacity: 0.6, nightLift: 0.6,
+  opacity: 0.7, nightLift: 0.6,
   /** The menu's own vignette is eased while the world shows, so the edges, where the plates leave the world bare, are not lost. */
   vignette: 0.4,
   /** How far ahead of what is drawn the match is asked to run (a kill must be known before the clock reaches it, to slow for it). */
@@ -63,8 +70,22 @@ export const SHOW = {
   slow: { ...SLOWMO, rate: 0.22, rampInMs: 160, durationMs: 1900, rampOutMs: 420 },
   /** Start slowing this long (drawn ms) before the kill, so the shot is already in the air when time slows. */
   slowLeadMs: 260,
-  /** The share of the main thread the backdrop may take, how many frames in a row over it count, and the steps down before a still. */
-  budget: 0.3, overFrames: 40, minFps: 15, minScale: 0.38,
+  /**
+   * The governor: the share of the main thread the backdrop may take; how many drawn frames its cost is judged over (the median,
+   * so one dear frame, a map's first, never counts); how many frames in a row over it count; how many frames after a map change
+   * (or the reveal) are not judged at all, while the map's art is first drawn; and the steps down before a still.
+   */
+  budget: 0.3, window: 31, overFrames: 40, settleFrames: 20, minFps: 15, minScale: 0.38,
+  /** A step back up needs the frames to fit this share of the budget there, so it never steps straight back down. */
+  upShare: 0.6,
+  /** How long (real ms) a frame may spend baking the ground ahead, and how long before a map change the next map's starts. */
+  bakeMs: 4, prebakeMs: 26_000,
+  /** The longest a map plays on past `mapMs` waiting for the next map's ground. */
+  holdMs: 30_000,
+  /** How often (ms) the camera re-reads where the menu's card sits, to frame the fight clear of it. */
+  frameEveryMs: 1000,
+  /** Under the system's reduced motion the camera eases after its subject this many times slower. */
+  gentleEase: 3,
 } as const;
 
 export type AttractTier = { on: boolean; why: string; /** Canvas pixels per CSS pixel. */ scale: number; fps: number; bots: number };
@@ -110,6 +131,42 @@ export function veilFor(night: number, fade: number): number {
 }
 type Doc = { readonly hidden: boolean; addEventListener(t: 'visibilitychange', f: () => void): void; removeEventListener(t: 'visibilitychange', f: () => void): void };
 
+/** How much motion the backdrop may show: all of it; a live match under a slow camera (the system asks for less); one still. */
+export type MotionLevel = 'full' | 'gentle' | 'still';
+/** The system's reduced motion keeps a gently moving match; only the game's own Motion setting at Reduced asks for a still. */
+export const motionLevel = (reduced: boolean, setting: string): MotionLevel => (!reduced ? 'full' : setting === 'on' ? 'still' : 'gentle');
+
+/** The governor's verdict on recent frames: their median cost (ms) times the frame rate, against the budget's share of a second. */
+export function overBudget(costs: readonly number[], fps: number, budget = SHOW.budget): boolean {
+  if (!costs.length) return false;
+  const sorted = [...costs].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)]! * fps > 1000 * budget;
+}
+
+/** Whether the median frame of `costs`, scaled down to the lowest rate and resolution the governor steps to, would still take more than half again the budget. */
+export function hopeless(costs: readonly number[], tier: Pick<AttractTier, 'fps' | 'scale'>): boolean {
+  if (!costs.length || tier.scale <= 0) return false;
+  const sorted = [...costs].sort((a, b) => a - b);
+  const at = (Math.min(tier.scale, SHOW.minScale) / tier.scale) ** 2;
+  return sorted[Math.floor(sorted.length / 2)]! * at * Math.min(tier.fps, SHOW.minFps) > 1000 * SHOW.budget * 1.5;
+}
+
+/**
+ * Where the camera should put its subject, as fractions of the view: midway across the bare world right of the menu's mode card
+ * (the card sits bottom left; the plates above it are short), a little below the middle. With no card in sight, the middle.
+ */
+export function menuFraming(menu: { querySelector(s: string): unknown }, view: View): { x: number; y: number } {
+  const card = menu.querySelector('#mode-pick') as { getBoundingClientRect?: () => { left: number; right: number; width: number; height: number } } | null;
+  const r = card?.getBoundingClientRect?.();
+  if (!r || r.width <= 0 || r.height <= 0 || view.w <= 0) return { x: 0.5, y: 0.5 };
+  return framingRightOf(r.right, view);
+}
+/** The framing for a card whose right edge is at `right` px: centre-right, never past 70% across, the middle when the card is wide. */
+export const framingRightOf = (right: number, view: Pick<View, 'w'>): { x: number; y: number } => {
+  const x = (right + view.w) / 2 / view.w;
+  return right > view.w * 0.75 ? { x: 0.5, y: 0.5 } : { x: Math.min(0.7, Math.max(0.5, x)), y: 0.54 };
+};
+
 export type AttractDeps = {
   /** The game canvas (under the menu) and its context. */
   canvas: HTMLCanvasElement;
@@ -126,8 +183,14 @@ export type AttractDeps = {
   spawn?: () => WorkerLike | null;
   paint?: (a: PaintArgs) => void;
   seed?: () => number;
-  /** The clock the governor times each drawn frame with. */
+  /** The clock the governor times each drawn frame with, and the ground bake its slices. */
   clock?: () => number;
+  /** Where to frame the subject (fractions of the view); by default right of the menu's mode card (`menuFraming`). */
+  framing?: (menu: HTMLElement, view: View) => { x: number; y: number };
+  /** How much motion to show; by default from `calm` and the game's Motion setting (`motionLevel`). */
+  motion?: () => MotionLevel;
+  /** Starts a map's ground baking ahead (groundahead.ts: in a worker, else on the page in slices). */
+  prepare?: (w: AttractWorld) => GroundPrep;
   doc?: Doc;
   later?: (f: () => void, ms: number) => unknown;
   cancel?: (h: unknown) => void;
@@ -185,6 +248,10 @@ export function createAttract(d: AttractDeps) {
   const paint = d.paint ?? ((a: PaintArgs) => paintFrame(d.canvas, d.ctx, a));
   const seedOf = d.seed ?? (() => (Math.random() * 0x7fffffff) | 0);
   const clock = d.clock ?? (() => performance.now());
+  const motion = d.motion ?? (() => motionLevel(d.calm(), settings().motion));
+  // The ground bakes in a worker where it can (groundahead.ts), else on the page a slice a frame.
+  const ahead = d.prepare ? null : createGroundAhead();
+  const prepare = d.prepare ?? ahead!.prepare;
 
   let phase: AttractPhase = 'off';
   let tier: AttractTier = { on: false, why: '', scale: 0, fps: 0, bots: 0 };
@@ -202,28 +269,99 @@ export function createAttract(d: AttractDeps) {
   let at = 0, vnow = 0, lastReal: number | null = null, lastDraw = -Infinity;
   let mapFrom = 0;
   let cam: { x: number; y: number; r: number } | null = null;
+  let lastFocus: Focus | null = null;
+  /** Where on screen (fractions of the view) the camera puts its subject, measured from the menu now and then. */
+  let framed = { x: 0.5, y: 0.5 }, framedAt = -Infinity, framedFor = '';
+  const framing = (view: View, now: number) => {
+    const key = `${view.w}x${view.h}`;
+    if (now - framedAt < SHOW.frameEveryMs && key === framedFor) return framed;
+    framedAt = now; framedFor = key;
+    framed = (d.framing ?? menuFraming)(d.menu, view);
+    return framed;
+  };
   let slow: { at: number; mark: Mark } | null = null;
   /** The veil's fade: in from dark after a map change, out to dark before one. */
   let fade: { kind: 'in' | 'out'; at: number } | null = null;
   let shown = false, still = false, stillKey = '', waitingIn = false;
   let draws = 0, slows = 0, maps = 0;
-  /** The governor: the drawing's average main-thread cost, how many frames in a row it ran over budget, and how often it stepped down. */
-  let cost = 0, over = 0, steps = 0, governed = true;
+  /**
+   * The governor: the drawn frames' recent costs (the median is judged), the drawing's average cost (for the probe), how many
+   * frames in a row ran over budget, how many more frames go unjudged, and how often it stepped down.
+   */
+  let costs: number[] = [], cost = 0, over = 0, settle = SHOW.settleFrames, steps = 0, ups = 0, governed = true;
+  /** The device's own tier, which a step down can come back up to. */
+  let full: AttractTier = tier;
+  /** The ground being baked ahead: for which map and walls, and the bake. */
+  let bake: { map: MapId; walls: string; job: GroundPrep } | null = null;
+  /** The next map's world, asked for ahead (`peek`) so its ground can bake while this map plays. */
+  let peeked = false;
+  let painted = false, bakeSlices = 0, bakeMaxMs = 0;
 
   /**
    * Keeps the backdrop to `SHOW.budget` of the main thread, so the menu always answers at once: frames that stay too dear first draw
-   * less often, then at a lower resolution, and then the backdrop settles on a still frame. True when it should settle now.
+   * less often, then at a lower resolution, and then the backdrop settles on a still frame. True when it should settle now. It
+   * judges the median of the last `window` frames, and none of the first `settleFrames` after a map change, so the one-off cost
+   * of a map's first frames (its walls' sprites, lights) never reads as a device too slow for the film.
    */
   function govern(ms: number): boolean {
     cost = cost === 0 ? ms : cost * 0.9 + ms * 0.1;
-    if (!governed || draws < 8) return false;
-    over = cost * tier.fps > 1000 * SHOW.budget ? over + 1 : 0;
+    if (!governed) return false;
+    if (settle > 0) { settle--; return false; }
+    costs.push(ms);
+    if (costs.length > SHOW.window) costs.shift();
+    if (costs.length < Math.min(SHOW.window, 8)) return false;
+    // A device the film is hopeless on (even at the lowest rate and resolution it would take half again its share) settles at once,
+    // rather than drawing seconds more of frames that hold the menu up.
+    if (costs.length >= SHOW.window && hopeless(costs, tier)) { steps++; return true; }
+    // A step down is not for good: a full window of frames that would fit well within the budget one step up (a lighter map
+    // after a heavy one) steps back up, so one dear map never leaves the film slow and small.
+    if (steps > 0 && costs.length >= SHOW.window && canStepUp()) { costs = []; over = 0; return false; }
+    over = overBudget(costs, tier.fps) ? over + 1 : 0;
     if (over < SHOW.overFrames) return false;
     over = 0;
+    costs = [];
     steps++;
     if (tier.fps > SHOW.minFps) { tier = { ...tier, fps: SHOW.minFps }; return false; }
     if (tier.scale > SHOW.minScale) { tier = { ...tier, scale: SHOW.minScale }; cost = 0; return false; }
     return true;
+  }
+  /** Steps back up one step (resolution first, then rate) if the median frame, scaled to it, would take under `SHOW.upShare` of the budget. */
+  function canStepUp(): boolean {
+    const sorted = [...costs].sort((a, b) => a - b), median = sorted[Math.floor(sorted.length / 2)]!;
+    const room = 1000 * SHOW.budget * SHOW.upShare;
+    if (tier.scale < full.scale) {
+      if (median * (full.scale / tier.scale) ** 2 * tier.fps >= room) return false;
+      tier = { ...tier, scale: full.scale };
+    } else if (tier.fps < full.fps) {
+      if (median * full.fps >= room) return false;
+      tier = { ...tier, fps: full.fps };
+    } else return false;
+    ups++;
+    return true;
+  }
+  /** A new map (or the reveal): its first frames go unjudged. */
+  const unsettle = () => { settle = SHOW.settleFrames; costs = []; over = 0; };
+
+  const wallsOf = (w: AttractWorld) => mapWallsKey(w.walls);
+  /** Starts baking `w`'s ground unless that very ground is baking already. */
+  function bakeFor(w: AttractWorld) {
+    const walls = wallsOf(w);
+    if (bake && bake.map === w.map && bake.walls === walls) return;
+    bake?.job.cancel();
+    bake = { map: w.map, walls, job: prepare(w) };
+  }
+  /** Whether `w`'s ground is baked whole (the renderer then takes it instead of baking it in one go). */
+  const groundReady = (w: AttractWorld | null) => !!w && !!bake && bake.map === w.map && bake.walls === wallsOf(w) && bake.job.done;
+  const nextMapId = () => ATTRACT_MAPS[((mapIx + 1) % ATTRACT_MAPS.length + ATTRACT_MAPS.length) % ATTRACT_MAPS.length]!;
+  const bootOpts = (ix: number) => ({ seed: (seed + ix * 7919) | 0, map: ATTRACT_MAPS[(ix % ATTRACT_MAPS.length + ATTRACT_MAPS.length) % ATTRACT_MAPS.length]!, bots: tier.bots, aspect: aspectNow() });
+  /** One slice of the ground bake, in a page frame the backdrop did not draw in (when it draws, it has had its share). */
+  function bakeSlice() {
+    if (!bake || bake.job.done || painted) return;
+    const t0 = clock();
+    bake.job.step(SHOW.bakeMs, clock);
+    const ms = clock() - t0;
+    bakeSlices++;
+    if (ms > bakeMaxMs) bakeMaxMs = ms;
   }
   let sizedFor: View | null = null;
 
@@ -248,9 +386,8 @@ export function createAttract(d: AttractDeps) {
   }
 
   function loadMap() {
-    const map = ATTRACT_MAPS[(mapIx % ATTRACT_MAPS.length + ATTRACT_MAPS.length) % ATTRACT_MAPS.length]!;
-    world = null; stage = null; clip = []; foci = []; marks = []; asked = 0; slow = null; cam = null;
-    worker?.postMessage({ t: 'boot', opts: { seed: (seed + mapIx * 7919) | 0, map, bots: tier.bots, aspect: aspectNow() } });
+    world = null; stage = null; clip = []; foci = []; marks = []; asked = 0; slow = null; cam = null; peeked = false;
+    worker?.postMessage({ t: 'boot', opts: bootOpts(mapIx) });
   }
 
   const aspectNow = () => (sizedFor ? viewAspect(sizedFor.w, sizedFor.h) : 16 / 9);
@@ -258,8 +395,14 @@ export function createAttract(d: AttractDeps) {
   function receive(m: FromWorker) {
     if (phase === 'off') return;
     if (m.t === 'error') { const was = shown; teardown(); if (was) d.fallback.start(); return; }
+    if (m.t === 'peeked') {
+      // The next map's walls, while this one plays: its ground starts baking now, a slice a frame.
+      if (m.world.map === nextMapId()) bakeFor(m.world);
+      return;
+    }
     if (m.t === 'world') {
       world = m.world;
+      bakeFor(world);
       if (phase === 'booting') phase = 'live';
       // The map's art caches belong to the map drawn: entering this one lets the last one's go.
       enterMap(world.map);
@@ -330,8 +473,11 @@ export function createAttract(d: AttractDeps) {
     worker?.terminate();
     worker = null;
     const hadWorld = world !== null || shown;
+    bake?.job.cancel();
+    bake = null; peeked = false;
+    ahead?.close();
     world = null; stage = null; clip = []; foci = []; marks = []; asked = 0; at = 0; cam = null; slow = null; fade = null; waitingIn = false;
-    still = false; stillKey = ''; cost = 0; over = 0; steps = 0;
+    still = false; stillKey = ''; cost = 0; over = 0; steps = 0; ups = 0; costs = []; settle = SHOW.settleFrames;
     unreveal();
     phase = 'off';
     if (hadWorld) {
@@ -354,13 +500,16 @@ export function createAttract(d: AttractDeps) {
     if (!stage || !clip.length || foci.length !== clip.length) return false;
     const newest = serverMs(clip[clip.length - 1]!);
     if (!shown) {
-      // Wait for a little lead in hand (and Auto's first timing) before the world replaces the diorama.
-      if (!ready() || newest - at < SHOW.leadMs * 0.5) return false;
+      // Wait for a little lead in hand, the map's ground baked (a slice a frame) and Auto's first timing before the world replaces the diorama.
+      if (!ready() || newest - at < SHOW.leadMs * 0.5 || !groundReady(world)) return false;
       // The diorama cross-fades straight to the world (menu.css's plates stay put over both).
       reveal();
+      unsettle();
       vnow = now;
     }
-    const calm = d.calm();
+    const level = motion();
+    // `calm`: one still frame. `gentle`: the match plays on, with no camera moves of the film's own.
+    const calm = level === 'still', gentle = level !== 'full';
     if (still && stillKey === `${view.w}x${view.h}`) return true;
     if (!calm && now - lastDraw < 1000 / tier.fps - 2) return true;
     const dt = lastReal === null ? 0 : Math.min(100, Math.max(0, now - lastReal));
@@ -369,7 +518,7 @@ export function createAttract(d: AttractDeps) {
 
     let speed = 1;
     while (marks.length && marks[0]!.at < at - 200) marks.shift();
-    if (!calm && !slow && marks.length && at >= marks[0]!.at - SHOW.slowLeadMs) { slow = { at: now, mark: marks.shift()! }; slows++; }
+    if (!gentle && !slow && marks.length && at >= marks[0]!.at - SHOW.slowLeadMs) { slow = { at: now, mark: marks.shift()! }; slows++; }
     if (slow) {
       const t = now - slow.at;
       speed = speedAt(t, SHOW.slow);
@@ -387,15 +536,23 @@ export function createAttract(d: AttractDeps) {
 
     // The camera: eased toward the director's subject, drifting a little and breathing in and out, drawn in on a slow-motion kill.
     const f = focusAt(foci, at) ?? { x: world!.worldSize / 2, y: world!.worldSize / 2, id: null };
-    const drift = calm ? { x: 0, y: 0 } : { x: SHOW.driftPx * Math.sin(vnow / 7300), y: SHOW.driftPx * 0.6 * Math.cos(vnow / 9100) };
-    const base = WORLD.viewRadius * SHOW.zoom * (1 + (calm ? 0 : SHOW.breathe * Math.sin(vnow / 11_000)));
+    const drift = gentle ? { x: 0, y: 0 } : { x: SHOW.driftPx * Math.sin(vnow / 7300), y: SHOW.driftPx * 0.6 * Math.cos(vnow / 9100) };
+    const base = WORLD.viewRadius * SHOW.zoom * (1 + (gentle ? 0 : SHOW.breathe * Math.sin(vnow / 11_000)));
     const intensity = slow ? intensityAt(now - slow.at, SHOW.slow) : 0;
-    const want = dilatedView({ x: f.x + drift.x, y: f.y + drift.y }, slow ? slow.mark : null, base, intensity, calm);
-    const k = cam === null || calm ? 1 : 1 - Math.exp(-dt / SHOW.easeMs);
+    const dv = dilatedView({ x: f.x + drift.x, y: f.y + drift.y }, slow ? slow.mark : null, base, intensity, gentle);
+    // The fight is framed where the menu leaves the world bare (right of the mode card), not under the card.
+    const fr = framing(view, now);
+    const sc = makeCamera(dv.center, view.w, view.h, dv.radius).scale;
+    const want = { center: { x: dv.center.x - ((fr.x - 0.5) * view.w) / sc, y: dv.center.y - ((fr.y - 0.5) * view.h) / sc }, radius: dv.radius };
+    lastFocus = f;
+    const k = cam === null || calm ? 1 : 1 - Math.exp(-dt / (SHOW.easeMs * (gentle ? SHOW.gentleEase : 1)));
     cam = cam === null ? { x: want.center.x, y: want.center.y, r: want.radius } : { x: cam.x + (want.center.x - cam.x) * k, y: cam.y + (want.center.y - cam.y) * k, r: cam.r + (want.radius - cam.r) * Math.max(k, intensity > 0 ? 0.25 : 0) };
 
-    // The next map: fade to dark, swap while dark, fade back in once its frames arrive.
-    if (!calm && !fade && at - mapFrom >= SHOW.mapMs) fade = { kind: 'out', at: now };
+    // The next map: its walls asked for ahead so its ground bakes while this one plays; then fade to dark once it is baked (or
+    // has been waited for long enough), swap while dark, and fade back in once its frames and ground are in hand.
+    if (!calm && !peeked && worker && at - mapFrom >= SHOW.mapMs - SHOW.prebakeMs) { peeked = true; worker.postMessage({ t: 'peek', opts: bootOpts(mapIx + 1) }); }
+    const nextBaked = !!bake && bake.map === nextMapId() && bake.job.done;
+    if (!calm && !fade && at - mapFrom >= SHOW.mapMs && (nextBaked || at - mapFrom >= SHOW.mapMs + SHOW.holdMs)) fade = { kind: 'out', at: now };
     let dark = 0;
     if (fade?.kind === 'in') { dark = 1 - Math.min(1, (now - fade.at) / SHOW.fadeInMs); if (dark <= 0) fade = null; }
     else if (fade?.kind === 'out') dark = Math.min(1, (now - fade.at) / SHOW.fadeOutMs);
@@ -406,6 +563,7 @@ export function createAttract(d: AttractDeps) {
     }
     const t0 = clock();
     paint({ stage, snap, cam: makeCamera({ x: cam.x, y: cam.y }, view.w, view.h, cam.r), scale: tier.scale, now: vnow, view, fade: dark });
+    painted = true;
     draws++;
     const settle = govern(clock() - t0);
 
@@ -416,6 +574,7 @@ export function createAttract(d: AttractDeps) {
       stillKey = `${view.w}x${view.h}`;
       worker?.terminate();
       worker = null;
+      ahead?.close();
     }
     return true;
   }
@@ -444,6 +603,7 @@ export function createAttract(d: AttractDeps) {
       if (phase !== 'off') { if (!shown) d.fallback.start(); return; }
       d.fallback.start();
       tier = (d.tier ?? deviceTier)();
+      full = tier;
       if (!tier.on) return;
       doc.addEventListener('visibilitychange', onVisible);
       seed = seedOf();
@@ -463,18 +623,24 @@ export function createAttract(d: AttractDeps) {
     frame(now: number, view: View): boolean {
       if (phase !== 'live' && phase !== 'booting') return false;
       if (doc.hidden) return shown;
-      if (waitingIn) {
-        if (!clip.length || foci.length !== clip.length) return shown;
-        waitingIn = false;
-        mapFrom = at;
-        fade = { kind: 'in', at: now };
+      painted = false;
+      try {
+        if (waitingIn) {
+          if (!clip.length || foci.length !== clip.length || !groundReady(world)) return shown;
+          waitingIn = false;
+          mapFrom = at;
+          fade = { kind: 'in', at: now };
+          unsettle();
+        }
+        return draw(now, view) || shown;
+      } finally {
+        bakeSlice();
       }
-      return draw(now, view) || shown;
     },
     get running() { return phase === 'live' || phase === 'booting'; },
     /** For the tests and the dev probe. */
     get state() {
-      return { phase, shown, still, ready: ready(), costMs: cost, steps, map: world?.map ?? null, tier, drawnMs: at, newestMs: clip.length ? serverMs(clip[clip.length - 1]!) : 0, frames: clip.length, asked, draws, slows, maps, slowing: slow !== null, worker: worker !== null, cam };
+      return { phase, shown, still, ready: ready(), costMs: cost, steps, ups, focus: lastFocus, framing: framed, motion: motion(), bake: bake && { map: bake.map, done: bake.job.done, via: (bake.job as { via?: string }).via ?? 'slices', workerMs: (bake.job as { workerMs?: number | null }).workerMs ?? null, slices: bakeSlices, maxMs: bakeMaxMs, last: bake.job.last }, map: world?.map ?? null, tier, drawnMs: at, newestMs: clip.length ? serverMs(clip[clip.length - 1]!) : 0, frames: clip.length, asked, draws, slows, maps, slowing: slow !== null, worker: worker !== null, cam };
     },
   };
   // The dev probe (`?dev`): the state, and the governor switched off so a capture in a software-rendered browser keeps the film running.

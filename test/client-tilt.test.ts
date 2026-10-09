@@ -121,3 +121,49 @@ test('Outpost keeps the look its shapes gave it: blocky walls sandstone, long wa
   assert.equal(kinds.get('150x50'), 'concrete');
   assert.equal(kinds.get('50x200'), 'concrete');
 });
+
+test('a static map\'s ground baked ahead in slices is taken whole by the cache, which then bakes nothing itself', async () => {
+  const { prepareGround, mapSolids, groundLayerSide } = await import('../src/client/tilt.ts');
+  const { floorPlanOf } = await import('../src/client/floor.ts');
+  const made: { width: number; height: number }[] = [];
+  const g = globalThis as Record<string, unknown>;
+  const had = g.document;
+  // Canvases that count themselves, with a context whose every call costs the clock a little and whose flush costs a lot.
+  let t = 0;
+  const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      if (prop === 'getTransform') return () => ({ a: 0.5, b: 0, c: 0, d: 0.5, e: 60, f: 60 });
+      if (prop === 'measureText') return () => ({ width: 10 });
+      if (prop === 'getImageData') return () => { t += 1; return { data: new Uint8ClampedArray(4) }; };
+      if (typeof prop === 'string' && prop.startsWith('create')) return () => ({ addColorStop() {}, setTransform() {} });
+      return () => { t += 0.0002; };
+    },
+    set(target, prop, value) { target[prop] = value; return true; },
+  });
+  g.document = { createElement: () => { const c = { width: 0, height: 0, getContext: () => ctx }; made.push(c); return c; } };
+  const hadPath = g.Path2D;
+  g.Path2D = class { rect() {} };
+  try {
+    const walls = MAPS.oldtown.walls.map((w) => ({ ...w, built: false as const, material: 'concrete' as const }));
+    const size = MAPS.oldtown.size;
+    const prep = prepareGround(size, mapSolids(size, walls), floorPlanOf('oldtown'));
+    let slices = 0, worst = 0;
+    while (!prep.done && slices < 100_000) { const t0 = t; prep.step(4, () => t); worst = Math.max(worst, t - t0); slices++; }
+    assert.equal(prep.done, true, `the bake finishes (${slices} slices)`);
+    assert.ok(slices > 5, 'in many slices');
+    assert.ok(worst <= 4 + 1, `each slice keeps to about its 4 ms (worst ${worst.toFixed(2)})`);
+    const layer = made.find((c) => c.width === groundLayerSide(size))!;
+    const before = made.length;
+    const cache = createGroundCache();
+    const got = cache.get('oldtown|walls', size, () => mapSolids(size, walls), 'static', floorPlanOf('Old Town'));
+    assert.equal(got.canvas, layer, 'the cache takes the baked layer');
+    assert.equal(made.length, before, 'and makes no canvas of its own: nothing is baked in the frame');
+    const again = createGroundCache().get('oldtown|walls', size, () => mapSolids(size, walls), 'static', floorPlanOf('oldtown'));
+    assert.notEqual(again.canvas, layer, 'a bake is taken once');
+    assert.equal(made.filter((c, i) => i >= before && c.width === groundLayerSide(size)).length, 1, 'a ground nobody baked ahead is baked in one canvas, as before');
+  } finally {
+    g.document = had;
+    g.Path2D = hadPath;
+  }
+});

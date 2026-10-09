@@ -13,3 +13,5 @@ data
 .claude/worktrees
 todo.md
 decisions.tsv
+public/ground.js
+public/ground.js.map

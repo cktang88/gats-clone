@@ -51,6 +51,11 @@ const TICK_MS = 1000 / WORLD.tickHz;
 
 export type AttractSim = ReturnType<typeof createAttractSim>;
 
+/** The world a match with these options will be played in (its map and walls), without playing it: for baking its ground ahead. */
+export function peekWorld(o: AttractOpts): AttractWorld {
+  return { map: o.map, worldSize: MAPS[o.map].size, walls: wallViews(createWorld(ATTRACT.mode, o.seed, o.map)) };
+}
+
 export function createAttractSim(o: AttractOpts) {
   const w: World = createWorld(ATTRACT.mode, o.seed, o.map);
   // Ids far above any a real room hands out, so the renderer's per-body memories (reload arms, strides) never mix the two.

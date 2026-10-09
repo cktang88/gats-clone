@@ -6,6 +6,7 @@ import { paintFoliage, paintGrain, paintHazard, seeded, type Grain } from './gra
 import { PALETTE } from './palette.ts';
 import { paintThemedSolids } from './themes/registry.ts';
 import { onMapChange } from './mapscope.ts';
+import { recordPaint, replaySlice, startReplay, Unrecordable, type Recording, type Replay } from './bakeslice.ts';
 
 export const LIGHT = { x: 0.62, y: 0.78 } as const;
 const SHADOW_PER_HEIGHT = 3.3;
@@ -164,7 +165,10 @@ export const standsUp = (b: BuildingView): boolean => b.kind !== 'spikes';
 export const coreSolid = (run: RunView): Solid => ({ kind: 'core', ...coreRectAt(run.core) });
 
 
-type GroundLayer = { canvas: HTMLCanvasElement; x: number; y: number; scale: number };
+/** The layer is a canvas, or a bitmap baked in a worker (groundworker.ts). */
+type GroundLayer = { canvas: HTMLCanvasElement | ImageBitmap; x: number; y: number; scale: number };
+/** Frees a worker-baked layer's pixels now rather than at the next collection. */
+const release = (l: GroundLayer | null | undefined) => { const c = l?.canvas as { close?: () => void } | undefined; if (c && typeof c.close === 'function') c.close(); };
 
 const LAYER_PAD = 120;
 const LAYER_SCALE = 0.5;
@@ -174,11 +178,16 @@ const SHADOW_ALPHA = 0.52;
 const FLOOR_SEED = 7;
 const AO_COLOR = 'rgba(16, 18, 24, ';
 
+/** The ground layer's side in px for a world `size` across. */
+export const groundLayerSide = (size: number) => Math.ceil((size + LAYER_PAD * 2) * LAYER_SCALE);
+/** Sets a layer's context to draw in world units. */
+export const groundTransform = (g: { setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void }) => g.setTransform(LAYER_SCALE, 0, 0, LAYER_SCALE, LAYER_PAD * LAYER_SCALE, LAYER_PAD * LAYER_SCALE);
+
 function layerCanvas(size: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas');
-  c.width = c.height = Math.ceil((size + LAYER_PAD * 2) * LAYER_SCALE);
+  c.width = c.height = groundLayerSide(size);
   const g = c.getContext('2d')!;
-  g.setTransform(LAYER_SCALE, 0, 0, LAYER_SCALE, LAYER_PAD * LAYER_SCALE, LAYER_PAD * LAYER_SCALE);
+  groundTransform(g);
   return [c, g];
 }
 
@@ -267,6 +276,129 @@ function shadowsOn(s: Solid): number[][] {
 
 const solidKey = (solids: readonly Solid[]) => solids.map((s) => `${s.kind}${s.x},${s.y},${s.w},${s.h}`).join('|');
 
+/** A map's static solids, as the ground layer traces them: the curb round the world and every map wall (render.ts passes the same). */
+export const mapSolids = (worldSize: number, walls: readonly WallView[]): Solid[] => [...curbSolids(worldSize), ...wallSolids(walls.filter((w) => !w.built))];
+
+/**
+ * The whole static ground on one layer canvas (`g` set up by `layerCanvas`): the floor, the step down in value, the occlusion at
+ * every wall's foot and the walls' blurred shadows. One pass in one canvas: the same pixels as painting the floor and the shadows on
+ * canvases of their own and laying one over the other, without the two extra map-sized canvases and their copies.
+ */
+export function paintStaticGround(g: CanvasRenderingContext2D, size: number, placed: readonly Solid[], plan?: FloorPlan) {
+  // The floor pass runs as it always has (whatever state the floor painter leaves is the occlusion's too); the shadows start clean.
+  g.save();
+  g.fillStyle = PALETTE.outside;
+  g.fillRect(-LAYER_PAD, -LAYER_PAD, size + LAYER_PAD * 2, size + LAYER_PAD * 2);
+  paintFloor(g, size, FLOOR_SEED, plan);
+  // Walkable ground sits a step lower in value than every top face, whoever painted it.
+  g.fillStyle = 'rgba(12, 14, 20, 0.12)';
+  g.fillRect(-LAYER_PAD, -LAYER_PAD, size + LAYER_PAD * 2, size + LAYER_PAD * 2);
+  inStrips(g, size, placed, AO_REACH, (near) => fillAO(g, near), (s) => [s.x, s.y, s.x + s.w, s.y + s.h + FACE[s.kind]]);
+  g.restore();
+  g.save();
+  g.filter = `blur(${BLUR_PX * LAYER_SCALE}px)`;
+  g.globalAlpha = SHADOW_ALPHA;
+  inStrips(g, size, placed, 8, (near) => fillHulls(g, near), hullBox);
+  g.restore();
+}
+
+/** How far past a solid's foot its occlusion reaches, blur included (world px): the widest halo and three of its blur's sigmas. */
+const AO_REACH = 26 + 12 * 3 + 40;
+/** Strips of world rows, on whole layer pixels, that a blurred pass over every wall is cut into. */
+const STRIP = 256;
+const hullBox = (s: Solid): [number, number, number, number] => {
+  const p = shadowHull(s);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i < p.length; i += 2) { x0 = Math.min(x0, p[i]!); x1 = Math.max(x1, p[i]!); y0 = Math.min(y0, p[i + 1]!); y1 = Math.max(y1, p[i + 1]!); }
+  return [x0, y0, x1, y1];
+};
+/**
+ * Runs a blurred pass over every solid one strip of the layer at a time, each clipped to its strip and given only the solids that
+ * reach it: the same pixels as one pass over the whole map (a blur only reaches `reach` px), but each draw blurs a strip, not
+ * the map, so a sliced bake can stop between strips (bakeslice.ts).
+ */
+function inStrips(g: CanvasRenderingContext2D, size: number, solids: readonly Solid[], reach: number, pass: (near: readonly Solid[]) => void, box: (s: Solid) => [number, number, number, number]) {
+  const boxes = solids.map(box);
+  for (let y = -LAYER_PAD; y < size + LAYER_PAD; y += STRIP) {
+    const near = solids.filter((_, i) => boxes[i]![1] - reach < y + STRIP && boxes[i]![3] + reach > y);
+    if (!near.length) continue;
+    g.save();
+    g.beginPath();
+    g.rect(-LAYER_PAD, y, size + LAYER_PAD * 2, STRIP);
+    g.clip();
+    pass(near);
+    g.restore();
+  }
+}
+
+/** The ground of a map that is up next, baked ahead (in a worker, or a slice at a time here); the cache takes it when that map is drawn. */
+type Prepared = { size: number; key: string; walls: unknown; layer: GroundLayer; replay: Replay | null; direct: (() => void) | null; done: boolean };
+let prepared: Prepared | null = null;
+const hold = (p: Prepared) => { if (prepared && prepared !== p && prepared.layer.canvas !== p.layer.canvas) release(prepared.layer); prepared = p; };
+
+/**
+ * Offers a layer baked elsewhere (a worker's bitmap, groundworker.ts) for a map about to be drawn, known by its size, static solids
+ * and the map's own walls (its floor plan's `walls`): the cache's next `get` for that ground takes it. Returns a function that withdraws it (and frees it) if the cache has not taken it yet.
+ */
+export function offerGround(worldSize: number, statics: readonly Solid[], mapWalls: FloorPlan['walls'] | undefined, image: ImageBitmap | HTMLCanvasElement): () => void {
+  const p: Prepared = { size: worldSize, key: solidKey(statics), walls: mapWalls, layer: { canvas: image, x: -LAYER_PAD, y: -LAYER_PAD, scale: LAYER_SCALE }, replay: null, direct: null, done: true };
+  hold(p);
+  return () => { if (prepared === p) { prepared = null; release(p.layer); } };
+}
+
+export type GroundPrep = {
+  /** Bakes for at most about `budgetMs` (one call or band past it at worst); true once the layer is whole. */
+  step(budgetMs: number, clock?: () => number): boolean;
+  readonly done: boolean;
+  /** The last slice's numbers (bakeslice.ts `Replay.last`), for the dev probe. */
+  readonly last: Replay['last'];
+  /** Lets it go, if the cache has not taken it already. */
+  cancel(): void;
+};
+
+/**
+ * Starts baking the static ground of a map (its size, its static solids from `mapSolids`, its floor plan) ahead of drawing it, so
+ * no frame ever pays for the whole bake: the menu's attract mode steps it a few ms a frame, and the cache's next `get` for that
+ * ground takes the finished layer instead of baking. Recording the painter is the only part done here at once: it costs the
+ * painter's own arithmetic, no pixels. One bake is kept at a time; a new one lets the last go.
+ */
+export function prepareGround(worldSize: number, statics: readonly Solid[], plan?: FloorPlan): GroundPrep {
+  const [c, g] = layerCanvas(worldSize);
+  const prep: Prepared = { size: worldSize, key: solidKey(statics), walls: plan?.walls, layer: { canvas: c, x: -LAYER_PAD, y: -LAYER_PAD, scale: LAYER_SCALE }, replay: null, direct: null, done: false };
+  let ops: Recording | null = null;
+  try {
+    ops = recordPaint(g, (r) => paintStaticGround(r, worldSize, statics, plan), measureCtx());
+  } catch (e) {
+    if (!(e instanceof Unrecordable)) throw e;
+    // A painter that reads pixels back is painted directly, in one go, when its turn comes.
+    prep.direct = () => paintStaticGround(g, worldSize, statics, plan);
+  }
+  if (ops) prep.replay = startReplay(ops, c.width, c.height);
+  hold(prep);
+  return {
+    step(budgetMs, clock = () => performance.now()) {
+      if (prep.done) return true;
+      if (prep.direct) { prep.direct(); prep.direct = null; prep.done = true; return true; }
+      prep.done = replaySlice(g, prep.replay!, budgetMs, clock);
+      return prep.done;
+    },
+    get done() { return prep.done; },
+    get last() { return prep.replay?.last; },
+    cancel() { if (prepared === prep) prepared = null; },
+  };
+}
+
+let measuring: CanvasRenderingContext2D | null = null;
+const measureCtx = () => (measuring ??= document.createElement('canvas').getContext('2d')!);
+
+/** The finished bake for this ground, if one is waiting: taken once. */
+function takePrepared(size: number, placed: readonly Solid[], plan?: FloorPlan): GroundLayer | null {
+  const p = prepared;
+  if (!p || !p.done || p.size !== size || p.walls !== plan?.walls || p.key !== solidKey(placed)) return null;
+  prepared = null;
+  return p.layer;
+}
+
 export function createGroundCache() {
   let layout: unknown = null;
   let size = 0;
@@ -278,6 +410,25 @@ export function createGroundCache() {
   const get = (nextLayout: unknown, worldSize: number, statics: () => readonly Solid[], moving: readonly Solid[] | 'static', plan?: FloorPlan): GroundLayer => {
     const key = solidKey(moving === 'static' ? [] : moving);
     if (nextLayout === layout && worldSize === size && key === movingKey && layer) return layer;
+    if (moving === 'static') {
+      // A map with nothing that moves: the whole ground on one canvas, taken from a bake made ahead (prepareGround) when one waits.
+      layout = nextLayout;
+      size = worldSize;
+      movingKey = key;
+      floor = hard = null;
+      const placed = statics();
+      registerCasters(placed);
+      const ahead = takePrepared(worldSize, placed, plan);
+      if (ahead) { if (layer?.canvas !== ahead.canvas) release(layer); layer = ahead; }
+      else {
+        release(layer);
+        const [out, o] = layerCanvas(size);
+        paintStaticGround(o, size, placed, plan);
+        layer = { canvas: out, x: -LAYER_PAD, y: -LAYER_PAD, scale: LAYER_SCALE };
+      }
+      bakes++;
+      return layer;
+    }
     if (nextLayout !== layout || worldSize !== size || !floor || !hard) {
       layout = nextLayout;
       size = worldSize;
@@ -298,7 +449,7 @@ export function createGroundCache() {
     }
     movingKey = key;
     let source = hard;
-    if (moving !== 'static' && moving.length) {
+    if (moving.length) {
       const [all, g] = layerCanvas(size);
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.drawImage(hard, 0, 0);
@@ -309,7 +460,7 @@ export function createGroundCache() {
     const [out, o] = layerCanvas(size);
     o.setTransform(1, 0, 0, 1, 0, 0);
     o.drawImage(floor, 0, 0);
-    if (moving !== 'static' && moving.length) {
+    if (moving.length) {
       o.setTransform(LAYER_SCALE, 0, 0, LAYER_SCALE, LAYER_PAD * LAYER_SCALE, LAYER_PAD * LAYER_SCALE);
       fillAO(o, moving);
       o.setTransform(1, 0, 0, 1, 0, 0);
@@ -318,12 +469,11 @@ export function createGroundCache() {
     o.globalAlpha = SHADOW_ALPHA;
     o.drawImage(source, 0, 0);
     bakes++;
-    if (moving === 'static') floor = hard = null;
     layer = { canvas: out, x: -LAYER_PAD, y: -LAYER_PAD, scale: LAYER_SCALE };
     return layer;
   };
   /** Lets the layer go; the next `get` bakes afresh. */
-  const clear = () => { layout = null; size = 0; floor = hard = null; movingKey = null; layer = null; };
+  const clear = () => { release(layer); layout = null; size = 0; floor = hard = null; movingKey = null; layer = null; };
   return { get, bakes: () => bakes, clear };
 }
 

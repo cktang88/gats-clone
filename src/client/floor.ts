@@ -41,14 +41,42 @@ export function floorPlan(map: MapDef): FloorPlan {
 }
 
 const plans = new Map<string, FloorPlan>();
-/** The plan for a map by id or by its display name (what a snapshot carries), made once. An unknown map gets no plan, and so a plain floor. */
+const planOfMap = new WeakMap<MapDef, FloorPlan>();
+const mapOf = (idOrName: string): MapDef | undefined => {
+  const maps = MAPS as Record<string, MapDef>;
+  return maps[idOrName] ?? Object.values(maps).find((m) => m.name === idOrName);
+};
+/**
+ * The plan for a map by id or by its display name (what a snapshot carries), made once per map whichever it is asked by (planning
+ * a big map's decor takes a while). An unknown map gets no plan, and so a plain floor.
+ */
 export function floorPlanOf(idOrName: string): FloorPlan | undefined {
   let plan = plans.get(idOrName);
   if (plan) return plan;
-  const maps = MAPS as Record<string, MapDef>;
-  const map = maps[idOrName] ?? Object.values(maps).find((m) => m.name === idOrName);
-  if (map) plans.set(idOrName, (plan = floorPlan(map)));
+  const map = mapOf(idOrName);
+  if (!map) return undefined;
+  plan = planOfMap.get(map) ?? floorPlan(map);
+  planOfMap.set(map, plan);
+  plans.set(idOrName, plan);
   return plan;
+}
+
+/**
+ * A plan as plain data, to post from a worker that has made it (groundworker.ts): the decor's keep-out tests are planning's own
+ * and are left behind (`adoptFloorPlan` stands blunt ones in).
+ */
+export function portablePlan(plan: FloorPlan): FloorPlan {
+  if (!plan.decor) return plan;
+  const { lanes, pads, circles } = plan.decor.keep;
+  return { ...plan, decor: { ...plan.decor, keep: { lanes, pads, circles } as DecorPlan['keep'] } };
+}
+/** Takes a plan made elsewhere (a worker's, `portablePlan`) for a map, unless one is made here already: the page need not plan it again. */
+export function adoptFloorPlan(idOrName: string, plan: FloorPlan): void {
+  const map = mapOf(idOrName);
+  if (!map || planOfMap.has(map)) return;
+  // The walls are the map's own (the ground cache knows a map's layer by them); the keep-out is only ever asked while planning.
+  const keep = plan.decor && { ...plan.decor.keep, blocked: () => true, inWall: () => true };
+  planOfMap.set(map, { ...plan, walls: map.walls, ...(plan.decor && keep && { decor: { ...plan.decor, keep } }) });
 }
 
 
