@@ -97,8 +97,9 @@ export type Player = {
   quiet: { px: number; x: number; y: number; firedAt: number };
   /** This life's weapon feats so far (`WEAPON_MEDALS`): kills since the last reload, one-hit kills, and who the last volley hit. */
   feats: Feats;
+  /** Until when an unsilenced shot gives this player away to the eye (a ghillie suit stops hiding them); never a minimap mark. */
   revealedUntil: number;
-  /** Where enemy minimaps last placed this player while hunted; refreshed on a timer and by unsilenced fire. */
+  /** Where enemy minimaps last placed this player while hunted; refreshed on a timer and by unsilenced fire (not with Ninja). */
   huntedPing: (Pose & { at: number }) | null;
   abilityReadyAt: number;
   /** A flashbang's blinding: gone at `until`, `ms` long in all (see `flashAmount`). Set by `flashPlayers`. */

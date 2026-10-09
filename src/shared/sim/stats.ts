@@ -41,7 +41,6 @@ export const PERK_RULES = {
   adrenaline: { speedMul: 1.2, ms: 3000 },
   secondWind: { belowHp: 0.25, speedMul: 1.3, ms: 2000, damageMul: 0.5 },
   bloodlust: { healShare: 0.15 },
-  ninja: { revealMul: 0.5 },
   demolitions: { dealtMul: 1.3, radiusMul: 1.3, takenMul: 0.7 },
   tracker: { ms: 4000 },
   brace: { takenMul: 0.4, dealtMul: 1.15 },

@@ -1,6 +1,8 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { WORLD } from '../src/shared/defs.ts';
+import { BOT_HEARING } from '../src/shared/sim/hearing.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import type { World } from '../src/shared/sim/world.ts';
@@ -139,27 +141,42 @@ test('a peek duel that drags on is broken by a flank when the personality goes r
   assert.equal(at(180, 0), 'peekAndHide', 'a bot that never flanks keeps peeking');
 });
 
-test('a bot hears gunfire it cannot see, a silenced shot only up close, and remembers it for a few seconds', () => {
-  const w = emptyWorld();
-  const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
-  const heardAt = (shot: { x: number; y: number; silenced: boolean }, aware = freshAwareness()) => {
-    const snap = snapshotFor(w, bot.id);
-    snap.events = [{ e: 'shot', x: shot.x, y: shot.y, angle: 0, silenced: shot.silenced, owner: 777, gun: 'assault' }];
-    const me = snap.players.find((p) => p.id === bot.id)!;
-    return perceive(snap, arenaFor(w), me, aware);
+test('a bot hears gunfire it cannot see within its (superhuman) earshot, roughly placed, a silenced shot only up close, and remembers it for a few seconds', () => {
+  const heardAt = (shot: { x: number; y: number; silenced: boolean; gun?: 'assault' | 'sniper' }, aware = freshAwareness(), team?: 'red' | 'blue') => {
+    const w = emptyWorld(team ? 'TDM' : 'FFA');
+    const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' }, ...(team && { team: 'red' as const }) });
+    const shooter = spawnAt(w, shot.x, shot.y, team && { team });
+    const events = [{ e: 'shot' as const, x: shot.x, y: shot.y, angle: 0, silenced: shot.silenced, owner: shooter.id, gun: shot.gun ?? 'assault' }];
+    const snap = snapshotFor(w, bot.id, events);
+    return { w, bot, snap, ...perceive(snap, arenaFor(w), snap.players.find((p) => p.id === bot.id)!, aware) };
   };
-  const loud = heardAt({ x: 1800, y: 1300, silenced: false }).view.lead;
-  assert.ok(loud && loud.x === 1800 && loud.y === 1300, 'an unsilenced shot 850px off is heard where it was fired');
+  const earshot = WORLD.viewRadius * BOT_HEARING.earshotMul;
+  assert.ok(BOT_HEARING.earshotMul >= 2 * 1.2, 'a bot hears at least twice as far as a person (the client fades a shot out at 1.2 view radii)');
+  const loud = heardAt({ x: 1800, y: 1300, silenced: false });
+  const lead = loud.view.lead;
+  const d = Math.hypot(800, 300);
+  assert.ok(lead, 'an unsilenced shot 850px off is heard');
+  assert.ok(lead.x !== 1800 || lead.y !== 1300, 'but not exactly where it was fired');
+  assert.ok(Math.hypot(lead.x - 1800, lead.y - 1300) <= d * BOT_HEARING.blur + 1, `only roughly: ${Math.round(Math.hypot(lead.x - 1800, lead.y - 1300))}px off`);
+  assert.equal(loud.snap.minimap.length, 0, 'and never as a minimap dot');
+  assert.equal(heardAt({ x: 1000 + earshot + 20, y: 1000, silenced: false }).view.lead, null, 'past earshot it is not heard');
+  assert.ok(heardAt({ x: 1000 + earshot - 20, y: 1000, silenced: false }).view.lead, 'just inside it is');
+  assert.ok(heardAt({ x: 1000 + earshot + 20, y: 1000, silenced: false, gun: 'sniper' }).view.lead, 'a loud sniper carries further');
   assert.equal(heardAt({ x: 1800, y: 1300, silenced: true }).view.lead, null, 'a silenced one that far is not');
   assert.ok(heardAt({ x: 1200, y: 1100, silenced: true }).view.lead, 'a silenced one 220px off is');
-  const remembered = heardAt({ x: 1800, y: 1300, silenced: false }).awareness;
-  const later = snapshotFor(w, bot.id);
+  assert.equal(heardAt({ x: 1800, y: 1300, silenced: false }, freshAwareness(), 'red').view.lead, null, 'a teammate firing is no lead');
+  assert.equal(snapshotFor(loud.w, loud.bot.id).heard?.length, 0, 'nothing heard without a shot');
+  const humanW = emptyWorld();
+  const human = spawnAt(humanW, 1000, 1000, { kind: 'human' });
+  assert.equal(snapshotFor(humanW, human.id).heard, undefined, 'a person hears with their ears: the cue is for bots only');
+  const remembered = loud.awareness;
+  const later = snapshotFor(loud.w, loud.bot.id, []);
   later.tick += 60;
-  assert.ok(perceive(later, arenaFor(w), later.players.find((p) => p.id === bot.id)!, remembered).view.lead, 'still a lead two seconds on');
+  assert.ok(perceive(later, arenaFor(loud.w), later.players.find((p) => p.id === loud.bot.id)!, remembered).view.lead, 'still a lead two seconds on');
   later.tick += 120;
-  assert.equal(perceive(later, arenaFor(w), later.players.find((p) => p.id === bot.id)!, remembered).view.lead, null, 'forgotten after six');
-  const patrol = decide(w, bot.id, { k: 'patrol', goal: { x: 200, y: 200 } }, { aware: remembered });
-  assert.ok(patrol.k === 'search' && patrol.at.x === 1800, `goes to look: ${JSON.stringify(patrol)}`);
+  assert.equal(perceive(later, arenaFor(loud.w), later.players.find((p) => p.id === loud.bot.id)!, remembered).view.lead, null, 'forgotten after six');
+  const patrol = decide(loud.w, loud.bot.id, { k: 'patrol', goal: { x: 200, y: 200 } }, { aware: remembered });
+  assert.ok(patrol.k === 'search' && Math.abs(patrol.at.x - 1800) < 300 && Math.abs(patrol.at.y - 1300) < 300, `goes to look: ${JSON.stringify(patrol)}`);
 });
 
 test('a hurt bot leaves the hiding spot a teammate is already in', () => {

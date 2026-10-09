@@ -8,6 +8,7 @@ import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
 import { flashAmount, GAS_RADIUS, SMOKE } from './abilities.ts';
 import { doorViews } from './doors.ts';
 import { sightBlocked, smokeDisks, smokeRadius } from './vision.ts';
+import { heardShots } from './hearing.ts';
 import { empMul, propState } from './props.ts';
 import { dist2 } from './movement.ts';
 import { abilityOf, effectiveStats, hasPerk, isHunted, pendingPick, rushMul } from './stats.ts';
@@ -187,7 +188,8 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     if (marked) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, marked: true });
     else if (huntedFor(w, me, p)) {
       if (p.huntedPing) minimap.push({ x: p.huntedPing.x, y: p.huntedPing.y, team: p.team, pingAge: w.now - p.huntedPing.at });
-    } else if (sameTeam(me, p) || w.now < p.revealedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
+    // Enemies are not on the minimap just for firing: only a Tracker mark or a hunted ping shows one (teammates always show).
+    } else if (sameTeam(me, p)) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
   // A medal is news only to the player who earned it.
@@ -202,6 +204,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     ...(w.run && siegeViews(w, w.run, inView)),
     ...(w.royale && { royale: royaleView(w, w.royale, me) }),
     ...(w.range && { targets: targetViews(w), range: rangeView(w, me.id) }),
+    ...(me.kind === 'bot' && { heard: heardShots(w, me, events, stats.viewRadius) }),
   };
 }
 

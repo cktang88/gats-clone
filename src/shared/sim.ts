@@ -15,6 +15,7 @@ import { abilityCooldownMs, abilityOf, bloomRecoverMul, BOT_SPREAD_MUL, effectiv
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { crateRect, freshFeats, IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
+/** An unsilenced shot gives a still ghillie away for this long (it is never a minimap mark: enemies only hear it). */
 const REVEAL_MS = 2000;
 const HUNTED_PING_MS = 2500;
 
@@ -133,8 +134,9 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
       if (flyThroughPast(w, b, rewindMs)) w.bullets.push(b);
     }
     if (!stats.silenced) {
-      p.revealedUntil = w.now + REVEAL_MS * (hasPerk(p, 'ninja') ? PERK_RULES.ninja.revealMul : 1);
-      if (isHunted(w, p)) p.huntedPing = { x: p.x, y: p.y, at: w.now };
+      p.revealedUntil = w.now + REVEAL_MS;
+      // A hunted player's shot pings enemy minimaps at once, unless they have Ninja (then only the timed ping finds them).
+      if (isHunted(w, p) && !hasPerk(p, 'ninja')) p.huntedPing = { x: p.x, y: p.y, at: w.now };
     }
     w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id, gun: p.gun });
   }

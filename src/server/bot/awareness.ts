@@ -5,6 +5,7 @@ import { SHARPNESS, TICK_MS } from './aim.ts';
 import type { BotArena } from './arena.ts';
 import { FLASH } from '../../shared/sim/abilities.ts';
 import { sightBlocked, type Smoke } from '../../shared/sim/vision.ts';
+import { BOT_HEARING } from '../../shared/sim/hearing.ts';
 import { clearShot, dist, type Point } from './nav.ts';
 
 type Contact = { id: number; x: number; y: number; seenTick: number; gun: GunId };
@@ -69,10 +70,11 @@ const noticesThrow = (id: number, me: number) => {
 
 const FORGET_MS = 8000;
 const HEARD_MS = 4000;
+/** A heard shot this close to one remembered is the same fight: the fresh one replaces it (heard places are blurred, so not exact). */
+const HEARD_SAME_PX = 200;
 const UNDER_FIRE_MS = 500;
 /** Rounds cracking past count as being under fire, as they would for a person: an LMG burst or a sniper's near miss, not a lone pistol round. */
 const SUPPRESSED_UNDER_FIRE = 0.25;
-const SILENCED_HEARING_PX = 350;
 const MATE_MARK_PX = 40;
 const SHOT_AT_MS = 1500;
 /** A round counts as fired at this bot when its heading passes within this many body widths of him. */
@@ -126,13 +128,14 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
     const team = teamOf.get(owner);
     return team !== undefined ? team !== me.team : !mateMarks.some((m) => dist(m, at) < MATE_MARK_PX);
   };
-  const heardNow: Lead[] = [];
+  // Gunfire is heard, not seen: a rough place (`snap.heard`, blurred by distance) within a bot's earshot (`BOT_HEARING`, wider than a person's), never a minimap dot. A flashed bot is deaf.
+  const heardNow: Lead[] = blind ? [] : (snap.heard ?? []).map((h) => ({ x: h.x, y: h.y, tick, hunted: false }));
   let hitTick = prev.hitTick;
   let hitBy = prev.hitBy && (tick - prev.hitBy.tick) * TICK_MS < SHOOTER_MS ? prev.hitBy : null;
   let shotAt = prev.shotAt && (tick - prev.shotAt.tick) * TICK_MS < SHOT_AT_MS ? prev.shotAt : null;
   for (const e of snap.events) {
-    if (e.e === 'shot' && !blind && hostile(e.owner, e) && (!e.silenced || dist(e, me) <= SILENCED_HEARING_PX)) {
-      heardNow.push({ x: e.x, y: e.y, tick, hunted: false });
+    // Rounds fired its way: it hears where they came from, exactly enough to read the line to get off (where to search is the rough `heardNow` above).
+    if (e.e === 'shot' && !blind && hostile(e.owner, e) && (!e.silenced || dist(e, me) <= BOT_HEARING.silencedPx)) {
       const d = dist(e, me);
       const off = Math.atan2(me.y - e.y, me.x - e.x) - e.angle;
       if (d <= GUNS[e.gun].range && Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) < Math.atan2(WORLD.playerRadius * SHOT_AT_BODIES, d)) shotAt = { x: e.x, y: e.y, tick, owner: e.owner, gun: e.gun };
@@ -151,7 +154,7 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   const shoots = (p: PlayerView) => (shooting.has(p.id) ? 1 : 0);
   const threats = shooting.size ? [...visible].sort((a, b) => shoots(b.p) - shoots(a.p)) : visible;
   const shooters = threats.filter((t) => shooting.has(t.p.id)).map((t) => t.p.id);
-  const heard = [...heardNow, ...prev.heard.filter((h) => (tick - h.tick) * TICK_MS < HEARD_MS && !heardNow.some((n) => dist(n, h) < 100))];
+  const heard = [...heardNow, ...prev.heard.filter((h) => (tick - h.tick) * TICK_MS < HEARD_MS && !heardNow.some((n) => dist(n, h) < HEARD_SAME_PX))];
   const marks: Lead[] = blind ? [] : snap.minimap
     .filter((m) => me.team === null || m.team !== me.team)
     .map((m) => ({ x: m.x, y: m.y, tick, hunted: m.pingAge !== null }));

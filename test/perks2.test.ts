@@ -13,7 +13,7 @@ import { abilityCooldownMs, bloomRecoverMul, choosePick, drawTier2Offer, effecti
 import { pullTrigger, type TriggerState } from '../src/shared/sim/trigger.ts';
 import { createWorld, type Player, type World } from '../src/shared/sim/world.ts';
 import { ROTATION } from '../src/shared/maps.ts';
-import { emptyWorld, grantPerks, hpOf, offerPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, equip, grantPerks, hpOf, offerPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
 
 type P2 = (typeof PERK_TIERS)[2][number];
 const TIER2: readonly P2[] = PERK_TIERS[2];
@@ -213,17 +213,22 @@ test('Recon: +8% view radius, and you see enemies reload', () => {
   assert.equal(snapshotFor(w, foe.id).players.find((q) => q.id === foe.id)?.reloading, undefined, 'and never on yourself');
 });
 
-test('Ninja: shots show you on the minimap for 1 s, not 2, and your sprint is silent and unseen', () => {
-  const reveal = (perk: P2 | null) => {
+test('Ninja: a hunted shot never pings you on enemy minimaps (only the timed ping does), and your sprint is silent and unseen', () => {
+  const pingAfterShot = (perk: P2 | null) => {
     const w = emptyWorld();
-    const p = spawnAt(w, 500, 500);
+    const p = spawnAt(w, 2600, 2600);
+    const enemy = spawnAt(w, 300, 300);
     if (perk) p.perks = { 2: perk };
-    press(w, p, { fire: true, shots: 1 });
+    equip(p, 'juggernaut');
     step(w, TICK_MS);
-    return p.revealedUntil - w.now;
+    press(w, p, { left: true });
+    run(w, 1000);
+    press(w, p, { left: true, fire: true, shots: p.input.shots + 1 });
+    step(w, TICK_MS);
+    return snapshotFor(w, enemy.id).minimap.map((m) => Math.round(m.x))[0];
   };
-  assert.ok(Math.abs(reveal('ninja') - 1000) < TICK_MS + 1);
-  assert.ok(Math.abs(reveal(null) - 2000) < TICK_MS + 1);
+  assert.equal(pingAfterShot('ninja'), 2600, 'the Ninja stays where the timed ping caught them');
+  assert.ok(pingAfterShot(null)! < 2550, 'without it the shot pings them where they fired');
   const w = emptyWorld();
   const ninja = holding(w, 'ninja');
   const watcher = spawnAt(w, 800, 500);

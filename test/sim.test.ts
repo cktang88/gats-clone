@@ -321,7 +321,7 @@ test('enemy land mine is hidden but its owner sees it', () => {
   assert.equal(snapshotFor(w, b.id).thrown.filter((t) => t.kind === 'landMine').length, 0);
 });
 
-test('snapshot culls out-of-view enemies; minimap shows them only after unsilenced fire', () => {
+test('snapshot culls out-of-view enemies; firing never puts an enemy on the minimap, only a hunted ping or a Tracker mark does', () => {
   const w = emptyWorld();
   const me = spawnAt(w, 300, 300);
   const near = spawnAt(w, 600, 300);
@@ -331,14 +331,17 @@ test('snapshot culls out-of-view enemies; minimap shows them only after unsilenc
   assert.ok(!ids().includes(far.id));
   assert.equal(snapshotFor(w, me.id).minimap.length, 0);
 
-  shootOnce(w, far, Math.PI / 2, 100);
-  assert.deepEqual(snapshotFor(w, me.id).minimap.map((m) => [m.x, m.y]), [[far.x, far.y]]);
-  run(w, 3000);
-  assert.equal(snapshotFor(w, me.id).minimap.length, 0, 'reveal expires');
+  press(w, far, { angle: Math.PI / 2, fire: true, shots: far.input.shots + 1 });
+  step(w, TICK_MS);
+  assert.ok(w.events.some((e) => e.e === 'shot' && e.owner === far.id), 'it fired');
+  assert.equal(snapshotFor(w, me.id).minimap.length, 0, 'an unsilenced shot does not show the shooter');
+  press(w, near, { angle: 0, fire: true, shots: near.input.shots + 1 });
+  step(w, TICK_MS);
+  assert.equal(snapshotFor(w, me.id).minimap.length, 0, 'nor does one close by');
 
-  grantPerks(w, far, ['silencer']);
-  shootOnce(w, far, Math.PI / 2, 100);
-  assert.equal(snapshotFor(w, me.id).minimap.length, 0, 'silenced shot stays off the minimap');
+  // Tracker's mark (see perks2) is the one way a non-hunted enemy shows; here set by hand.
+  if (me.life.k === 'alive') me.life.tracks[far.id] = w.now + 1000;
+  assert.deepEqual(snapshotFor(w, me.id).minimap.map((m) => [m.x, m.y, m.marked]), [[far.x, far.y, true]], 'a Tracker mark still shows');
 });
 
 test('a snapshot covers the rectangle the client screen shows, plus a preload margin, and nothing beyond', () => {

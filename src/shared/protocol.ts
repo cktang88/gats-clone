@@ -303,7 +303,12 @@ export type Snapshot = {
   /** Range only: each target's health in layout order (`TargetView`), sticky, and the readout for you. */
   targets?: TargetView[];
   range?: RangeView;
+  /** Bots only, never on the wire: enemy gunfire it heard since it last thought, placed roughly (`heardShots`). A person hears it instead. */
+  heard?: HeardShot[];
 };
+
+/** Where a bot heard a shot come from: blurred by distance, not where it was fired. */
+export type HeardShot = { x: number; y: number };
 
 /** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
 export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'barrels', 'props', 'airdrop', 'targets', 'doors'] as const;

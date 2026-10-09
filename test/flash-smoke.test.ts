@@ -178,8 +178,17 @@ test('a flashed bot gets no new sightings but keeps stale memory, and sees again
   assert.equal(c.view.threats.length, 1, 'sees again after the flash');
 });
 
-test('a flashed bot stays blind to what it would otherwise hear on the minimap, and falls back or sprays instead of fighting', () => {
+test('a flashed bot is deaf to gunfire it would otherwise hear, and falls back or sprays instead of fighting', () => {
   const { w, bot } = botScene();
+  const shot = [{ e: 'shot' as const, x: 2400, y: 1000, angle: 0, silenced: false, owner: 999, gun: 'assault' as const }];
+  const lead = (flash: number) => {
+    bot.flash = flash ? { until: w.now + 3000, ms: 3000 } : undefined;
+    const snap = snapshotFor(w, bot.id, shot);
+    return perceive(snap, arenaFor(w), snap.players.find((p) => p.id === bot.id)!, freshAwareness()).view.lead;
+  };
+  assert.ok(lead(0), 'it hears a shot out of sight');
+  assert.equal(lead(1), null, 'not while flashed');
+  bot.flash = undefined;
   const r = seeded(5);
   let mem = newBotMemory(r);
   let d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);

@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import type { WallView } from '../src/shared/protocol.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { setInput, step } from '../src/shared/sim.ts';
+import { IDLE_INPUT } from '../src/shared/sim/world.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import type { World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
@@ -138,21 +139,29 @@ test('a bot aims at the nearer of two bots whatever their levels', () => {
   }
 });
 
-test('a bot with nobody in view heads for gunfire on its minimap, the hunted first', () => {
+/** Holds an automatic's trigger down, so the shooter keeps firing (and being heard) while the bot thinks. */
+const firing = (w: World, x: number, y: number) => {
+  const p = spawnAt(w, x, y, { loadout: { weapon: 'assault' } });
+  setInput(w, p.id, 1, { ...IDLE_INPUT, fire: true, angle: Math.PI / 2, shots: 1 });
+  return p;
+};
+
+test('a bot with nobody in view heads for gunfire it hears (never a minimap dot), the hunted first', () => {
   for (let seed = 1; seed <= 5; seed++) {
     const w = emptyWorld();
     const bot = spawnAt(w, 1500, 1500);
-    spawnAt(w, 100, 100).revealedUntil = w.now + 10_000;
-    const input = think(w, bot.id, seed, 1);
-    assert.ok(input.left && input.up, `seed ${seed}: moves toward the shooter at (100, 100)`);
+    firing(w, 700, 900);
+    const input = think(w, bot.id, seed, 6);
+    assert.equal(snapshotFor(w, bot.id).minimap.length, 0, 'the shooter is not on its minimap');
+    assert.ok(input.left && input.up, `seed ${seed}: moves toward the shots it heard from (700, 900)`);
   }
   const w = emptyWorld();
   const bot = spawnAt(w, 1500, 1500);
-  spawnAt(w, 400, 1500).revealedUntil = w.now + 10_000;
+  firing(w, 400, 1500);
   equip(spawnAt(w, 2900, 2900), 'executioner');
   step(w, TICK_MS);
-  const input = think(w, bot.id, 1, 1);
-  assert.ok(input.right && input.down, 'passes over a nearer shooter for the hunted one');
+  const input = think(w, bot.id, 1, 6);
+  assert.ok(input.right && input.down, 'passes over a nearer shooter it hears for the hunted one');
 });
 
 test('a bot walled off from a hunted marker walks around the wall and fights instead of pinning against it', () => {
