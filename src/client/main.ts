@@ -50,7 +50,6 @@ import { bodyColor, drawBackdrop, drawWorld, nightAmount } from './render.ts';
 import { enterMap } from './mapscope.ts';
 import { drawLightingDev } from './lightdev.ts';
 import { initPostfx, processFrame, pulse as fxPulse } from './postfx.ts';
-import { recordTrail, TRAIL } from './trails.ts';
 import { createCracks } from './decals.ts';
 import { createShooting, type Hands } from './shooting.ts';
 import { installDevProbe, noteFrame, noteFrameCost, noteOwnShotSound } from './devprobe.ts';
@@ -355,7 +354,7 @@ function newSession(ws: WebSocket, rejoin: Rejoin, welcome: { id: number; worldS
   return {
     ws, rejoin, myId: welcome.id, worldSize: welcome.worldSize, walls: welcome.walls, mapId: welcome.map, snaps: EMPTY_BUFFER, seq: 0, shots: 0, predict: NO_PREDICTION, firing: NO_FIRING,
     lastSelf: { x: welcome.worldSize / 2, y: welcome.worldSize / 2 },
-    effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, life: null, bests: loadBests(), feed: [], chat: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
+    effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [], lastShotAt: new Map(), feedback: NO_FEEDBACK, moments: NO_MOMENTS, life: null, bests: loadBests(), feed: [], chat: [], hurtAt: new Map(), cracks: createCracks(), pickSentFor: null, walk: { now: false, at: -Infinity }, particles: createPool(),
     coreHitAt: -Infinity, building: false, buildKind: 'wall', buildTier: 1, buildGhost: null, turretAims: new Map(),
   };
 }
@@ -673,16 +672,6 @@ function resize() {
   }, VIEW_RESEND_MS);
 }
 
-function updateTrails(s: Session, snap: Snapshot, now: number) {
-  for (const p of snap.players) {
-    if (!p.alive || (p.hidden && p.id !== s.myId)) continue;
-    let trail = s.trails.get(p.id);
-    if (!trail) s.trails.set(p.id, (trail = []));
-    recordTrail(trail, p.x, p.y, now, p.dashing);
-  }
-  for (const [id, trail] of s.trails) if (!trail.length || now - trail.at(-1)!.at >= TRAIL.lifeMs) s.trails.delete(id);
-}
-
 let lastRaf = 0;
 function frame(now: number) {
   requestAnimationFrame(frame);
@@ -753,7 +742,6 @@ function drawFrame(realNow: number) {
   // A kill of yours snaps the view in a few percent and lets it back out.
   const punch = zoomAt(realNow);
   const shakenCamera = { ...aimCamera, scale: aimCamera.scale * punch, viewHalfW: aimCamera.viewHalfW / punch, viewHalfH: aimCamera.viewHalfH / punch, x: aimCamera.x + (shake.x + kick.x) / aimCamera.scale, y: aimCamera.y + (shake.y + kick.y) / aimCamera.scale };
-  updateTrails(s, snap, now);
   const aim = aimOffset(s);
   const selfAngle = state.phase === 'playing' ? Math.atan2(aim.dy, aim.dx) : null;
   noteFrame(s, snap, aimCamera, selfAngle, now);

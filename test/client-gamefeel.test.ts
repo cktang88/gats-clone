@@ -200,7 +200,7 @@ function worldStrokes(frame: Snapshot, killerId: number | null = null): unknown[
     set(target, prop, value) { target[prop] = value; return true; },
   }) as unknown as CanvasRenderingContext2D;
   Object.assign(globalThis, { document: { createElement: () => ({ getContext: () => ctx }) } });
-  const s = { myId: 1, worldSize: 3000, walls: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, particles: createPool(), feedback: NO_FEEDBACK } as unknown as Session;
+  const s = { myId: 1, worldSize: 3000, walls: [], hurtAt: new Map(), cracks: createCracks(), effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, particles: createPool(), feedback: NO_FEEDBACK } as unknown as Session;
   drawWorld(ctx, { snap: frame, s, cam: makeCamera({ x: 100, y: 0 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId });
   return strokes;
 }

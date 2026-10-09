@@ -39,7 +39,7 @@ function arcsDrawnFor(kind: ThrownKind): Arc[] {
     players: [], bullets: [], crates: [], zones: [], minimap: [], leaderboard: [], events: [],
     thrown: [{ id: 1, kind, x: 1234, y: 987, r: 10, owner: 2 }], match: { map: 'Boneyard' }, self: { nemesis: null },
   } as unknown as Snapshot;
-  const s = { myId: 1, worldSize: 3000, walls: [], trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, particles: createPool(), feedback: { numbers: [] } } as unknown as Session;
+  const s = { myId: 1, worldSize: 3000, walls: [], hurtAt: new Map(), cracks: createCracks(), effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, particles: createPool(), feedback: { numbers: [] } } as unknown as Session;
   drawWorld(ctx, { snap, s, cam: makeCamera({ x: 1234, y: 987 }, 1280, 800, WORLD.viewRadius), dpr: 1, now: 0, selfAngle: null, killerId: null });
   return arcs.filter((a) => a.x === 1234 && a.y === 987);
 }

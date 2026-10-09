@@ -46,7 +46,6 @@ import './themes/index.ts';
 import { drawAmbientGround, drawAmbientSky } from './ambientfeed.ts';
 import { mapOf, themeOf } from './themes/registry.ts';
 import type { Ghost } from './zombies.ts';
-import { trailDashes, type TrailPoint } from './trails.ts';
 import { TRACER } from './rounds.ts';
 import { heftOf } from './shake.ts';
 import { drawCorpses, drawZombieCorpses, liveCorpses, zombieField } from './corpses.ts';
@@ -129,7 +128,6 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const t of snap.thrown) if (t.kind === 'landMine') drawThrown(ctx, t, now);
   if (snap.run) drawCoreGlow(ctx, snap.run, now);
   if (snap.run && snap.buildings) drawFloorItems(ctx, snap.buildings.filter((b) => !standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), now);
-  drawTrails(ctx, s.trails, now);
   drawScorches(ctx, now, view);
 
   const crates = snap.crates.map(crateSolid).filter((c) => solidInView(view, c));
@@ -305,30 +303,6 @@ function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
   if (t.kind === 'grenade' || t.kind === 'fragGrenade') drawBlastRing(ctx, t.x, t.y, BLAST_RADIUS[t.kind], now);
   if (isFlashSmoke(t.kind)) return drawFlashSmokeBody(ctx, t, now);
   drawThrownBody(ctx, t, now);
-}
-
-const TRAIL_BANDS = 4;
-const TRAIL_INK = '#ffffff';
-
-function drawTrails(ctx: CanvasRenderingContext2D, trails: ReadonlyMap<number, readonly TrailPoint[]>, now: number) {
-  const dashes = [...trails.values()].flatMap((t) => trailDashes(t, now));
-  if (!dashes.length) return;
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = TRAIL_INK;
-  for (const dashing of [false, true]) {
-    ctx.lineWidth = dashing ? R * 0.42 : R * 0.19;
-    for (let band = 1; band <= TRAIL_BANDS; band++) {
-      ctx.globalAlpha = (0.9 * band) / TRAIL_BANDS;
-      ctx.beginPath();
-      for (const d of dashes) {
-        if (d.dashing !== dashing || Math.ceil(d.fade * TRAIL_BANDS) !== band) continue;
-        ctx.moveTo(d.x0, d.y0);
-        ctx.lineTo(d.x1, d.y1);
-      }
-      ctx.stroke();
-    }
-  }
-  ctx.globalAlpha = 1;
 }
 
 type RoundLook = { r: number; heft: number; tail: string; body: string; core: string };

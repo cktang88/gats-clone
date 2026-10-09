@@ -16,7 +16,7 @@ import type { Session } from './state.ts';
 
 /**
  * Where a replay is drawn. It is the real session with its drifting, per-moment parts swapped for empty ones (effects, corpses,
- * sparks, trails, damage numbers), so the live fight's leftovers never show in a replay and a replay never leaks into the live
+ * sparks, damage numbers), so the live fight's leftovers never show in a replay and a replay never leaks into the live
  * game. The world is drawn by the normal `drawWorld`, so a replay looks like the game; the stage only replays what the events
  * of each frame would have made (impacts, flashes, a fallen body) as the playhead crosses them.
  */
@@ -25,7 +25,7 @@ export type Stage = { shadow: Session; clip: readonly Snapshot[]; fired: number 
 export function createStage(s: Session, clip: readonly Snapshot[]): Stage {
   const shadow: Session = {
     ...s, effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, rounds: [], roundCover: new Map(), pendingFx: [], pendingShots: [],
-    feedback: NO_FEEDBACK, moments: NO_MOMENTS, trails: new Map(), hurtAt: new Map(), cracks: createCracks(), particles: createPool(160),
+    feedback: NO_FEEDBACK, moments: NO_MOMENTS, hurtAt: new Map(), cracks: createCracks(), particles: createPool(160),
     coreHitAt: -Infinity, turretAims: new Map(),
   };
   return { shadow, clip, fired: -1 };

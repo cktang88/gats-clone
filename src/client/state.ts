@@ -14,7 +14,6 @@ import type { Prediction } from './predict.ts';
 import type { Retry } from './reconnect.ts';
 import type { LocalRound, ShotEvent } from './rounds.ts';
 import type { TurretAim } from './siege.ts';
-import type { TrailPoint } from './trails.ts';
 import type { Corpse, ZombieCorpse } from './corpses.ts';
 import type { CrackPool } from './decals.ts';
 
@@ -77,7 +76,6 @@ export type Session = {
   bests: Bests;
   feed: FeedLine[];
   chat: ChatLine[];
-  trails: Map<number, TrailPoint[]>;
   hurtAt: Map<number, number>;
   cracks: CrackPool;
   /** The level whose pick was sent and not yet confirmed by a snapshot. */

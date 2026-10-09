@@ -53,7 +53,7 @@ test('a door glow drawn after a long frame is stamped with this frame\'s light c
     t: 'snap', tick: 1, ackSeq: 0, self: { nemesis: null, viewRadius: 900 }, players: [], bullets: [], crates: [], thrown: [], zones: [], minimap: [], leaderboard: [], events: [],
     match: { mode: 'FFA', map: 'plaza' }, doors: [[i, 255, 1]],
   } as unknown as import('../src/shared/protocol.ts').Snapshot;
-  const s = { myId: 1, worldSize: map.size, walls: [], lastSelf: { x: door.x, y: door.y }, trails: new Map(), hurtAt: new Map(), cracks: createCracks(), effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, particles: createPool(), feedback: NO_FEEDBACK } as unknown as import('../src/client/state.ts').Session;
+  const s = { myId: 1, worldSize: map.size, walls: [], lastSelf: { x: door.x, y: door.y }, hurtAt: new Map(), cracks: createCracks(), effects: [], corpses: [], zombieCorpses: { list: [], dawnAt: null }, particles: createPool(), feedback: NO_FEEDBACK } as unknown as import('../src/client/state.ts').Session;
   const cam = makeCamera({ x: door.x, y: door.y }, 1280, 800, WORLD.viewRadius);
   resetLighting();
   const cx = door.x + (door.axis === 'h' ? door.w / 2 : 0), cy = door.y + (door.axis === 'h' ? 0 : door.w / 2);
