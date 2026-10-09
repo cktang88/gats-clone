@@ -50,6 +50,7 @@ function anchorFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: C
 const goalOf = (i: Intent): Point | null => {
   switch (i.k) {
     case 'patrol': return i.goal;
+    case 'resupply': return i.at;
     case 'takePosition': case 'peekAndHide': case 'reloadInCover': case 'retreatAndHeal': return i.spot;
     case 'search': case 'flank': case 'engage': case 'blinded': return null;
   }

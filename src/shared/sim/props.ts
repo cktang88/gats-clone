@@ -1,8 +1,8 @@
-import { PROP_FX, PROPS, WORLD, type MedalId } from '../defs.ts';
+import { HP_MULTIPLIER, PROP_FX, PROPS, WORLD, type MedalId } from '../defs.ts';
 import type { Team } from '../protocol.ts';
 import { award, explode } from './combat.ts';
 import { clamp, dist2, rectsOverlap, segmentEntersCircleAt, segmentEntersRectAt } from './movement.ts';
-import { effectiveStats } from './stats.ts';
+import { abilityOf, effectiveStats } from './stats.ts';
 import { isEnemy, newId, propRect, propSolid, solidRects, type Player, type Prop, type World } from './world.ts';
 import { MAPS } from '../maps.ts';
 
@@ -118,32 +118,66 @@ function pulse(w: World, q: Prop) {
   gone(w, q);
 }
 
-function tryPickup(w: World, q: Prop) {
+/**
+ * Gives pack `q` to `p` if they need it, and says what they got (a `gain` event, only the rounds and health that landed). A health pack
+ * is not taken at full health, and an ammo pack not with a full magazine and the ability ready: it stays for whoever does need it.
+ */
+function takePack(w: World, q: Prop, p: Player): boolean {
+  const life = p.life;
+  if (life.k !== 'alive') return false;
+  const stats = effectiveStats(p);
+  if (q.kind === 'medic') {
+    if (life.hp >= stats.maxHp - 1) return false;
+    const was = life.hp;
+    // In the player's own scale: a person's health counts `HP_MULTIPLIER` times a bot's, so their pack does too (the same share of either).
+    life.hp = Math.min(stats.maxHp, life.hp + PROP_FX.medic.heal * HP_MULTIPLIER[p.kind]);
+    w.events.push({ e: 'gain', id: p.id, from: 'medic', hp: Math.round(life.hp - was) });
+  } else {
+    const cooling = w.now < p.abilityReadyAt;
+    if (life.ammo >= stats.mag && !cooling) return false;
+    const rounds = Math.max(0, stats.mag - life.ammo);
+    life.ammo = stats.mag;
+    life.reloadUntil = null;
+    p.abilityReadyAt = Math.min(p.abilityReadyAt, w.now);
+    w.events.push({ e: 'gain', id: p.id, from: 'ammo', ...(rounds > 0 && { ammo: rounds }), ...(cooling && abilityOf(p) !== null && { ability: true as const }) });
+  }
+  w.events.push({ e: 'prop', kind: q.kind, k: 'pick', x: q.x, y: q.y });
+  gone(w, q);
+  return true;
+}
+
+/** A pack on the floor goes to the first player who walks over it and needs it, in the tick's turn order, so no one always wins a tie. */
+function tryPickup(w: World, q: Prop, order: readonly Player[]) {
   const R = PROP_FX[q.kind as 'medic' | 'ammo'].pickR;
-  for (const p of w.players.values()) {
+  for (const p of order) {
     if (p.life.k !== 'alive' || dist2(p.x, p.y, q.x, q.y) > R * R) continue;
-    const stats = effectiveStats(p);
-    const life = p.life;
-    if (q.kind === 'medic') {
-      if (life.hp >= stats.maxHp - 1) continue;
-      life.hp = Math.min(stats.maxHp, life.hp + PROP_FX.medic.heal);
-    } else {
-      if (life.ammo >= stats.mag && w.now >= p.abilityReadyAt) continue;
-      life.ammo = stats.mag;
-      life.reloadUntil = null;
-      p.abilityReadyAt = Math.min(p.abilityReadyAt, w.now);
-    }
-    w.events.push({ e: 'prop', kind: q.kind, k: 'pick', x: q.x, y: q.y });
-    gone(w, q);
+    if (takePack(w, q, p)) return;
+  }
+}
+
+/**
+ * E at a standing cabinet: the first player within `openR` pressing use opens it, as a shot would (it is theirs), and takes the pack at once
+ * if they need it; if not, the pack lies for whoever does. Space, the ability, opens nothing.
+ */
+function tryOpen(w: World, q: Prop, order: readonly Player[]) {
+  const R = PROP_FX[q.kind as 'medic' | 'ammo'].openR;
+  for (const p of order) {
+    if (p.life.k !== 'alive' || !p.input.use || dist2(p.x, p.y, q.x, q.y) > R * R) continue;
+    q.hp = 0;
+    q.by = { attacker: p.id, team: p.team };
+    setOff(w, q, { attacker: p, team: p.team }, { x: q.x - p.x, y: q.y - p.y });
+    takePack(w, q, p);
     return;
   }
 }
 
-export function tickProps(w: World, dt: number) {
+export function tickProps(w: World, dt: number, order: readonly Player[] = [...w.players.values()]) {
   for (const q of w.props) {
     if (q.respawnAt !== null) {
       const stood = [...w.players.values()].some((p) => p.life.k !== 'dead' && rectsOverlap(propRect(q), { x: p.x, y: p.y, w: 0, h: 0 }, WORLD.playerRadius));
       if (w.now >= q.respawnAt && !stood) { q.respawnAt = null; q.phase = 'stand'; q.hp = PROPS[q.kind].hp; q.vx = 0; q.vy = 0; q.by = null; w.wallsVersion++; }
+    } else if (q.phase === 'stand') {
+      if (q.kind === 'medic' || q.kind === 'ammo') tryOpen(w, q, order);
     } else if (q.phase === 'active') {
       if (q.kind === 'propane') flyPropane(w, q, dt);
       else if (q.kind === 'generator' && w.now >= q.at) pulse(w, q);
@@ -151,7 +185,7 @@ export function tickProps(w: World, dt: number) {
       if (q.kind === 'lamp') {
         if (w.now >= q.at) { q.phase = 'stand'; q.hp = PROPS.lamp.hp; q.by = null; w.events.push({ e: 'prop', kind: 'lamp', k: 'relight', x: q.x, y: q.y }); }
       } else {
-        tryPickup(w, q);
+        tryPickup(w, q, order);
         if (q.respawnAt === null && w.now >= q.at) gone(w, q);
       }
     }

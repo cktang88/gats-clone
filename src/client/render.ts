@@ -15,6 +15,7 @@ import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from '.
 import { stepCarry, swingMsOf } from './raise.ts';
 import { drawProps, drawPropTops, drawFireSlick } from './propfx.ts';
 import { drawRadioOverlay, drawRadios } from './radio.ts';
+import { drawGains, drawPickupOverlay } from './pickups.ts';
 import { drawZoneFloor, drawZoneOverlay, zonesOf } from './zoneart.ts';
 import { drawRangeFloor, drawTargets, layoutOf } from './targetart.ts';
 import { drawBarrels, drawArenaLight, drawBeacon, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
@@ -259,6 +260,10 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const nemesis = killer || snap.self.nemesis === null ? undefined : alive.find((p) => p.id === snap.self.nemesis && !p.hidden);
   if (nemesis) drawKillerMark(ctx, nemesis, now, dark, 'NEMESIS');
   drawJuice(ctx, f.fxNow ?? now, MARK_Y - 10);
+  // The cabinet prompt goes over the chatter bubbles, so a line of soldier talk never hides the key to press.
+  drawPickupOverlay(ctx, now, reducedMotion());
+  // What you just picked up, over your own soldier.
+  drawGains(ctx, f.fxNow ?? now, mine?.alive ? mine : null, reducedMotion());
 }
 
 const BACKDROP = { zoom: 0.75, swayMs: 40_000, fill: 0.85 } as const;

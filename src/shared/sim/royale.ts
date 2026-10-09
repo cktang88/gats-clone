@@ -4,7 +4,7 @@ import { ringAt, type Circle, type RingView, type RoundWinner, type RoyaleResult
 import { die, kill } from './combat.ts';
 import { goDown, tickDowned } from './downed.ts';
 import { circleBlocked, dist2, rectsOverlap } from './movement.ts';
-import { effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
+import { abilityOf, effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
 import { coverRects, crateRect, freshFeats, newId, rand, spawnPoint, type Player, type Ring, type Royale, type RoyaleStats, type World } from './world.ts';
 
 const squadName = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
@@ -105,10 +105,12 @@ export function openDrop(w: World, p: Player) {
     p.level = levelForScore(p.score);
   } else if (p.life.k === 'alive') {
     const stats = effectiveStats(p);
+    const rounds = Math.max(0, stats.mag - p.life.ammo), healed = Math.round(Math.max(0, stats.maxHp - p.life.hp)), cooling = w.now < p.abilityReadyAt && abilityOf(p) !== null;
     p.life.hp = stats.maxHp;
     p.life.ammo = stats.mag;
     p.life.reloadUntil = null;
     p.abilityReadyAt = 0;
+    if (healed > 0 || rounds > 0 || cooling) w.events.push({ e: 'gain', id: p.id, from: 'drop', ...(healed > 0 && { hp: healed }), ...(rounds > 0 && { ammo: rounds }), ...(cooling && { ability: true as const }) });
   }
 }
 

@@ -5,6 +5,8 @@ import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
 import { bandFor, GUN_BAND, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
 import { act, freshMotor, type Motor } from './bot/motor.ts';
 import { crawlThink, royaleThink } from './bot/royale.ts';
+import { supplyFor } from './bot/supplies.ts';
+import { isOpen } from './bot/nav.ts';
 import { DEAD_ZONE, siegeThink } from './bot/siege.ts';
 
 export type BotMemory = {
@@ -81,7 +83,7 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
 
   const { awareness, view } = perceive(snap, arena, me, mem.awareness);
   const persona = PERSONALITIES[mem.persona];
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier };
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier, supply: supplyFor(snap, me, (p) => isOpen(arena.nav, p)) };
   const intent = nextIntent(mem.intent ?? startIntent({ k: 'patrol', goal: me }, ctx), view, ctx);
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
   return { input, pick: choice, mem: { ...mem, intent, awareness, motor } };

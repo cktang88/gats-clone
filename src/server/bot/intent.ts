@@ -6,6 +6,7 @@ import { BLIND_AT, type Perception, type Threat } from './awareness.ts';
 import { sightBlocked } from '../../shared/sim/vision.ts';
 import { coverNear, pickCover } from './cover.ts';
 import { between, clearShot, dist, isOpen, nearestOpenPoint, type Point } from './nav.ts';
+import type { Supply } from './supplies.ts';
 
 export const PERSONALITY_IDS = ['aggressive', 'cautious', 'marksman'] as const;
 export type PersonalityId = (typeof PERSONALITY_IDS)[number];
@@ -80,7 +81,9 @@ export type Plan =
   | { k: 'flank'; target: number; via: Point; lastKnown: Point }
   | { k: 'search'; at: Point; giveUpAt: number }
   /** Flashed: blind until it wears off. `spray` fires at where the enemy last was, `fallBack` backs away from it, `hold` stands its ground. */
-  | { k: 'blinded'; mode: 'spray' | 'fallBack' | 'hold'; at: Point };
+  | { k: 'blinded'; mode: 'spray' | 'fallBack' | 'hold'; at: Point }
+  /** Off to a pack on the floor (walking over it takes it) or a cabinet (`open`: it stands at `at` and presses E), with nobody to fight. */
+  | { k: 'resupply'; at: Point; id: number; open: boolean };
 
 export type Intent = Plan & { since: number; holdUntil: number };
 type IntentKind = Plan['k'];
@@ -90,7 +93,11 @@ type Of<K extends IntentKind> = Extract<Intent, { k: K }>;
  * `strategic` is false on a think that only reacts (see `nextIntent`); `lastPlan` is the tick of this bot's last strategic think, so a rule
  * that weighs its odds once a tick, or waits for one exact tick, still does over the ticks since then.
  */
-export type IntentCtx = { tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number; home?: { at: Point; r: number; face: Point }; strategic?: boolean; lastPlan?: number };
+export type IntentCtx = {
+  tick: number; persona: Personality; role: Role | null; band: Band; arena: BotArena; rand: () => number; home?: { at: Point; r: number; face: Point }; strategic?: boolean; lastPlan?: number;
+  /** The pack or cabinet it needs and could fetch (supplies.ts), if any. */
+  supply?: Supply | null;
+};
 
 /** The ticks since this bot last planned (1 when it plans every tick). */
 const sincePlan = (c: IntentCtx) => Math.max(1, Math.min(60, c.tick - (c.lastPlan ?? c.tick - 1)));
@@ -100,7 +107,7 @@ const overTicks = (p: number, c: IntentCtx) => 1 - (1 - p) ** sincePlan(c);
 const cameRound = (at: number, c: IntentCtx) => c.tick - sincePlan(c) < at && at <= c.tick;
 
 const MIN_COMMIT_MS: Record<IntentKind, number> = {
-  patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500, blinded: 0,
+  patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500, blinded: 0, resupply: 0,
 };
 const SEARCH_MS = 5000;
 const GUNFIRE_PULL_PX = 2500;
@@ -287,7 +294,7 @@ const coverBlown: Interrupt = (cur, v, c) => {
 };
 
 const engageOnSight: Interrupt = (cur, v) => {
-  const calm = cur.k === 'patrol' || cur.k === 'takePosition' || cur.k === 'search' || cur.k === 'flank';
+  const calm = cur.k === 'patrol' || cur.k === 'takePosition' || cur.k === 'search' || cur.k === 'flank' || cur.k === 'resupply';
   const t = v.threats[0];
   if (!calm || !t) return null;
   // Holding a zone, it lets a far enemy walk by; not one shooting at it.
@@ -311,7 +318,18 @@ const goBlind: Interrupt = (cur, v, c) => {
   return { k: 'blinded', mode: spray ? 'spray' : 'fallBack', at: known };
 };
 
-const INTERRUPTS: readonly Interrupt[] = [goBlind, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, engageOnSight, investigateGunfire];
+/**
+ * Nobody to fight and short of health or rounds: it goes for the pack or cabinet it needs (supplies.ts), from a patrol, a post, a search, or a
+ * retreat nobody is chasing. An enemy in sight takes it straight back to the fight (`engageOnSight` counts a supply run as calm).
+ */
+const fetchSupplies: Interrupt = (cur, v, c) => {
+  const s = c.supply;
+  if (!s || v.threats.length > 0 || v.underFire) return null;
+  const free = cur.k === 'patrol' || cur.k === 'takePosition' || cur.k === 'search' || (cur.k === 'retreatAndHeal' && cur.spot === null);
+  return free ? { k: 'resupply', at: s.at, id: s.id, open: s.open } : null;
+};
+
+const INTERRUPTS: readonly Interrupt[] = [goBlind, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, engageOnSight, fetchSupplies, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {
@@ -359,6 +377,12 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
   blinded: (cur, v, c) => {
     if (v.flash > BLIND_AT) return null;
     return cur.mode === 'spray' ? searchPlan(v, c, cur.at) : idlePlan(v, c);
+  },
+  resupply: (cur, v, c) => {
+    const s = c.supply;
+    // Taken, gone, or no longer needed: back to its business. A cabinet it opened becomes the pack to walk over.
+    if (!s) return idlePlan(v, c);
+    return s.id !== cur.id || s.open !== cur.open || dist(s.at, cur.at) > 1 ? { k: 'resupply', at: s.at, id: s.id, open: s.open } : null;
   },
   search: (cur, v, c) => {
     // Fresh news since it last planned (heard on a quick think in between counts too), not only news on this very tick.

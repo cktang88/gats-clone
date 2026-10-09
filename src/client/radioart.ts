@@ -192,7 +192,7 @@ function plate(ctx: CanvasRenderingContext2D, x: number, y: number, text: string
   ctx.fillText(text, x, y - 1.5);
 }
 
-/** The "E · Radio · <station>" prompt that floats over a radio when you are close, bobbing gently. `key` is "E" or "TAP". */
+/** The "E · Radio · <station>" prompt that floats over a radio when you are close, bobbing gently. `key` is "E" or "TAP". The cabinets' "E · Open …" prompt is the same one (`drawKeyPrompt`). */
 export function drawRadioPrompt(ctx: CanvasRenderingContext2D, x0: number, y0: number, now: number, label: string, key: string, reduced: boolean, k = 1) {
   const x = 0, y = 0;
   const bob = reduced ? 0 : Math.sin(now / 330) * 2.2;
@@ -209,6 +209,9 @@ export function drawRadioPrompt(ctx: CanvasRenderingContext2D, x0: number, y0: n
   plate(ctx, left + kw + 6 + tw / 2, y + bob, label, '#3b4452', '#f6efe0');
   ctx.restore();
 }
+
+/** The keycap-and-plate prompt over anything E acts on (a radio, a cabinet). */
+export const drawKeyPrompt = drawRadioPrompt;
 
 /** A small toast over the radio: a station name after tuning, or "Found a radio!". `age` 0..1 through its life. */
 export function drawRadioToast(ctx: CanvasRenderingContext2D, x0: number, y0: number, text: string, age: number, tone: 'station' | 'found', k = 1) {

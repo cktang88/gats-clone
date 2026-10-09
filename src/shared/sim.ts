@@ -181,7 +181,7 @@ export function step(w: World, dtMs: number): void {
   tickBullets(w, dt);
   tickThrown(w, dt);
   tickBarrels(w);
-  tickProps(w, dt);
+  tickProps(w, dt, playersThisTick(w));
   if (w.range) tickRange(w, dt);
   tickAirdrops(w);
   watchCloseCalls(w);

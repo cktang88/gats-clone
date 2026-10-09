@@ -4,7 +4,7 @@ export { planeAt } from '../protocol.ts';
 import { award } from './combat.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from './movement.ts';
 import { staticSolids } from '../mapgeo.ts';
-import { addScore, effectiveStats } from './stats.ts';
+import { abilityOf, addScore, effectiveStats } from './stats.ts';
 import { crateRect, newId, rand, type Crate, type Player, type Pose, type World } from './world.ts';
 
 const CELL = 50;
@@ -125,6 +125,7 @@ export function openAirdrop(w: World, p: Player, crate: Crate) {
   if (life.k !== 'alive') return;
   const stats = effectiveStats(p);
   const gold = !life.golden && roll >= AIRDROP.supplyChance;
+  const rounds = Math.max(0, stats.mag - life.ammo), healed = Math.round(Math.max(0, stats.maxHp - life.hp)), cooling = w.now < p.abilityReadyAt && abilityOf(p) !== null;
   life.ammo = stats.mag;
   life.reloadUntil = null;
   if (gold) life.golden = true;
@@ -133,6 +134,7 @@ export function openAirdrop(w: World, p: Player, crate: Crate) {
     p.abilityReadyAt = 0;
     addScore(w, p, AIRDROP.supplyScore);
   }
+  w.events.push({ e: 'gain', id: p.id, from: 'airdrop', ...(rounds > 0 && { ammo: rounds }), ...(gold ? { gold: true as const } : { ...(healed > 0 && { hp: healed }), ...(cooling && { ability: true as const }) }) });
   const h = crate.size / 2;
   w.events.push({ e: 'airdrop', k: 'taken', x: crate.x + h, y: crate.y + h, by: p.name, gold });
   award(w, p, 'specialDelivery');

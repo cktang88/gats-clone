@@ -221,7 +221,15 @@ export type GameEvent =
   /** A supply plane is `inbound` for (`x`, `y`); its crate `landed`; or `by` cracked it open and took a golden gun (`gold`) or a resupply. */
   | { e: 'airdrop'; k: 'inbound' | 'landed' | 'taken'; x: number; y: number; by?: string; gold?: boolean }
   /** A prop (`PROPS`) did its thing: `pop` (shattered, burst, spilled), `launch` a tank at heading `a`, `arc` a generator shorting, `emp` its pulse of radius `r`, `pick` a pack taken, `relight` a lamp. `c` is the colour a paint can splatters. */
-  | { e: 'prop'; kind: PropKind; k: 'pop' | 'launch' | 'arc' | 'emp' | 'pick' | 'relight'; x: number; y: number; a?: number; r?: number; c?: ColorId };
+  | { e: 'prop'; kind: PropKind; k: 'pop' | 'launch' | 'arc' | 'emp' | 'pick' | 'relight'; x: number; y: number; a?: number; r?: number; c?: ColorId }
+  /**
+   * Player `id` took something: `hp` health and `ammo` rounds actually gained (what was wasted is not counted), `ability` ready again,
+   * `gold` a golden gun. `from` is where it came from. News only to that player, who sees it pop up over their own soldier.
+   */
+  | { e: 'gain'; id: number; from: GainSource; hp?: number; ammo?: number; ability?: true; gold?: true };
+
+/** Where a `gain` came from: a health or ammo pack, a supply plane's crate, a Last Squad drop. */
+export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop';
 
 export type Circle = { x: number; y: number; r: number };
 /**

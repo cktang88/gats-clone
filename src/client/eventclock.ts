@@ -37,6 +37,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
     case 'life':
     case 'wiped':
     case 'airdrop':
+    case 'gain':
     case 'prop': return null;
     case 'coil': return { kind: 'coil', x: ev.x, y: ev.y, p: ev.p };
     case 'aid': return { kind: 'aid', of: ev.kind, x: ev.x, y: ev.y };

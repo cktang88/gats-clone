@@ -192,9 +192,9 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     } else if (sameTeam(me, p)) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
-  // A medal is news only to the player who earned it.
-  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'airdrop' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped' || (e.e === 'medal' && e.id === me.id)
-    || (e.e !== 'medal' && inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
+  // A medal, and what a pickup gave, is news only to the player who earned it.
+  const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'airdrop' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped' || (e.e === 'medal' && e.id === me.id) || (e.e === 'gain' && e.id === me.id)
+    || (e.e !== 'medal' && e.e !== 'gain' && inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
 
   return {
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),

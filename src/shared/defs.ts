@@ -614,8 +614,8 @@ export const PROPS: Record<PropKind, { name: string; desc: string; size: number;
   generator: { name: 'Generator', desc: 'Shorts out in an EMP: slows everyone near and locks abilities', size: 40, hp: 50, respawnMs: 60_000 },
   oil: { name: 'Oil drum', desc: 'Spills a burning slick', size: 32, hp: 45, respawnMs: 45_000 },
   lamp: { name: 'Streetlamp', desc: 'Shoot the bulb to darken its pool of light', size: 20, hp: 20, respawnMs: 90_000 },
-  medic: { name: 'Medical cabinet', desc: 'Shatters and drops a health pack', size: 36, hp: 40, respawnMs: 60_000 },
-  ammo: { name: 'Ammo crate', desc: 'Opens and drops a full magazine and a fresh ability', size: 36, hp: 40, respawnMs: 60_000 },
+  medic: { name: 'Medical cabinet', desc: 'Shot or opened with E, drops a health pack', size: 36, hp: 40, respawnMs: 60_000 },
+  ammo: { name: 'Ammo crate', desc: 'Shot or opened with E, drops a full magazine and a fresh ability', size: 36, hp: 40, respawnMs: 60_000 },
   paint: { name: 'Paint can', desc: 'Splatters your colour on the floor', size: 22, hp: 10, respawnMs: 30_000 },
 };
 /** The numbers behind each prop's effect. Speeds are px/s, times ms. */
@@ -629,9 +629,13 @@ export const PROP_FX = {
   generator: { arcMs: 600, radius: 210, slowMs: 2600, slowMul: 0.55, lockMs: 2000 },
   /** The slick burns everyone in `radius` (but its spiller) at `dps` for `burnMs`. */
   oil: { radius: 100, burnMs: 6000, dps: 18 },
-  /** A broken-open cabinet's pack lies `packMs`, taken by a player within `pickR` who needs it. */
-  medic: { heal: 50, packMs: 25_000, pickR: 34 },
-  ammo: { packMs: 25_000, pickR: 34 },
+  /**
+   * A broken-open cabinet's pack lies `packMs`, taken by the first player who walks over it (a body within `pickR` of its centre) and needs it.
+   * A standing cabinet also opens to E (`use`) from within `openR` of its centre: a body pressed to any side of it, corners too.
+   */
+  /** `heal` is in a bot's health; a person's pack heals `HP_MULTIPLIER.human` times that, the same share of their bigger pool. */
+  medic: { heal: 50, packMs: 25_000, pickR: 40, openR: 70 },
+  ammo: { packMs: 25_000, pickR: 40, openR: 70 },
   paint: { radius: 90, picassoPx: 80 },
 } as const;
 

@@ -37,6 +37,7 @@ function marks(i: Intent): { to: [number, number] | null; lookAt: [number, numbe
     case 'flank': return { to: p(i.via), lookAt: p(i.lastKnown) };
     case 'search': return { to: p(i.at), lookAt: null };
     case 'blinded': return { to: null, lookAt: p(i.at) };
+    case 'resupply': return { to: p(i.at), lookAt: null };
   }
 }
 

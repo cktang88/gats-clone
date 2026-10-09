@@ -12,6 +12,7 @@ import { hazardState, hazardsOf, propToShoot, seenProps, shotWouldHurtMe } from 
 import { BLIND_AT, focus, type Perception, type Threat } from './awareness.ts';
 import { sightBlocked } from '../../shared/sim/vision.ts';
 import { justLost, lane, type Intent, type IntentCtx } from './intent.ts';
+import { inOpenReach } from './supplies.ts';
 import { between, clearShot, dist, findPath, isOpen, walkable, type Point } from './nav.ts';
 import { boltCue, DODGE_AT, dangerTo, dodgeLeg, dodgeStyle, nextDodge, weave, type Dodge, type DodgeStyle } from './evade.ts';
 
@@ -376,6 +377,7 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
     case 'patrol': return { steer: idle(intent.goal, null), stance: m.stance };
     case 'takePosition': return { steer: idle(intent.spot, intent.facing), stance: m.stance };
     case 'search': return { steer: { to: intent.at, face: intent.at, reload: false, crates: false }, stance: m.stance };
+    case 'resupply': return { steer: { to: intent.at, face: null, reload: false, crates: false }, stance: m.stance };
     case 'blinded': {
       const to = intent.mode === 'fallBack' ? awayFrom(me, intent.at, c.arena, RETREAT_STEP) : null;
       return { steer: { to, face: intent.mode === 'hold' ? null : intent.at, reload: v.self.ammo < v.self.mag / 2 && intent.mode !== 'spray', crates: false }, stance: m.stance };
@@ -903,7 +905,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     nav: c.arena.nav.serial, door: doorOnWay(me, way.at, c.arena, snap.doors),
   };
   return {
-    input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: false, sprint },
+    // E on the cabinet it walked up to (supplies.ts): the same `use` a person's key sends.
+    input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: intent.k === 'resupply' && !t && inOpenReach(me, intent, snap.props), sprint },
     motor: {
       ...walked(m, me, way.at, drive, way.route, v.tick, way.replanned, crawling),
       stance, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots, ...(tap && { tap }),
