@@ -397,3 +397,24 @@ test('the server opens a private range on request, keeps it off the server list,
     await rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test('every target in the layout can be shot from the firing line by some gun that reaches it, sliders included', () => {
+  const reach = Math.max(...GUN_IDS.map((g) => GUNS[g].range));
+  const longest = GUN_IDS.find((g) => GUNS[g].range === reach)!;
+  layout.targets.forEach((d, i) => {
+    let hit = false;
+    // Stand on the line level with the target, and for a slider try a few moments along its run, aiming where it will be when the round lands.
+    for (let attempt = 0; attempt < 6 && !hit; attempt++) {
+      const w = rangeWorld();
+      const t = w.range!.targets[i]!;
+      const p = spawnAt(w, layout.line - 10, d.y);
+      assert.ok(setRangeLoadout(w, p, { gun: longest }));
+      run(w, 600 + attempt * 170);
+      const dist = Math.hypot(d.x - p.x, targetPos(d, w.now).y - p.y);
+      const at = targetPos(d, w.now + TICK_MS + (dist / GUNS[longest].bulletSpeed) * 1000);
+      shootOnce(w, p, Math.atan2(at.y - p.y, at.x - p.x), 1500);
+      hit = t.hp < TARGETS[d.kind].hp || t.respawnAt !== null;
+    }
+    assert.ok(hit, `target ${i} (${d.kind} at ${d.x},${d.y}, ${d.x - layout.line} px out) can't be hit from the firing line with the ${longest} (reach ${reach})`);
+  });
+});

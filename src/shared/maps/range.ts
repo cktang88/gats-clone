@@ -4,12 +4,12 @@ import type { Center, MapDef, MapWall, WallMaterial } from '../maps.ts';
 
 /**
  * The shooting range: a firing line on the west edge and six lanes running east, each a different test. Distances are painted on
- * the floor from the line (100, 200, 400, 700, 1000 and 1500 px). The map is not a half-turn pair like the versus maps; it has one
+ * the floor from the line (100, 200, 400, 700, 1000 and 1250 px). The map is not a half-turn pair like the versus maps; it has one
  * spawn, no zones and no crates, and only the Range mode plays it.
  */
 const SIZE = 2400;
 const LINE = 400;
-const MARKS = [100, 200, 400, 700, 1000, 1500] as const;
+const MARKS = [100, 200, 400, 700, 1000, 1250] as const;
 const at = (d: number) => LINE + d;
 
 const LANE_PITCH = 330;
@@ -50,8 +50,8 @@ const TARGETS: TargetDef[] = [
   paper(at(100), LANE_Y[1] - 40), paper(at(200), LANE_Y[1] + 40), paper(at(400), LANE_Y[1] - 40), paper(at(700), LANE_Y[1] + 40), plank(at(1000), LANE_Y[1]),
   // Sliding targets across the line of fire at 200, 400, 700 and 1000 px, slow to quick.
   rail(at(200), LANE_Y[2], 150, 0), rail(at(400), LANE_Y[2], 220, 0.35), rail(at(700), LANE_Y[2], 300, 0.7), rail(at(1000), LANE_Y[2], 380, 0.15),
-  // Long range for the bolt-action and the marksman's rifles.
-  plank(at(700), LANE_Y[3] - 50), plank(at(1000), LANE_Y[3] + 50), paper(at(1000), LANE_Y[3] - 70), plank(at(1500), LANE_Y[3]),
+  // Long range for the bolt-action and the marksman's rifles; the last board, at 1250, only the farther-reaching snipers carry to from the line.
+  plank(at(700), LANE_Y[3] - 50), plank(at(1000), LANE_Y[3] + 50), paper(at(1000), LANE_Y[3] - 70), plank(at(1250), LANE_Y[3]),
   // Training dummies: lots of health, for reading damage per second.
   dummy(at(150), LANE_Y[4] - 45), dummy(at(300), LANE_Y[4] + 45), dummy(at(500), LANE_Y[4] - 45),
   // Behind cover and beside the barrel row, for grenades and blasts.
