@@ -1,39 +1,44 @@
-app = "skirmish-game"
-primary_region = "iad"
-kill_signal = "SIGTERM"
-kill_timeout = "10s"
+# fly.toml app configuration file generated for gats-clone on 2026-10-09T02:18:24Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'tinwar'
+primary_region = 'iad'
+kill_signal = 'SIGTERM'
+kill_timeout = '10s'
 
 [build]
 
 [env]
-  NODE_ENV = "production"
-  PORT = "8080"
-  DATA_DIR = "/data"
-  TRUST_PROXY = "1"
+  DATA_DIR = '/data'
+  NODE_ENV = 'production'
+  PORT = '8080'
+  TRUST_PROXY = '1'
 
 [[mounts]]
-  source = "skirmish_data"
-  destination = "/data"
+  source = 'skirmish_data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "off"
+  auto_stop_machines = 'off'
   auto_start_machines = false
   min_machines_running = 1
 
   [http_service.concurrency]
-    type = "connections"
-    soft_limit = 200
+    type = 'connections'
     hard_limit = 250
+    soft_limit = 200
 
   [[http_service.checks]]
-    grace_period = "10s"
-    interval = "15s"
-    method = "GET"
-    path = "/healthz"
-    timeout = "2s"
+    interval = '15s'
+    timeout = '2s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/healthz'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
