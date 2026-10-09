@@ -213,3 +213,128 @@ test('the top bar packs itself tighter until nothing spills or overlaps, at ever
     }
   }
 });
+
+// ---- The front page held upright. A small model of the cascade: the menu's style sheets, which of their @media blocks apply at a
+// given window, and what an exact selector ends up with (source order; the selectors checked here are the ones that set each value).
+type Rule = { media: string | null; selectors: string[]; decls: Map<string, string> };
+function parseCss(text: string, media: string | null = null, out: Rule[] = []): Rule[] {
+  const src = text.replace(/\/\*[\s\S]*?\*\//g, '');
+  let i = 0;
+  while (i < src.length) {
+    const open = src.indexOf('{', i);
+    if (open < 0) break;
+    const head = src.slice(i, open).trim();
+    let depth = 1, j = open + 1;
+    for (; j < src.length && depth; j++) depth += src[j] === '{' ? 1 : src[j] === '}' ? -1 : 0;
+    const body = src.slice(open + 1, j - 1);
+    if (head.startsWith('@media')) parseCss(body, head.slice(6).trim(), out);
+    else if (!head.startsWith('@')) {
+      const decls = new Map<string, string>();
+      for (const d of body.split(';')) { const k = d.indexOf(':'); if (k > 0) decls.set(d.slice(0, k).trim(), d.slice(k + 1).replace('!important', '').trim()); }
+      out.push({ media, selectors: head.split(',').map((s) => s.trim().replace(/\s+/g, ' ')), decls });
+    }
+    i = j;
+  }
+  return out;
+}
+/** Whether a media query list holds at w x h (width, height and orientation; any other feature, such as reduced motion, reads false). */
+function mediaAt(query: string | null, w: number, h: number): boolean {
+  if (!query) return true;
+  return query.split(',').some((part) => part.trim().split(/\s+and\s+/).every((f) => {
+    const m = /^\(\s*([a-z-]+)\s*:\s*([a-z0-9.]+)\s*\)$/.exec(f.trim());
+    if (!m) return false;
+    const [, name, v] = m as unknown as [string, string, string];
+    const n = parseFloat(v);
+    switch (name) {
+      case 'max-width': return w <= n;
+      case 'min-width': return w >= n;
+      case 'max-height': return h <= n;
+      case 'min-height': return h >= n;
+      case 'orientation': return v === (h >= w ? 'portrait' : 'landscape');
+      default: return false;
+    }
+  }));
+}
+const MENU_CSS = parseCss(['public/style.css', 'public/menu.css', 'public/enlist.css', 'public/menubars.css'].map(read).join('\n'));
+const styleAt = (selector: string, w: number, h: number) => {
+  const out = new Map<string, string>();
+  for (const r of MENU_CSS) if (r.selectors.includes(selector) && mediaAt(r.media, w, h)) for (const [k, v] of r.decls) out.set(k, v);
+  return out;
+};
+const PORTRAIT_WIDTHS = [320, 340, 360, 375, 390, 393, 414, 430, 460, 499];
+const PORTRAIT_HEIGHTS = [568, 667, 700, 780, 844, 852, 896, 932];
+const CLOSED = '#menu .enlist[data-form="closed"]';
+
+test('portrait: the guest\'s enlist strip never puts its benefits beside its buttons, so nothing in it can overprint', () => {
+  assert.ok(mediaAt('(orientation: portrait) and (max-width: 1024px), (max-width: 599px) and (min-height: 521px)', 390, 844), 'the model reads a portrait phone');
+  assert.ok(!mediaAt('(max-height: 520px) and (min-width: 600px)', 390, 844));
+  for (const w of PORTRAIT_WIDTHS) for (const h of PORTRAIT_HEIGHTS) {
+    const at = `${w}x${h}`;
+    // The body (benefits and buttons) has no columns of its own: its parts take whole rows of the plate.
+    assert.equal(styleAt(`${CLOSED} .enlist-body`, w, h).get('display'), 'contents', `${at}: the body lays out no grid of its own`);
+    const plate = styleAt(`${CLOSED} .enlist-plate`, w, h);
+    const rows = [...(plate.get('grid-template-areas') ?? '').matchAll(/"([^"]+)"/g)].map((m) => m[1]!.trim().split(/\s+/));
+    assert.ok(rows.length >= 2, `${at}: the plate names its rows (${plate.get('grid-template-areas')})`);
+    for (const row of rows) {
+      if (row.includes('perks')) assert.ok(row.every((c) => c === 'perks'), `${at}: the benefits own their row (${row.join(' ')})`);
+      if (row.includes('acts')) assert.ok(!row.includes('perks') && !row.includes('head'), `${at}: the buttons share their row with Not now only (${row.join(' ')})`);
+    }
+    assert.equal(plate.get('grid-template-columns'), 'auto minmax(0, 1fr) auto', `${at}: one flexible column`);
+    const perks = styleAt(`${CLOSED} .enlist-perks`, w, h);
+    if (perks.get('display') !== 'none') {
+      assert.equal(perks.get('grid-template-columns'), 'repeat(2, minmax(0, 1fr))', `${at}: the benefits split the width two by two, never by content`);
+      const li = styleAt(`${CLOSED} .enlist-perks li`, w, h);
+      assert.equal(li.get('white-space'), 'normal', `${at}: a benefit wraps`);
+      assert.equal(li.get('overflow-wrap'), 'anywhere', `${at}: even a long word wraps`);
+    } else assert.ok(w < 360, `${at}: the benefits drop out only on the narrowest phones`);
+    const actions = styleAt(`${CLOSED} .enlist-actions`, w, h);
+    assert.equal(actions.get('display'), 'flex', `${at}: the buttons are a row`);
+    assert.equal(actions.get('flex-wrap'), 'wrap', `${at}: that wraps rather than spills`);
+  }
+  // Wider, below a wide desktop (a tablet on its side, a 1024px laptop), the strip stacks too: one column, benefits over buttons.
+  for (const [w, h] of [[1024, 768], [900, 700], [1180, 820]] as const) {
+    assert.equal(styleAt(`${CLOSED} .enlist-body`, w, h).get('grid-template-columns'), 'minmax(0, 1fr)', `${w}x${h}: one column`);
+    assert.equal(styleAt(`${CLOSED} .enlist-actions`, w, h).get('flex-wrap'), 'wrap', `${w}x${h}: buttons wrap`);
+  }
+  // A desktop and a phone on its side keep their layout: no portrait rule reaches them.
+  for (const [w, h] of [[1440, 900], [1280, 800], [932, 370], [844, 390], [667, 375]] as const) {
+    assert.equal(styleAt('#menu .mode-pick', w, h).get('order'), undefined, `${w}x${h}: the mode card keeps its place`);
+    assert.equal(styleAt(`${CLOSED} .enlist-body`, w, h).get('display'), undefined, `${w}x${h}: the strip keeps its grid`);
+  }
+});
+
+test('portrait: the mode card leads, and its dropdown and Next sit above the fold on an iPhone (layout model)', () => {
+  const px = (v: string | undefined, fallback = 0) => (v === undefined ? fallback : parseFloat(/(-?[\d.]+)px/.exec(v)?.[1] ?? String(fallback)));
+  const box = (v: string | undefined) => { const n = (v ?? '0').split(/\s+/).map((p) => px(p)); return { top: n[0] ?? 0, bottom: n[2] ?? n[0] ?? 0 }; };
+  // [width, height, safe top, safe bottom]: an iPhone SE, an iPhone 14 and 15 Pro (with and without the Dynamic Island's insets),
+  // Safari's visible part of a 15 Pro behind its bottom bar, and the biggest Pro Max.
+  for (const [w, h, st, sb] of [[375, 667, 0, 0], [390, 844, 0, 0], [393, 852, 59, 34], [393, 700, 0, 0], [320, 568, 0, 0], [430, 932, 59, 34]] as const) {
+    const at = `${w}x${h}`;
+    assert.equal(styleAt('#menu .mode-pick', w, h).get('order'), '1', `${at}: the mode card first`);
+    assert.equal(styleAt('#menu .step-modes .enlist', w, h).get('order'), '2', `${at}: the enlist strip under it`);
+    assert.equal(styleAt('#menu .mode-pick', w, h).get('margin-top'), '0', `${at}: straight under the bar`);
+    const menu = styleAt('#menu', w, h);
+    let y = px(menu.get('padding-top')) + st;
+    // The bar: a row of --top-h buttons, the row gap, the segmented tabs (their buttons, the well's padding and border), the margin.
+    const top = styleAt('#menu .menu-top', w, h), tabs = styleAt('#menu #menu-tabs', w, h);
+    y += px(menu.get('--top-h')) + px(top.get('gap')) + px(styleAt('#menu #menu-tabs button', w, h).get('height')) + 2 * px(tabs.get('padding')) + 4 + px(top.get('margin-bottom'));
+    // The tip: at most two lines of its text (three at 320px) in a slim strip.
+    const tip = styleAt('#menu .a2hs', w, h), tipFont = styleAt('#menu .a2hs p', w, h).get('font') ?? '';
+    const [, size, lh] = /(\d+)px\/([\d.]+)/.exec(tipFont) ?? [];
+    y += (w < 360 ? 3 : 2) * Number(size) * Number(lh) + box(tip.get('padding')).top + box(tip.get('padding')).bottom + 4 + px(tip.get('margin'));
+    // The card: its padding and border, the title row (a crumb is 27px), then the dropdown, the pitch and Next with the card's gap.
+    const card = styleAt('#menu .mode-pick', w, h), gap = px(card.get('gap'));
+    y += box(card.get('padding')).top + 2 + 4 + 27 + (w < 380 ? 8 + 27 : 0) + gap;
+    const trigger = y + px(styleAt('#menu .mode-trigger', w, h).get('min-height'));
+    y = trigger + gap + 2.7 * 14 * (w < 340 ? 1.5 : 1) + gap;
+    const next = styleAt('#menu button.mode-next', w, h);
+    const clamp = /clamp\((\d+)px, ([\d.]+)vw, (\d+)px\)/.exec(next.get('font-size') ?? '');
+    assert.ok(clamp, `${at}: Next's type scales with the width`);
+    const font = Math.min(Number(clamp![3]), Math.max(Number(clamp![1]), (Number(clamp![2]) * w) / 100));
+    const p = box(next.get('padding'));
+    const nextBottom = y + 4 + font * 1.1 + p.top + p.bottom + 4 + 9;
+    const fold = h - sb;
+    assert.ok(trigger <= fold, `${at}: the dropdown ends at ${Math.round(trigger)}px, above the fold at ${fold}px`);
+    assert.ok(nextBottom <= fold, `${at}: Next ends at ${Math.round(nextBottom)}px (lip included), above the fold at ${fold}px`);
+  }
+});

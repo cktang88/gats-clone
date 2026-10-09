@@ -213,10 +213,15 @@
 .profile-settings { display: inline-block; margin-top: 10px; font: 700 var(--t-label) var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); text-decoration: none; }
 .profile-settings:hover { color: var(--text, #ece6d6); }
 
-/* ---- Narrow screens: the card spans the width, the guest's strip wraps to two rows. */
-@media (max-width: 860px) {
+/* ---- Below a wide desktop the guest's strip stacks: its benefits two by two, then its buttons on a row of their own that wraps.
+ * (Benefits and buttons side by side, on `minmax(0, 1fr) auto`, gave the unwrappable buttons every pixel and crushed the benefits to
+ * nothing, so their words overprinted each other and Create account: on a phone held upright, and on a 1024px laptop.) */
+@media (max-width: 1180px) {
   #menu .enlist[data-form="closed"] .enlist-plate { grid-template-columns: auto minmax(0, 1fr) auto; }
-  #menu .enlist[data-form="closed"] .enlist-body { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; }
+  #menu .enlist[data-form="closed"] .enlist-body { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr); }
+  #menu .enlist[data-form="closed"] .enlist-perks { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0; border: 0; }
+  #menu .enlist[data-form="closed"] .enlist-perks li { white-space: normal; min-width: 0; overflow-wrap: anywhere; }
+  #menu .enlist[data-form="closed"] .enlist-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; }
 }
 @media (max-width: 640px) {
   #menu .mode-pick { width: 100%; }
@@ -255,4 +260,104 @@
   #menu .mdd-opt .mdd-text { gap: 2px; }
   #menu .mdd-opt .mdd-name { font-size: 17px; }
   #menu .mdd-pitch { font-size: 12.5px; }
+}
+
+/* The full-screen tip's arrow stands in for "Tap … then" only on a phone held upright (below). */
+#menu .a2hs-arrow { display: none; }
+
+/* ---- A phone held upright (and a tablet in portrait, or any window narrower than a phone on its side). The mode card is the hero:
+ * it comes straight under a compact top bar and a one-line full-screen tip, so the dropdown and Next are on screen without scrolling;
+ * the guest's enlist strip follows it. Desktop and a phone on its side never match this block. */
+@media (orientation: portrait) and (max-width: 1024px), (max-width: 599px) and (min-height: 521px) {
+  #menu { --top-h: 38px; padding-top: calc(10px + var(--st)); }
+  /* Top bar: the emblem and the auth buttons on one row, the tabs as one segmented plate under them, every piece the same height. */
+  #menu .menu-top { margin-bottom: 10px; gap: 8px 10px; }
+  #menu .emblem { width: 38px; }
+  #menu .logo { font-size: 30px; }
+  #menu .menu-auth { gap: 8px; }
+  #menu .menu-auth .top-btn { padding: 0 12px; font-size: 15px; letter-spacing: 0.08em; }
+  #menu .top-me-name { font-size: 15px; }
+  /* (#menu-tabs by id: the menu's plate-button rule, with its run of :not()s, would otherwise win.) The segments keep 4px apart,
+   * the gap the bar's fit check (menubar.ts spillPx) asks of neighbours on a row. */
+  #menu #menu-tabs {
+    grid-column: 1 / -1; grid-row: 2; display: flex; gap: 4px; padding: 3px; justify-content: stretch;
+    background: rgba(21, 23, 28, 0.88); border: 2px solid var(--m-ink); border-radius: 7px; box-shadow: 4px 5px 0 var(--m-shadow);
+  }
+  #menu #menu-tabs button {
+    flex: 1 1 0; min-width: 0; height: 34px; padding: 0 4px; border: 0; border-radius: 5px; background: none; box-shadow: none; transform: none;
+    font-size: 15px; letter-spacing: 0.08em; white-space: nowrap; color: var(--m-sub);
+  }
+  #menu #menu-tabs button[aria-selected="true"] {
+    color: var(--m-text); background: linear-gradient(var(--m-accent) 0 4px, #5a626f 4px); box-shadow: inset 0 0 0 2px var(--m-ink);
+  }
+  #menu #menu-tabs button:active:not(:disabled) { transform: translateY(1px); }
+  #menu .acct-sheet { top: 96px; }
+
+  /* The full-screen tip: one slim strip, its key steps only, and a small Got it. */
+  #menu .a2hs { grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; margin: 0 0 12px; padding: 6px 6px 6px 10px; }
+  #menu .a2hs-icon { width: 22px; height: 22px; }
+  #menu .a2hs p { font: 600 14px/1.35 var(--text); }
+  #menu .a2hs b { font-size: 14px; }
+  #menu .a2hs-step { white-space: nowrap; }
+  #menu .a2hs-why, #menu .a2hs small, #menu .a2hs-tap, #menu .a2hs-then { display: none; }
+  #menu .a2hs-arrow { display: inline; margin: 0 6px 0 2px; color: var(--accent); font-weight: 800; }
+  #menu .a2hs button { min-height: 34px; padding: 0 12px; font-size: 14px; }
+
+  /* The mode card first, full width, right under the bar; the guest's strip below it. */
+  #menu .step-modes:not([hidden]) { gap: 22px; }
+  #menu .mode-pick { order: 1; margin-top: 0; width: 100%; max-width: 560px; gap: 9px; padding: 10px 12px 16px; }
+  #menu .step-modes .enlist { order: 2; width: 100%; max-width: 560px; }
+  #menu .mode-pick-head { flex-wrap: wrap; row-gap: 8px; padding: 4px 0 0 8px; }
+  #menu .mode-pick-title { font-size: 21px; }
+  #menu .mode-pick .steps { display: flex; }
+  /* The dropdown: the mode's name gets the whole width, who is in goes under it. */
+  #menu .mode-trigger { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto; row-gap: 4px; min-height: 56px; }
+  #menu .mode-trigger > .mode { grid-row: 1 / 3; }
+  #menu .mode-trigger > .mdd-text { grid-column: 2; grid-row: 1; }
+  #menu .mode-trigger > .mdd-live { grid-column: 2; grid-row: 2; font-size: 12px; }
+  #menu .mode-trigger > .mdd-caret { grid-column: 3; grid-row: 1 / 3; }
+  #menu .mode-list { left: 0; width: 100%; max-width: none; }
+  #menu .mdd-opt { gap: 10px; padding: 6px 10px 6px 8px; }
+  #menu .mode-detail { font-size: 14px; }
+  #menu button.mode-next { font-size: clamp(20px, 6.4vw, 27px); letter-spacing: 0.1em; padding: 12px 12px 11px; gap: 10px; }
+
+  /* The guest's strip: tag and one line of pitch, the benefits two by two, then Create account, Log in and Not now on one row. */
+  #menu .enlist[data-form="closed"] .enlist-plate {
+    width: 100%; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "tag head head" "perks perks perks" "acts acts x";
+    gap: 10px 12px; padding: 10px 12px 12px;
+  }
+  #menu .enlist[data-form="closed"] .enlist-body { display: contents; }
+  #menu .enlist[data-form="closed"] .enlist-tag { grid-area: tag; width: 28px; }
+  #menu .enlist[data-form="closed"] .enlist-head { grid-area: head; max-width: none; }
+  #menu .enlist[data-form="closed"] .enlist-title { font-size: 21px; }
+  #menu .enlist[data-form="closed"] .enlist-sub { font-size: 13.5px; }
+  #menu .enlist[data-form="closed"] .enlist-perks { grid-area: perks; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; padding: 0; border: 0; }
+  #menu .enlist[data-form="closed"] .enlist-perks li { font-size: 14px; line-height: 1.15; gap: 7px; white-space: normal; min-width: 0; overflow-wrap: anywhere; }
+  #menu .enlist[data-form="closed"] .enlist-icon { width: 20px; height: 20px; }
+  #menu .enlist[data-form="closed"] .enlist-actions { grid-area: acts; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 0; min-width: 0; }
+  #menu .enlist[data-form="closed"] .enlist-go { padding: 9px 14px 8px !important; font-size: 16px; }
+  #menu .enlist[data-form="closed"] .enlist-x { grid-area: x; position: static; align-self: center; justify-self: end; }
+  /* An open form (sign up, log in, reset: asked for from the bar or the strip) comes up top, under the bar, its fields in one column. */
+  #menu .step-modes .enlist:not([data-form="closed"]) { order: 0; }
+  #menu .enlist:not([data-form="closed"]) .enlist-form { width: auto; }
+
+  /* Loadout: a tighter head, and Deploy rides the foot of the screen the whole way down the step. */
+  #menu .step-head { gap: 8px 14px; margin: 2px 0 14px; min-height: 0; }
+  #menu .back-btn { padding: 8px 12px 8px 10px; font-size: 15px; }
+  #menu .back-btn span { font-size: 22px; }
+  #menu .step-title { font-size: 34px; }
+  #menu .mission { gap: 10px; padding: 7px 12px; font-size: 15px; flex-wrap: wrap; }
+  #menu .mission b { font-size: 18px; }
+  #menu .gear-grid { gap: 18px; padding-bottom: 10px; }
+  #menu .gear-left { gap: 16px; }
+  #menu .gear-right { display: contents; }
+  #menu .play-actions { bottom: calc(10px + var(--sb)); margin: 0; }
+  #menu .gear-tag { font-size: 20px; }
+  #menu button.primary { font-size: 28px; padding: 14px 18px 13px; --lip: 7px; }
+}
+/* The narrowest phones: the benefits drop out so the strip stays three short rows. */
+@media (orientation: portrait) and (max-width: 359px), (max-width: 359px) and (min-height: 521px) {
+  #menu .enlist[data-form="closed"] .enlist-plate { grid-template-areas: "tag head head" "acts acts x"; }
+  #menu .enlist[data-form="closed"] .enlist-perks { display: none; }
+  #menu #menu-tabs button { font-size: 14px; letter-spacing: 0.05em; }
 }
