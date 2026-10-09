@@ -35,7 +35,7 @@ export const perkKeyLabel = (slot: number) => PERK_KEYS[slot]?.slice(5) ?? '';
 export const CONTROLS: readonly [string, string][] = [
   ['WASD', 'Move'],
   ['Shift', 'Hold to sprint, about 35% faster; the gun is lowered, so a click ends the sprint, and your aim takes about 2s to settle (touch: push the move stick out to its outer ring)'],
-  ['Mouse', 'Aim'],
+  ['Mouse', 'Aim; on a desktop the first click into a match captures the mouse, so the crosshair slides along the screen edges instead of leaving the window (Esc lets it go)'],
   ['Left click', 'Fire'],
   ['R', 'Reload'],
   ['Space', 'Ability'],
@@ -51,7 +51,7 @@ export const CONTROLS: readonly [string, string][] = [
   ['M', 'Mute sound'],
   ['Shift+M', 'Music on or off'],
   ['C', 'Soldier chatter on or off'],
-  ['Esc', 'Pause menu: volume, graphics, gameplay options, controls, leave the match (the match keeps running)'],
+  ['Esc', 'Pause menu: volume, graphics, gameplay options, controls, leave the match (the match keeps running); it also frees a captured mouse, and a click back in or Resume captures it again'],
   ['Touch', 'Left thumb moves, right thumb aims and fires'],
 ];
 

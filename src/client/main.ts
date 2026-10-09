@@ -71,8 +71,9 @@ import { addCorpse, addZombieCorpse, explosiveDeath } from './corpses.ts';
 import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, nextTier, squadFromSearch, stepItem, upgradeTarget, withSquad, type BuildChip, type Ghost } from './zombies.ts';
 import { trackRootScale } from './uiscale.ts';
 import { createPauseMenu, showToast } from './pausemenu.ts';
+import { installPointerLock, lockWanted } from './pointerlock.ts';
 import { escapeAction, takesInput } from './pausegate.ts';
-import { lookAheadScale, onSettings, shakeScale, touchAssistOn } from './settings.ts';
+import { lookAheadScale, mouseSensitivity, onSettings, shakeScale, touchAssistOn } from './settings.ts';
 import { frameTick, initQuality, qualityProbe } from './qualityrt.ts';
 import { MODE_INFO } from './modecards.ts';
 import { createCelebration } from './celebrate.ts';
@@ -639,7 +640,7 @@ function pressBuildChip(s: Session, chip: BuildChip) {
 }
 
 function buildClick(s: Session, e: MouseEvent) {
-  const chip: BuildChip | null = e.button === 0 ? buildChipAt(e.clientX, e.clientY) : null;
+  const chip: BuildChip | null = e.button === 0 ? buildChipAt(mouse.x, mouse.y) : null;
   if (chip) return pressBuildChip(s, chip);
   if (!ghost) return;
   if (e.button === 0 && ghost.refusal === null) send(s.ws, { t: 'build', kind: ghost.kind, cx: ghost.cx, cy: ghost.cy, ...(ghost.kind === 'wall' && ghost.lv > 1 && { lv: ghost.lv }) });
@@ -808,8 +809,8 @@ function onKeyDown(e: KeyboardEvent) {
   // Escape closes the innermost thing first and opens the pause menu only when nothing else wants it (pausegate.ts).
   if (e.code === 'Escape') {
     e.preventDefault();
-    // A held Escape's repeat would close the pause menu it just opened.
-    if (e.repeat) return;
+    // A held Escape's repeat would close the pause menu it just opened, as would the Esc that just let the captured mouse go.
+    if (e.repeat || plock.escapeSpent(performance.now())) return;
     const action = escapeAction({ inMatch: true, typing: false, pauseOpen: pause.isOpen(), confirming: pause.confirming(), wheelOpen: wheel.open, rangeOpen: rangeUi.isOpen(), building: s.building });
     if (action === 'cancel-leave') pause.cancelConfirm();
     else if (action === 'close-pause') pause.close();
@@ -984,7 +985,7 @@ for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'relo
   });
   for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) button.addEventListener(type, () => held.delete(action));
 }
-window.addEventListener('mousemove', (e) => { wheel.move(e.clientX, e.clientY); mouse.x = e.clientX; mouse.y = e.clientY; mouseAiming = true; });
+window.addEventListener('mousemove', (e) => { const p = plock.move(e); wheel.move(p.x, p.y); mouse.x = p.x; mouse.y = p.y; mouseAiming = true; });
 canvas.addEventListener('mousedown', (e) => {
   if (state.phase === 'playing' && state.s.building) return buildClick(state.s, e);
   if (e.button !== 0) return;
@@ -1146,8 +1147,17 @@ const pause = createPauseMenu(hudEl, {
     held.clear(); firing = false; fullBoard = false; sticks = NO_STICKS; abilityTapped = false;
     wheel.close();
     if (open) rangeUi.close();
+    else queueMicrotask(plock.resume);
   },
 });
+/** Desktop mouse capture (pointerlock.ts): held while playing with nothing open that needs a real cursor; Esc lets it go and pauses. */
+const plock = installPointerLock(canvas, {
+  inMatch: () => state.phase === 'playing' || state.phase === 'dead',
+  want: () => lockWanted({ phase: state.phase, touch: touchScreen, typing: overlays.typing, paused: pause.isOpen(), rangeOpen: rangeUi.isOpen() }),
+  sensitivity: mouseSensitivity,
+  origin: () => mouse,
+  onUserExit: () => { if (state.phase === 'playing' && !pause.isOpen()) pause.open(); },
+}, () => view);
 /** A phone's emote button: taps the wheel open, and a plate sends. */
 const emoteButton = document.createElement('button');
 emoteButton.type = 'button';

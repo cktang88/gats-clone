@@ -8,6 +8,7 @@ import { padIntent, type PadSample } from './pausegate.ts';
 import { fxCapable, fxState, lightingStatus } from './postfx.ts';
 import { CRITTER_STEPS, DPR_STEPS, PRESET_IDS, PRESET_INFO, knobs, type Adv } from './quality.ts';
 import { effectivePreset, qualityState } from './qualityrt.ts';
+import { SENSITIVITY } from './virtualcursor.ts';
 import {
   CROSSHAIR_COLORS, CROSSHAIR_IDS, LOOK_AHEAD_IDS, SHAKE_IDS, MOTION_IDS, UI_PERCENT, gainOfPercent, percentOfGain, resetSettings, setSetting, settings,
   type CrosshairColor, type CrosshairStyle, type EffectsQuality, type LookAheadMode, type MotionMode, type ShakeMode,
@@ -357,6 +358,10 @@ export function createPauseMenu(hud: HTMLElement, deps: PauseDeps) {
       })),
       row('Touch aim assist', 'phones', toggle(() => settings().touchAssist, (on) => setSetting('touchAssist', on), 'set-assist')),
       row('Aim look-ahead', null, segmented<LookAheadMode>({ id: 'set-lookahead', options: LOOK_AHEAD_IDS.map((m) => [m, m === 'off' ? 'Off' : m === 'low' ? 'Low' : 'Normal'] as const), get: () => settings().lookAhead, set: (v) => setSetting('lookAhead', v) })),
+      row('Mouse sensitivity', 'captured mouse', slider({
+        min: SENSITIVITY.min, max: SENSITIVITY.max, step: SENSITIVITY.step, id: 'set-sensitivity',
+        get: () => settings().mouseSensitivity, set: (v) => setSetting('mouseSensitivity', v), text: (v) => `${v.toFixed(2)}×`,
+      })),
     ),
   );
   const reset = plate('pz-reset', 'Reset to defaults');

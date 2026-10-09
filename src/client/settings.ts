@@ -1,4 +1,5 @@
 import { sanitizeAdv, type Adv, type PresetId } from './quality.ts';
+import { clampSensitivity, SENSITIVITY } from './virtualcursor.ts';
 
 /**
  * The player's options, kept in one place so the pause menu (pausemenu.ts) and the code that obeys them agree.
@@ -32,9 +33,11 @@ export type Settings = {
   crosshairColor: CrosshairColor;
   touchAssist: boolean;
   lookAhead: LookAheadMode;
+  /** How far the crosshair moves per unit of mouse motion while the mouse is captured (pointerlock.ts); 1 matches the OS cursor. */
+  mouseSensitivity: number;
 };
 
-export const DEFAULTS: Readonly<Settings> = { quality: 'auto', adv: {}, shake: 'on', motion: 'system', uiScale: 0, damageNumbers: true, crosshair: 'classic', crosshairColor: 'bone', touchAssist: true, lookAhead: 'normal' };
+export const DEFAULTS: Readonly<Settings> = { quality: 'auto', adv: {}, shake: 'on', motion: 'system', uiScale: 0, damageNumbers: true, crosshair: 'classic', crosshairColor: 'bone', touchAssist: true, lookAhead: 'normal', mouseSensitivity: SENSITIVITY.default };
 
 export const UI_PERCENT = { min: 80, max: 150, step: 10 } as const;
 export const SETTINGS_KEY = 'skirmish.settings';
@@ -65,6 +68,7 @@ export function sanitize(raw: unknown): Settings {
     crosshairColor: oneOf(Object.keys(CROSSHAIR_COLORS) as CrosshairColor[], r.crosshairColor, DEFAULTS.crosshairColor),
     touchAssist: typeof r.touchAssist === 'boolean' ? r.touchAssist : DEFAULTS.touchAssist,
     lookAhead: oneOf(LOOK_AHEAD_IDS, r.lookAhead, DEFAULTS.lookAhead),
+    mouseSensitivity: r.mouseSensitivity === undefined || r.mouseSensitivity === null || r.mouseSensitivity === '' ? DEFAULTS.mouseSensitivity : clampSensitivity(Number(r.mouseSensitivity)),
   };
 }
 
@@ -144,4 +148,5 @@ export const damageNumbersOn = (): boolean => settings().damageNumbers;
 export const touchAssistOn = (): boolean => settings().touchAssist;
 export const shakeScale = (): number => shakeFactor(settings().shake);
 export const lookAheadScale = (): number => lookAheadFactor(settings().lookAhead);
+export const mouseSensitivity = (): number => settings().mouseSensitivity;
 export const crosshairLook = (): { style: CrosshairStyle; color: string } => ({ style: settings().crosshair, color: CROSSHAIR_COLORS[settings().crosshairColor] });

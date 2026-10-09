@@ -21,8 +21,9 @@ Each room rotates through four maps, each 6000 px square: Causeway (a working ha
 |---|---|
 | WASD | Move |
 | Shift | Hold to sprint (touch: push the move stick out past its ring to a second, outer ring, which lights up orange). See Sprint below |
-| Mouse | Aim |
+| Mouse | Aim. On a desktop the first click into a match captures the mouse (Pointer Lock): the OS cursor hides, the game's crosshair follows the mouse and slides along the screen's edges and into its corners instead of leaving the window, so aim never breaks. That click also fires. Esc lets the mouse go and opens the pause menu; a click back into the game or Resume captures it again, starting where the real cursor is. Chat, the pause menu, the range panel, the death card and the menu free the cursor while they are up (closing chat or the death card captures it again). While captured, a click over a perk tile or the cog presses it. Mouse sensitivity (Settings, Gameplay, 0.2 to 3, default 1) scales the captured crosshair's speed. If the browser refuses the capture (a sandboxed iframe, an old browser), the mouse aims as an ordinary cursor. Phones and touch screens never capture (`src/client/pointerlock.ts`, `src/client/virtualcursor.ts`) |
 | Left click | Fire |
+| Esc | Pause menu (the match keeps running); also frees a captured mouse |
 | R | Reload |
 | Space | Use ability (its chip under your health counts the cooldown down, pulses gold when it is back, and flashes red if you press too early). Space picks nothing up: packs are taken by walking over them, and cabinets open by themselves as you walk up needing them |
 | 1-9, 0 | Pick a perk or an evolution (or click its tile) |
