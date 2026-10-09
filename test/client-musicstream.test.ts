@@ -60,6 +60,9 @@ test('the radio dial reaches every recording, the radio-only stations and the or
   for (const id of EXTRA_IDS) { assert.equal(stationLabel(id), STREAMS[id].credit.title); assert.equal(synthFor(id), 'march', 'a radio-only station borrows the march while it loads'); }
   assert.equal(stationLabel('march'), 'Toy March (original)');
   assert.equal(stationLabel('harbor'), 'Celtic Impulse');
+  // The Quarry plays a catchy synth-pop stomper, not the guitar rock it had (players found it grating): Rhinoceros, 126 bpm, G minor.
+  assert.equal(stationLabel('quarry'), 'Rhinoceros');
+  assert.deepEqual([STREAMS.quarry.bpm, STREAMS.quarry.tonic, STREAMS.quarry.minor], [126, 7, true]);
 });
 
 /** A Web Audio stand-in for the scheduler: nodes take any call; connections are counted on the music bus so leaks would show. */
