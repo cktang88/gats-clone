@@ -11,7 +11,7 @@ import { musicDuck, musicProbe, musicStart, musicUpdate, setSoundMuted, toggleMu
 import { mountRadioButton, onRoomRadio, radioPress, radioUpdate } from './radio.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { walks } from '../shared/sim/movement.ts';
-import { isDeployed, isSteady, rangeFor, spreadFor } from '../shared/sim/stats.ts';
+import { isDeployed, rangeFor } from '../shared/sim/stats.ts';
 import { assistAngle, type AssistTarget } from './aimassist.ts';
 import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addCareerToast, addMoments, NO_MOMENTS } from './moments.ts';
@@ -52,7 +52,7 @@ import { duckFor, emoteCue, soundsFor, type SoundCue } from './sfx.ts';
 import { emitSfxAt, setSfxSink } from './sfxbus.ts';
 import { startTopup } from './reloadanim.ts';
 import { topupCues, topupOf } from './topup.ts';
-import { committed, nextSprayShot, NO_FIRING, sendInput, settleOf } from './fire.ts';
+import { committed, NO_FIRING, sendInput, spreadOf } from './fire.ts';
 import { raiseWatch } from './raise.ts';
 import { clearHits, drawHitMarker, onDeath, queueHits, releaseQueued, stopClock } from './killfx.ts';
 import { stepClock } from './hitstop.ts';
@@ -733,7 +733,7 @@ function drawFrame(realNow: number) {
   // The shader pass takes the finished world; the HUD then draws over a cleared canvas, crisp and unprocessed.
   const glWorld = processFrame(canvas, { night: nightAmount(), storm: !!snap.royale }, now, view.w, view.h, view.dpr);
   if (glWorld) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadFor(me.gun, snap.self.perks, isSteady(me.gun, sinceMove(s)), nextSprayShot(s.firing), snap.self.suppression, settleOf(s.firing), isDeployed(me.gun, sinceMove(s))) : null;
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadOf(s.firing) : null;
   drawScreenPulse(ctx, view.w, view.h, view.dpr, realNow, !glWorld);
   if (me?.alive) drawHeartbeat(ctx, view.w, view.h, view.dpr, now, me.hp / me.maxHp);
   // The crosshair's hit marker is killfx's, so the HUD is handed a feedback without one.
@@ -938,6 +938,7 @@ canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   firing = true;
   if (state.phase !== 'playing' || overlays.typing || pause.isOpen()) return;
+  // A click a bolt is not ready for gets a soft "not yet"; a sprint never refuses one (the click ends it and fires, wide).
   if (raiseWatch.click(state.s.firing, performance.now())) emitSfxAt('notReady', state.s.lastSelf.x, state.s.lastSelf.y, true);
   state.s.shots++;
   shooting.fireIfDue(state.s, performance.now());

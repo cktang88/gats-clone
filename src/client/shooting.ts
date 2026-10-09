@@ -2,10 +2,10 @@ import { GUNS, WORLD, type GunId } from '../shared/defs.ts';
 import { doorsOf } from './predict.ts';
 import { leavesFromViews } from '../shared/sim/doors.ts';
 import type { Snapshot } from '../shared/protocol.ts';
-import { isDeployed, isSteady, rangeFor, silencedFor, spreadFor } from '../shared/sim/stats.ts';
+import { rangeFor, silencedFor } from '../shared/sim/stats.ts';
 import { noteLateShot, noteRejectedShot } from './devprobe.ts';
 import { gunFxOf, muzzleFlash } from './gunfx.ts';
-import { dueAt, nextSprayShot, serverGun, settle, settleOf, type PredictedShot, type TriggerInput } from './fire.ts';
+import { dueAt, serverGun, settle, spreadOf, type PredictedShot, type TriggerInput } from './fire.ts';
 import { newestSnap, renderTime, sampleAt, TICK_MS } from './interp.ts';
 import { fireRounds, roundScene, type Shot, type ShotEvent } from './rounds.ts';
 import { shotCue, type SoundCue } from './sfx.ts';
@@ -44,8 +44,8 @@ export function createShooting(page: Page) {
   }
 
   function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number): number[] {
-    const { aim, sinceMove } = page.hands(s);
-    const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadFor(gun, snap.self.perks, isSteady(gun, sinceMove), nextSprayShot(s.firing), snap.self.suppression, settleOf(s.firing), isDeployed(gun, sinceMove)) };
+    const { aim } = page.hands(s);
+    const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadOf(s.firing) };
     page.playCues(s, [shotCue(gun, silenced, s.lastSelf, true)], snap.self.viewRadius || WORLD.viewRadius);
     const angle = Math.atan2(aim.dy, aim.dx);
     page.recoil(gun, angle);

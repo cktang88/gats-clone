@@ -207,10 +207,10 @@ test('Run and Gun is an SMG kill on the move just out of a sprint; Disciplined a
   const w = emptyWorld();
   w.firstBlood = true;
   const a = spawnAt(w, 500, 500, { loadout: { weapon: 'smg' } });
-  const moving = (raisedAgo: number) => {
+  const moving = (sprintEndedAgo: number) => {
     if (a.life.k !== 'alive') return;
     a.life.lastMoveAt = w.now;
-    a.life.raiseUntil = w.now - raisedAgo;
+    a.life.sprintEndAt = w.now - sprintEndedAgo;
   };
   moving(Infinity);
   assert.deepEqual(shot(w, a, spawnAt(w, 700, 500), 'smg', 10_000), [], 'on the move, but no sprint behind it');

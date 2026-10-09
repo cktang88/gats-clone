@@ -1,6 +1,5 @@
 import { abilityCooldownMs } from '../shared/sim/stats.ts';
 import { raiseWatch, reticleLook } from './raise.ts';
-import { emitSfxAt } from './sfxbus.ts';
 import { SPRINT_RING, STICK_RADIUS, stickVector, sticksSprint, type Sticks } from './touch.ts';
 import { ARMOR_IDS, byColor, COLORS, GUN_IDS, GUNS, LEVELS, PERK_INFO, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type ColorId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
 import { MAP_MS } from '../shared/maps.ts';
@@ -389,7 +388,7 @@ function drawRingBurst(ctx: CanvasRenderingContext2D, at: Point, color: string, 
   }
 }
 
-const RETICLE = { minGap: 5, maxGap: 90, tick: 7, ring: 6, ringClearance: 6 } as const;
+const RETICLE = { minGap: 5, maxGap: 120, tick: 7, ring: 6, ringClearance: 6 } as const;
 
 export const reticleGap = (spread: number, distPx: number): number =>
   Math.min(RETICLE.maxGap, Math.max(RETICLE.minGap, Math.tan(spread) * distPx));
@@ -419,22 +418,21 @@ const deniedShake = (now: number) => {
 
 export const drawnReticleGap = (): number => reticleDrawnGap;
 
-/** The lowered reticle's grey, while the gun is down after a sprint. */
+/** The reticle's grey while a bolt is worked. */
 const RETICLE_DOWN = '#9aa0aa';
 
-/** Steps your gun's raise watch (see raise.ts) every frame, reticle or not: the moment the gun is up after a sprint, a latch click. */
+/** Steps your gun's watch (see raise.ts) every frame, reticle or not, for the bolt's grey and its flash once chambered. */
 function stepRaise({ s, me }: Hud) {
-  if (raiseWatch.step(me?.alive ? s.firing : null, performance.now())) emitSfxAt('gunUp', s.lastSelf.x, s.lastSelf.y, true);
+  raiseWatch.step(me?.alive ? s.firing : null, performance.now());
 }
 
 function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
   const reloading = snap.self.reloading;
   const t = performance.now();
-  // While the gun is down (sprinting, or coming up after) the reticle is lowered: splayed wide, grey, faint and dotless. It snaps in,
-  // with a flash, the moment the gun can fire, onto the post-sprint spread (wide at first, settling over the gun's settle). While a
-  // bolt is worked it greys at its own (bloomed) gap and flashes bright once the round is chambered.
+  // The gap is the eased spread the next shot gets: blown wide by a sprint and visibly tightening as the post-sprint bloom settles,
+  // never jumping (see `SPREAD_EASE`). While a bolt is worked it greys at its own (bloomed) gap and flashes bright once the round is chambered.
   const spreadGap = Math.max(reloading ? RETICLE.ring + RETICLE.ringClearance : 0, reticleGap(spread, Math.hypot(at.x - selfAt.x, at.y - selfAt.y)));
-  const rl = reticleLook(raiseWatch.phase, spreadGap, RETICLE.maxGap, raiseWatch.sinceReady(t), raiseWatch.sinceDenied(t), raiseWatch.from);
+  const rl = reticleLook(raiseWatch.phase, spreadGap, raiseWatch.sinceReady(t), raiseWatch.sinceDenied(t));
   const gap = rl.gap;
   reticleDrawnGap = gap;
   at = { x: at.x + rl.shake, y: at.y };
@@ -464,7 +462,7 @@ function drawReticle({ ctx, snap, selfAt }: Hud, at: Point, spread: number) {
     }
   }
   if (look.style !== 'open' && rl.dot > 0.05) {
-    // No centre dot while the gun is down; it pops in, a size too big for a blink, as the gun comes up.
+    // No centre dot while a bolt is worked; it pops in, a size too big for a blink, as the round chambers.
     const half = (look.style === 'classic' ? 1 : 2) * rl.dot;
     ctx.fillStyle = 'rgba(30, 32, 38, 0.75)';
     if (look.style !== 'classic' || rl.dot > 1.05) ctx.fillRect(at.x - half - 1.5, at.y - half - 1.5, half * 2 + 3, half * 2 + 3);

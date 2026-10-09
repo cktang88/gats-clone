@@ -192,7 +192,7 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
     if (wake) { think(wake); continue; }
     const ability = abilityOf(p);
     const { input, motor } = motorTick(mem.motor, {
-      me: p, ammo: p.life.ammo, reloading: p.life.reloadUntil !== null, abilityReady: ability !== null && p.abilityReadyAt <= w.now, flash: flashAmount(p, w.now), find,
+      me: p, ammo: p.life.ammo, reloading: p.life.reloadUntil !== null, abilityReady: ability !== null && p.abilityReadyAt <= w.now, flash: flashAmount(p, w.now), settleLeftMs: p.life.settleLeft, find,
     }, arena, w.tick, rand);
     finish({ input, pick: null, mem: { ...mem, beat, motor } }, null);
   }

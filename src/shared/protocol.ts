@@ -163,7 +163,7 @@ export type SelfView = {
   speed: number;
   /** Sprinting this tick; `sprintSpeed` is the speed it moves at (`speed` times `SPRINT.speedMul`, with Marathon). */
   sprint?: boolean; sprintSpeed?: number;
-  /** The post-sprint clock still to run, in units of `settleMs` (the settle's full length): above 1 the gun is still coming up (for `settle - 1` of `settleMs`), and 1..0 is the share of the settle still to ease out. */
+  /** The share (1..0) of the post-sprint bloom still to ease out (1 while sprinting), and the bloom's full length in ms (see `settleShare`). */
   settle?: number; settleMs?: number;
   perks: Partial<Record<Tier, PerkId>>;
   pending: PendingPick | null;

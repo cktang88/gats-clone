@@ -73,9 +73,10 @@ export type GunRules = {
   pinpoint: boolean;
   suppress: number;
   muzzleBoost: number;
-  /** How long the gun takes to come back up after a sprint (ms); a light gun is up almost at once, a heavy one drags. Null is `SPRINT.raiseMs` (see `raiseMsOf`). */
-  raiseMs: number | null;
-  /** Once the gun is up after a sprint, spread starts at `mul` times normal and eases back over `ms` (see `SPRINT`, `settleRulesOf`). Null is `SPRINT`'s. */
+  /**
+   * The post-sprint bloom: the moment a sprint ends (you can fire at once) spread opens to `mul` times the gun's moving spread and eases back
+   * over `ms` to whatever your stance gives; a light gun settles far faster than a heavy one (see `SPRINT`, `settleRulesOf`). Null is `SPRINT`'s.
+   */
   settle: { mul: number; ms: number } | null;
   /** A round's damage fades with the distance it has flown: full out to `startPx`, then down to `minMul` of itself by `endPx`, and no further. Null is no fade. */
   falloff: { startPx: number; endPx: number; minMul: number } | null;
@@ -94,19 +95,19 @@ export type GunRules = {
   minSpread: number;
 };
 
-const STEADY: GunRules = { movingSpreadMul: 1, movingSpreadAdd: 0, steadyMs: 0, plant: 'never', bloom: null, spinUp: null, viewMul: 1, pinpoint: false, suppress: 0, muzzleBoost: 4, raiseMs: null, settle: null, falloff: null, deploy: null, shoveMul: 1, sprintMul: 1, breach: false, minSpread: 0.008 };
+const STEADY: GunRules = { movingSpreadMul: 1, movingSpreadAdd: 0, steadyMs: 0, plant: 'never', bloom: null, spinUp: null, viewMul: 1, pinpoint: false, suppress: 0, muzzleBoost: 4, settle: null, falloff: null, deploy: null, shoveMul: 1, sprintMul: 1, breach: false, minSpread: 0.008 };
 export const GUN_RULES: Record<WeaponId, GunRules> = {
-  // Sidearm: quick to draw and no worse on the run than standing.
-  pistol: { ...STEADY, movingSpreadMul: 1, minSpread: 0.005, suppress: 0.04, raiseMs: 800, settle: { mul: 3, ms: 400 }, bloom: { free: 5, perShot: 0.08, maxMul: 1.6, settleMs: 160, recoverMs: 300, still: 0.5 } },
-  // Rusher: no penalty for moving, the gun is up fast after a sprint, bloom comes quickly and the rounds fade hard past ~350 px.
-  smg: { ...STEADY, movingSpreadMul: 1, minSpread: 0.008, suppress: 0.05, raiseMs: 1200, settle: { mul: 2.5, ms: 450 }, bloom: { free: 5, perShot: 0.07, maxMul: 1.6, settleMs: 120, recoverMs: 250, still: 0.6 }, falloff: { startPx: 180, endPx: 380, minMul: 0.3 } },
+  // Sidearm: settles fast off a sprint and no worse on the run than standing.
+  pistol: { ...STEADY, movingSpreadMul: 1, minSpread: 0.005, suppress: 0.04, settle: { mul: 4, ms: 500 }, bloom: { free: 5, perShot: 0.08, maxMul: 1.6, settleMs: 160, recoverMs: 300, still: 0.5 } },
+  // Rusher: no penalty for moving, the post-sprint bloom settles fast, bloom comes quickly and the rounds fade hard past ~350 px.
+  smg: { ...STEADY, movingSpreadMul: 1, minSpread: 0.008, suppress: 0.05, settle: { mul: 4, ms: 600 }, bloom: { free: 5, perShot: 0.07, maxMul: 1.6, settleMs: 120, recoverMs: 250, still: 0.6 }, falloff: { startPx: 180, endPx: 380, minMul: 0.3 } },
   // Door-breaker: the blast fades past 130 px, shoves, and a pellet that strikes a swing door blows it open.
-  shotgun: { ...STEADY, minSpread: 0.016, suppress: 0.02, raiseMs: 1900, settle: { mul: 1.8, ms: 700 }, falloff: { startPx: 170, endPx: 400, minMul: 0.3 }, shoveMul: 1.5, breach: true, bloom: { free: 5, perShot: 0.05, maxMul: 1.3, settleMs: 300, recoverMs: 400, still: 0.5 } },
-  // Anchor: laser-straight standing and tapping, drifting if sprayed or run with, slow to bring up.
-  assault: { ...STEADY, movingSpreadMul: 1.7, steadyMs: 120, minSpread: 0.011, suppress: 0.08, raiseMs: 1950, bloom: { free: 3, perShot: 0.14, maxMul: 2.6, settleMs: 150, recoverMs: 190, still: 0.5 } },
-  sniper: { ...STEADY, movingSpreadAdd: 0.1, steadyMs: 450, plant: 'always', viewMul: 1.28, pinpoint: true, minSpread: 0.009, suppress: 0.3, muzzleBoost: 0.4, raiseMs: 2200, settle: { mul: 4, ms: 1500 }, bloom: { free: 1, perShot: 20, maxMul: 11, settleMs: 400, recoverMs: 3000, still: 0.5 } },
-  // Suppression: revs up, plants down for a tight lane, pins whoever it fires near, and is slow to run with or raise.
-  lmg: { ...STEADY, movingSpreadMul: 2, steadyMs: 200, minSpread: 0.03, plant: 'atRange', suppress: 0.16, raiseMs: 2300, settle: { mul: 4, ms: 1600 }, sprintMul: 0.85, bloom: { free: 8, perShot: 0.05, maxMul: 1.8, settleMs: 200, recoverMs: 400, still: 0.5 }, spinUp: { startMul: 1.5, upMs: 350, downMs: 600 } },
+  shotgun: { ...STEADY, minSpread: 0.016, suppress: 0.02, settle: { mul: 4, ms: 1200 }, falloff: { startPx: 170, endPx: 400, minMul: 0.3 }, shoveMul: 1.5, breach: true, bloom: { free: 5, perShot: 0.05, maxMul: 1.3, settleMs: 300, recoverMs: 400, still: 0.5 } },
+  // Anchor: laser-straight standing and tapping, drifting if sprayed or run with, slow to settle off a sprint.
+  assault: { ...STEADY, movingSpreadMul: 1.7, steadyMs: 120, minSpread: 0.011, suppress: 0.08, settle: { mul: 4, ms: 2000 }, bloom: { free: 3, perShot: 0.14, maxMul: 2.6, settleMs: 150, recoverMs: 190, still: 0.5 } },
+  sniper: { ...STEADY, movingSpreadAdd: 0.1, steadyMs: 450, plant: 'always', viewMul: 1.28, pinpoint: true, minSpread: 0.009, suppress: 0.3, muzzleBoost: 0.4, settle: { mul: 4, ms: 2300 }, bloom: { free: 1, perShot: 20, maxMul: 11, settleMs: 400, recoverMs: 3000, still: 0.5 } },
+  // Suppression: revs up, plants down for a tight lane, pins whoever it fires near, and is slow to run with or settle off a sprint.
+  lmg: { ...STEADY, movingSpreadMul: 2, steadyMs: 200, minSpread: 0.03, plant: 'atRange', suppress: 0.16, settle: { mul: 4, ms: 2300 }, sprintMul: 0.85, bloom: { free: 8, perShot: 0.05, maxMul: 1.8, settleMs: 200, recoverMs: 400, still: 0.5 }, spinUp: { startMul: 1.5, upMs: 350, downMs: 600 } },
 };
 
 
@@ -114,32 +115,32 @@ const BASE_BULLET = { r: 1.6, color: '#25211c' };
 const BASE_LOOK: GunLook = { length: 1, width: 1, barrels: 1, accent: '#7b8494', bullet: BASE_BULLET };
 
 export const GUNS: Record<GunId, GunDef> = {
-  pistol: { name: 'Pistol', desc: 'Quick on the draw, steady on the run', base: 'pistol', stage: 0, from: null, damage: 25, fireMs: 200, pellets: 1, spread: 0.04, range: 700, bulletSpeed: 900, mag: 12, reloadMs: 1000, moveMul: 1, auto: false, look: BASE_LOOK },
+  pistol: { name: 'Pistol', desc: 'Quick off a sprint, steady on the run', base: 'pistol', stage: 0, from: null, damage: 25, fireMs: 200, pellets: 1, spread: 0.04, range: 700, bulletSpeed: 900, mag: 12, reloadMs: 1000, moveMul: 1, auto: false, look: BASE_LOOK },
   handCannon: { name: 'Hand Cannon', desc: 'Slow, heavy hits that shove them back; two drop any armor', base: 'pistol', stage: 1, from: 'pistol', damage: 66, fireMs: 480, pellets: 1, spread: 0.025, range: 780, bulletSpeed: 990, mag: 6, reloadMs: 1300, moveMul: 1, auto: false, breakpoint: 2,
-    rules: { raiseMs: 1200, shoveMul: 2.2 },
+    rules: { settle: { mul: 4, ms: 800 }, shoveMul: 2.2 },
     look: { length: 1.2, width: 1.3, barrels: 1, accent: '#c8553d', bullet: { r: 2.6, color: '#7a2e1f' } } },
   machinePistol: { name: 'Machine Pistol', desc: 'Three-round bursts you can fire at a run', base: 'pistol', stage: 1, from: 'pistol', damage: 24, fireMs: 380, pellets: 1, spread: 0.055, range: 600, bulletSpeed: 900, mag: 18, reloadMs: 1000, moveMul: 1.05, auto: false, burst: { count: 3, gapMs: 60 },
-    rules: { movingSpreadMul: 0.8, raiseMs: 480, falloff: { startPx: 250, endPx: 450, minMul: 0.5 } },
+    rules: { movingSpreadMul: 0.8, falloff: { startPx: 250, endPx: 450, minMul: 0.5 } },
     look: { length: 1.1, width: 1, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
   executioner: { name: 'Executioner', desc: 'Plant your feet: one round punches through two bodies', base: 'pistol', stage: 2, from: 'handCannon', damage: 93, fireMs: 520, pellets: 1, spread: 0.018, range: 950, bulletSpeed: 1250, mag: 5, reloadMs: 1500, moveMul: 0.92, auto: false, penetrate: 1, breakpoint: 2,
-    rules: { movingSpreadAdd: 0.05, steadyMs: 180, shoveMul: 2.5, viewMul: 1.05, raiseMs: 1700 },
+    rules: { movingSpreadAdd: 0.05, steadyMs: 180, shoveMul: 2.5, viewMul: 1.05, settle: { mul: 4, ms: 1100 } },
     look: { length: 1.45, width: 1.35, barrels: 1, accent: '#e5484d', bullet: { r: 3.2, color: '#b3261e' } } },
   gunslinger: { name: 'Gunslinger', desc: 'Fast-draw revolver: strong inside 350, light on its feet', base: 'pistol', stage: 2, from: 'handCannon', damage: 66, fireMs: 300, pellets: 1, spread: 0.04, range: 600, bulletSpeed: 960, mag: 6, reloadMs: 1100, moveMul: 1.1, auto: false, breakpoint: 2,
-    rules: { movingSpreadMul: 0.8, raiseMs: 320, shoveMul: 1.4, falloff: { startPx: 320, endPx: 560, minMul: 0.55 } },
+    rules: { movingSpreadMul: 0.8, settle: { mul: 4, ms: 350 }, shoveMul: 1.4, falloff: { startPx: 320, endPx: 560, minMul: 0.55 } },
     look: { length: 1.05, width: 1.2, barrels: 1, accent: '#3fa7b5', bullet: { r: 2.4, color: '#1f5560' } } },
   akimbo: { name: 'Akimbo', desc: 'Two pistols: a wide six-round burst, brutal up close', base: 'pistol', stage: 2, from: 'machinePistol', damage: 12, fireMs: 330, pellets: 2, spread: 0.085, range: 540, bulletSpeed: 900, mag: 36, reloadMs: 1700, moveMul: 1.05, auto: false, burst: { count: 3, gapMs: 55 },
-    rules: { movingSpreadMul: 0.8, raiseMs: 480, falloff: { startPx: 200, endPx: 420, minMul: 0.4 } },
+    rules: { movingSpreadMul: 0.8, falloff: { startPx: 200, endPx: 420, minMul: 0.4 } },
     look: { length: 1.05, width: 1, barrels: 1, hands: 2, accent: '#30c0a0', bullet: { r: 1.7, color: '#11806a' } } },
   hailstorm: { name: 'Hailstorm', desc: 'Full-auto stream that pins enemies down', base: 'pistol', stage: 2, from: 'machinePistol', damage: 15, fireMs: 85, pellets: 1, spread: 0.07, range: 640, bulletSpeed: 900, mag: 45, reloadMs: 1400, moveMul: 0.98, auto: true,
-    rules: { movingSpreadMul: 0.9, falloff: null, bloom: { free: 6, perShot: 0.05, maxMul: 1.5, settleMs: 150, recoverMs: 300, still: 0.5 }, suppress: 0.12, raiseMs: 1700 },
+    rules: { movingSpreadMul: 0.9, falloff: null, bloom: { free: 6, perShot: 0.05, maxMul: 1.5, settleMs: 150, recoverMs: 300, still: 0.5 }, suppress: 0.12, settle: { mul: 4, ms: 700 } },
     look: { length: 1.25, width: 1.1, barrels: 1, accent: '#5b8def', bullet: { r: 1.7, color: '#2b55b8' } } },
 
   smg: { name: 'SMG', desc: 'Run-and-gun rusher: deadly up close, fades fast past 350', base: 'smg', stage: 0, from: null, damage: 17, fireMs: 66, pellets: 1, spread: 0.11, range: 520, bulletSpeed: 840, mag: 32, reloadMs: 1300, moveMul: 1.05, auto: true, look: BASE_LOOK },
   skirmisher: { name: 'Skirmisher', desc: 'Fastest feet in the fight: flank and close', base: 'smg', stage: 1, from: 'smg', damage: 14, fireMs: 56, pellets: 1, spread: 0.11, range: 480, bulletSpeed: 870, mag: 28, reloadMs: 1100, moveMul: 1.12, auto: true,
-    rules: { raiseMs: 750, sprintMul: 1.3 },
+    rules: { settle: { mul: 4, ms: 380 }, sprintMul: 1.3 },
     look: { length: 0.9, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.5, color: '#1f5560' } } },
   heavySmg: { name: 'Heavy SMG', desc: 'Tighter and harder-hitting: stand and trade', base: 'smg', stage: 1, from: 'smg', damage: 19, fireMs: 85, pellets: 1, spread: 0.08, range: 620, bulletSpeed: 900, mag: 30, reloadMs: 1500, moveMul: 0.95, auto: true,
-    rules: { movingSpreadMul: 1.2, raiseMs: 1650, falloff: { startPx: 260, endPx: 500, minMul: 0.45 } },
+    rules: { movingSpreadMul: 1.2, settle: { mul: 4, ms: 900 }, falloff: { startPx: 260, endPx: 500, minMul: 0.45 } },
     look: { length: 1.15, width: 1.2, barrels: 1, accent: '#c8553d', bullet: { r: 2, color: '#7a2e1f' } } },
   phantom: { name: 'Phantom', desc: 'Suppressed: never on the minimap. Strike from behind', base: 'smg', stage: 2, from: 'skirmisher', damage: 16, fireMs: 60, pellets: 1, spread: 0.11, range: 460, bulletSpeed: 870, mag: 30, reloadMs: 1100, moveMul: 1.12, auto: true, silenced: true,
     rules: { falloff: { startPx: 170, endPx: 340, minMul: 0.3 } },
@@ -148,10 +149,10 @@ export const GUNS: Record<GunId, GunDef> = {
     rules: { bloom: { free: 3, perShot: 0.12, maxMul: 2.2, settleMs: 120, recoverMs: 250, still: 0.6 }, falloff: { startPx: 180, endPx: 340, minMul: 0.3 } },
     look: { length: 1, width: 1.05, barrels: 1, accent: '#f5c400', bullet: { r: 1.5, color: '#a88600' } } },
   ripper: { name: 'Ripper', desc: 'Rounds punch through a body; reaches farthest of the SMGs', base: 'smg', stage: 2, from: 'heavySmg', damage: 21, fireMs: 85, pellets: 1, spread: 0.075, range: 680, bulletSpeed: 960, mag: 30, reloadMs: 1600, moveMul: 0.9, auto: true, penetrate: 1,
-    rules: { movingSpreadMul: 1.2, raiseMs: 1800, falloff: { startPx: 280, endPx: 540, minMul: 0.5 } },
+    rules: { movingSpreadMul: 1.2, settle: { mul: 4, ms: 1000 }, falloff: { startPx: 280, endPx: 540, minMul: 0.5 } },
     look: { length: 1.3, width: 1.25, barrels: 1, accent: '#e5484d', bullet: { r: 2.2, color: '#b3261e' } } },
   bulldog: { name: 'Bulldog', desc: 'Sixty-round drum: outlasts a whole squad', base: 'smg', stage: 2, from: 'heavySmg', damage: 18, fireMs: 75, pellets: 1, spread: 0.09, range: 580, bulletSpeed: 900, mag: 60, reloadMs: 2400, moveMul: 0.8, auto: true,
-    rules: { movingSpreadMul: 1.2, raiseMs: 2100, falloff: { startPx: 240, endPx: 460, minMul: 0.4 }, suppress: 0.09 },
+    rules: { movingSpreadMul: 1.2, settle: { mul: 4, ms: 1300 }, falloff: { startPx: 240, endPx: 460, minMul: 0.4 }, suppress: 0.09 },
     look: { length: 1.15, width: 1.4, barrels: 1, accent: '#5b8def', bullet: { r: 2, color: '#2b55b8' } } },
 
   shotgun: { name: 'Shotgun', desc: 'Door-breaker: devastating inside 200, blows swing doors open', base: 'shotgun', stage: 0, from: null, damage: 17, fireMs: 800, pellets: 8, spread: 0.19, range: 420, bulletSpeed: 780, mag: 5, reloadMs: 1800, moveMul: 0.935, auto: false, breakpoint: 1, look: BASE_LOOK },
@@ -168,18 +169,18 @@ export const GUNS: Record<GunId, GunDef> = {
     rules: { falloff: null, movingSpreadAdd: 0.02 },
     look: { length: 1.2, width: 1.25, barrels: 1, accent: '#f76b15', bullet: { r: 3.8, color: '#e0661a' } } },
   sawedOff: { name: 'Sawed-off', desc: 'Both barrels at arm\'s reach: sprint in and delete', base: 'shotgun', stage: 2, from: 'doubleBarrel', damage: 20, fireMs: 300, pellets: 18, spread: 0.3, range: 320, bulletSpeed: 780, mag: 1, reloadMs: 1300, moveMul: 1.12, auto: false, breakpoint: 1,
-    rules: { raiseMs: 600, falloff: { startPx: 100, endPx: 280, minMul: 0.2 }, shoveMul: 2.2 },
+    rules: { settle: { mul: 4, ms: 700 }, falloff: { startPx: 100, endPx: 280, minMul: 0.2 }, shoveMul: 2.2 },
     look: { length: 0.75, width: 1.3, barrels: 2, accent: '#c8553d', bullet: { r: 1.8, color: '#7a2e1f' } } },
   streetSweeper: { name: 'Street Sweeper', desc: 'Automatic drum: holds a doorway, but never one-shots', base: 'shotgun', stage: 2, from: 'doubleBarrel', damage: 17, fireMs: 300, pellets: 7, spread: 0.24, range: 400, bulletSpeed: 780, mag: 12, reloadMs: 2600, moveMul: 0.8, auto: true,
-    rules: { raiseMs: 2100, falloff: { startPx: 130, endPx: 340, minMul: 0.2 }, shoveMul: 1.2 },
+    rules: { settle: { mul: 4, ms: 1500 }, falloff: { startPx: 130, endPx: 340, minMul: 0.2 }, shoveMul: 1.2 },
     look: { length: 1.15, width: 1.35, barrels: 1, accent: '#5b8def', bullet: { r: 1.7, color: '#2b55b8' } } },
 
   assault: { name: 'Assault', desc: 'Anchor: stand and tap threes for lasers; spray and it drifts', base: 'assault', stage: 0, from: null, damage: 17, fireMs: 110, pellets: 1, spread: 0.035, range: 800, bulletSpeed: 1050, mag: 30, reloadMs: 1500, moveMul: 0.91, auto: true, look: BASE_LOOK },
   battleRifle: { name: 'Battle Rifle', desc: 'Heavy three-round bursts at range; one clean burst drops the unarmored', base: 'assault', stage: 1, from: 'assault', damage: 34, fireMs: 680, pellets: 1, spread: 0.03, range: 900, bulletSpeed: 1100, mag: 24, reloadMs: 1700, moveMul: 0.88, auto: true, burst: { count: 3, gapMs: 70 },
-    rules: { movingSpreadMul: 1.8, viewMul: 1.05, raiseMs: 2100 },
+    rules: { movingSpreadMul: 1.8, viewMul: 1.05, settle: { mul: 4, ms: 2200 } },
     look: { length: 1.15, width: 1.1, barrels: 1, accent: '#c8553d', bullet: { r: 2, color: '#7a2e1f' } } },
   carbine: { name: 'Carbine', desc: 'Double-tap on the move: stays accurate while you strafe', base: 'assault', stage: 1, from: 'assault', damage: 21, fireMs: 280, pellets: 1, spread: 0.045, range: 760, bulletSpeed: 1050, mag: 30, reloadMs: 1200, moveMul: 1, auto: true, burst: { count: 2, gapMs: 55 },
-    rules: { movingSpreadMul: 1, steadyMs: 0, raiseMs: 900 },
+    rules: { movingSpreadMul: 1, steadyMs: 0, settle: { mul: 4, ms: 1300 } },
     look: { length: 0.9, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
   marksman: { name: 'Marksman', desc: 'Semi-auto three-taps: accurate shots from 500 to 900', base: 'assault', stage: 2, from: 'battleRifle', damage: 42, fireMs: 270, pellets: 1, spread: 0.02, range: 900, bulletSpeed: 1400, mag: 14, reloadMs: 1700, moveMul: 0.89, auto: false,
     rules: { bloom: { free: 5, perShot: 0.08, maxMul: 1.6, settleMs: 300, recoverMs: 400, still: 0.5 }, movingSpreadMul: 1.4, steadyMs: 100, viewMul: 1.07 },
@@ -194,42 +195,42 @@ export const GUNS: Record<GunId, GunDef> = {
 
   sniper: { name: 'Bolt-action', desc: 'Long-range pick: one shot drops the unarmored, two any armor; plant your feet', base: 'sniper', stage: 0, from: null, damage: 105, fireMs: 1750, pellets: 1, spread: 0.01, range: 1200, bulletSpeed: 1760, mag: 5, reloadMs: 2200, moveMul: 0.87, auto: false, breakpoint: 2, look: BASE_LOOK },
   longshot: { name: 'Longshot', desc: 'Heavier, farther: one shot drops light armor, with a bigger scope', base: 'sniper', stage: 1, from: 'sniper', damage: 115, fireMs: 1920, pellets: 1, spread: 0.008, range: 1300, bulletSpeed: 2560, mag: 5, reloadMs: 2100, moveMul: 0.844, auto: false, breakpoint: 2,
-    rules: { viewMul: 1.33, raiseMs: 2400, shoveMul: 2.5, sprintMul: 0.4 },
+    rules: { viewMul: 1.33, settle: { mul: 4, ms: 2500 }, shoveMul: 2.5, sprintMul: 0.4 },
     look: { length: 1.2, width: 1.05, barrels: 1, accent: '#c8553d', bullet: { r: 2.2, color: '#7a2e1f' } } },
   semiAuto: { name: 'Semi-auto Rifle', desc: 'Two hits drop any armor, with quick follow-ups', base: 'sniper', stage: 1, from: 'sniper', damage: 68, fireMs: 390, pellets: 1, spread: 0.015, range: 1150, bulletSpeed: 2000, mag: 10, reloadMs: 1900, moveMul: 0.896, auto: false, breakpoint: 2,
-    rules: { steadyMs: 250, raiseMs: 1100, bloom: { free: 2, perShot: 3, maxMul: 7, settleMs: 400, recoverMs: 1600, still: 0.5 } },
+    rules: { steadyMs: 250, settle: { mul: 4, ms: 1800 }, bloom: { free: 2, perShot: 3, maxMul: 7, settleMs: 400, recoverMs: 1600, still: 0.5 } },
     look: { length: 1, width: 1.1, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.8, color: '#1f5560' } } },
   piercer: { name: 'Piercer', desc: 'Rounds pass through three bodies and one-shot medium armor: punish a lane', base: 'sniper', stage: 2, from: 'longshot', damage: 125, fireMs: 1920, pellets: 1, spread: 0.006, range: 1400, bulletSpeed: 2880, mag: 5, reloadMs: 2200, moveMul: 0.818, auto: false, penetrate: 3, breakpoint: 2,
-    rules: { viewMul: 1.36, raiseMs: 2400 },
+    rules: { viewMul: 1.36, settle: { mul: 4, ms: 2500 } },
     look: { length: 1.45, width: 1, barrels: 1, accent: '#e5484d', bullet: { r: 2.4, color: '#ff3b30' } } },
   artillery: { name: 'Artillery', desc: 'Slow shells with a wide blast: flush cover, blow doors', base: 'sniper', stage: 2, from: 'longshot', damage: 35, fireMs: 1700, pellets: 1, spread: 0.01, range: 1300, bulletSpeed: 1440, mag: 4, reloadMs: 2300, moveMul: 0.818, auto: false, blast: { radius: 130, damage: 80 }, breakpoint: 2,
-    rules: { raiseMs: 2400 },
+    rules: { settle: { mul: 4, ms: 2500 } },
     look: { length: 1.3, width: 1.45, barrels: 1, accent: '#f76b15', bullet: { r: 4, color: '#e0661a' } } },
   repeater: { name: 'Repeater', desc: 'Fastest follow-ups: shoot while you jog', base: 'sniper', stage: 2, from: 'semiAuto', damage: 55, fireMs: 250, pellets: 1, spread: 0.018, range: 1100, bulletSpeed: 2080, mag: 14, reloadMs: 1800, moveMul: 0.935, auto: false,
-    rules: { steadyMs: 100, movingSpreadAdd: 0.03, raiseMs: 1100, viewMul: 1.2, bloom: { free: 2, perShot: 2, maxMul: 5, settleMs: 300, recoverMs: 1400, still: 0.5 } },
+    rules: { steadyMs: 100, movingSpreadAdd: 0.03, settle: { mul: 4, ms: 1600 }, viewMul: 1.2, bloom: { free: 2, perShot: 2, maxMul: 5, settleMs: 300, recoverMs: 1400, still: 0.5 } },
     look: { length: 1.05, width: 1.2, barrels: 1, accent: '#5b8def', bullet: { r: 1.9, color: '#2b55b8' } } },
   ghost: { name: 'Ghost', desc: 'Suppressed marksman rifle: plants in a heartbeat', base: 'sniper', stage: 2, from: 'semiAuto', damage: 68, fireMs: 390, pellets: 1, spread: 0.012, range: 1150, bulletSpeed: 2080, mag: 10, reloadMs: 1900, moveMul: 0.935, auto: false, silenced: true, breakpoint: 2,
-    rules: { steadyMs: 150, raiseMs: 1500 },
+    rules: { steadyMs: 150, settle: { mul: 4, ms: 1900 } },
     look: { length: 1.25, width: 0.95, barrels: 1, accent: '#8e4ec6', bullet: { r: 1.6, color: '#5a2d85' } } },
 
   lmg: { name: 'LMG', desc: 'Belt-fed: rev up and hose a lane', base: 'lmg', stage: 0, from: null, damage: 16, fireMs: 90, pellets: 1, spread: 0.055, range: 850, bulletSpeed: 960, mag: 100, reloadMs: 3500, moveMul: 0.766, auto: true, look: BASE_LOOK },
   heavyLmg: { name: 'Heavy LMG', desc: 'Bipod: stand half a second and every round lands', base: 'lmg', stage: 1, from: 'lmg', damage: 23, fireMs: 100, pellets: 1, spread: 0.055, range: 900, bulletSpeed: 1020, mag: 100, reloadMs: 3800, moveMul: 0.714, auto: true,
-    rules: { deploy: { ms: 500, spreadMul: 0.35, minSpread: 0.012, bloom: 0.3 }, suppress: 0.22, raiseMs: 2400 },
+    rules: { deploy: { ms: 500, spreadMul: 0.35, minSpread: 0.012, bloom: 0.3 }, suppress: 0.22, settle: { mul: 4, ms: 2500 } },
     look: { length: 1.15, width: 1.2, barrels: 1, accent: '#c8553d', bullet: { r: 2.1, color: '#7a2e1f' } } },
   lightMg: { name: 'Light MG', desc: 'Fires from the hip on the walk, no rev-up', base: 'lmg', stage: 1, from: 'lmg', damage: 14, fireMs: 75, pellets: 1, spread: 0.07, range: 800, bulletSpeed: 960, mag: 80, reloadMs: 3000, moveMul: 0.87, auto: true,
-    rules: { spinUp: null, deploy: null, movingSpreadMul: 1.3, raiseMs: 1200, sprintMul: 1 },
+    rules: { spinUp: null, deploy: null, movingSpreadMul: 1.3, settle: { mul: 4, ms: 1500 }, sprintMul: 1 },
     look: { length: 0.95, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
   minigun: { name: 'Minigun', desc: 'Revs for a second, then a torrent of lead; too heavy to sprint', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 15, fireMs: 33, pellets: 1, spread: 0.065, range: 900, bulletSpeed: 960, mag: 200, reloadMs: 4500, moveMul: 0.675, auto: true,
-    rules: { spinUp: { startMul: 3, upMs: 900, downMs: 800 }, deploy: { ms: 700, spreadMul: 0.7, minSpread: 0.012, bloom: 0.3 }, sprintMul: 0.1, raiseMs: 2400 },
+    rules: { spinUp: { startMul: 3, upMs: 900, downMs: 800 }, deploy: { ms: 700, spreadMul: 0.7, minSpread: 0.012, bloom: 0.3 }, sprintMul: 0.1, settle: { mul: 4, ms: 2500 } },
     look: { length: 1.2, width: 1.25, barrels: 3, accent: '#f5c400', bullet: { r: 1.6, color: '#a88600' } } },
   juggernaut: { name: 'Juggernaut', desc: 'Biggest rounds: plant a fortress and own the lane', base: 'lmg', stage: 2, from: 'heavyLmg', damage: 30, fireMs: 105, pellets: 1, spread: 0.05, range: 900, bulletSpeed: 1080, mag: 150, reloadMs: 4500, moveMul: 0.636, auto: true,
-    rules: { spinUp: null, deploy: { ms: 450, spreadMul: 0.3, minSpread: 0.012, bloom: 0.3 }, suppress: 0.25, raiseMs: 2400, sprintMul: 0.5 },
+    rules: { spinUp: null, deploy: { ms: 450, spreadMul: 0.3, minSpread: 0.012, bloom: 0.3 }, suppress: 0.25, settle: { mul: 4, ms: 2500 }, sprintMul: 0.5 },
     look: { length: 1.3, width: 1.45, barrels: 1, accent: '#e5484d', bullet: { r: 2.3, color: '#b3261e' } } },
   ranger: { name: 'Ranger', desc: 'Lightest MG: keeps pace and stays accurate on the move', base: 'lmg', stage: 2, from: 'lightMg', damage: 16, fireMs: 75, pellets: 1, spread: 0.06, range: 800, bulletSpeed: 990, mag: 75, reloadMs: 2400, moveMul: 0.935, auto: true,
-    rules: { movingSpreadMul: 1, raiseMs: 1100, suppress: 0.1 },
+    rules: { movingSpreadMul: 1, settle: { mul: 4, ms: 1400 }, suppress: 0.1 },
     look: { length: 1, width: 0.95, barrels: 1, accent: '#3fa7b5', bullet: { r: 1.6, color: '#1f5560' } } },
   twinMg: { name: 'Twin MG', desc: 'Paired barrels: double the rounds, double the pinning', base: 'lmg', stage: 2, from: 'lightMg', damage: 11, fireMs: 85, pellets: 2, spread: 0.09, range: 760, bulletSpeed: 960, mag: 100, reloadMs: 3200, moveMul: 0.82, auto: true,
-    rules: { suppress: 0.12, raiseMs: 2100 },
+    rules: { suppress: 0.12 },
     look: { length: 1.05, width: 1.3, barrels: 2, accent: '#30c0a0', bullet: { r: 1.7, color: '#11806a' } } },
 };
 
@@ -271,15 +272,18 @@ export const LOAD_SPEED_FLOOR = 0.58;
 
 /**
  * Sprint: held with movement, it multiplies move speed by `speedMul` (after the loadout floor, so Lightweight stacks) and lowers the gun.
- * You cannot fire while sprinting (a click ends the sprint), but you can reload. Leaving sprint pulls the gun back up over `raiseMs`, with no shot
- * until it is up (a click made that early is not kept; a held trigger fires once the gun is up). Once it is up a settle starts: spread is
- * `settleMul` times normal and eases out (quadratically) to normal over `settleMs`. A gun's own `raiseMs` and `settle` override these
- * (a pistol or SMG is up and steady fast; a rifle or LMG comes up slow and wild).
+ * You cannot fire while sprinting (a click ends the sprint and fires), but you can reload. There is no wait once it ends: the gun fires at
+ * once, but wild. The post-sprint bloom opens spread to `settleMul` times the gun's moving spread (wider than any walk) and eases it out
+ * (quadratically) over `settleMs` to whatever your stance gives, walking or standing. A gun's own `settle` overrides these: how fast a
+ * gun settles off a sprint is a big part of its class (a pistol ~0.5 s and an SMG ~0.6 s, a shotgun ~1.2 s, an assault rifle 2 s, a sniper or LMG ~2.3 s).
  */
-export const SPRINT = { speedMul: 1.65, settleMul: 4, settleMs: 1300, raiseMs: 2000 } as const;
-/** How long this gun takes to come back up after a sprint: its own `raiseMs`, else `SPRINT.raiseMs`. */
-export const raiseMsOf = (def: GunDef): number => rulesOf(def).raiseMs ?? SPRINT.raiseMs;
-/** How wild this gun is once up after a sprint (`mul` times normal spread) and how long it takes to settle (`ms`, before perks). */
+export const SPRINT = { speedMul: 1.65, settleMul: 4, settleMs: 2000 } as const;
+/**
+ * Spread never jumps: every change of it (a stance, a sprint, a perk, suppression, a gun swap) eases in over at least `ms`, the same on
+ * the server and on your reticle. Only a shot's own bloom kick lands at once (it still comes back down over at least `ms`).
+ */
+export const SPREAD_EASE = { ms: 250 } as const;
+/** How wild this gun is the moment a sprint ends (`mul` times its moving spread) and how long it takes to settle (`ms`, before perks). */
 export const settleRulesOf = (def: GunDef): { mul: number; ms: number } => rulesOf(def).settle ?? { mul: SPRINT.settleMul, ms: SPRINT.settleMs };
 /** How many of the tier-2 pool a level-up offers, drawn per life. */
 export const TIER2_OFFER = 4;
@@ -491,7 +495,7 @@ export const MEDAL_RULES = { multiMs: 3000, longShotPx: 650, pointBlankPx: 90, c
 /**
  * The weapon feats, judged on the gun that fired the killing round (or blast of pellets): kills from one magazine, the
  * range, a kill in one hit from full health at range, a spray that had not bloomed yet at range, a far victim pinned by
- * suppression, and a kill on the move within `runAndGunMs` of the gun coming up from a sprint.
+ * suppression, and a kill on the move within `runAndGunMs` of a sprint ending.
  */
 export const WEAPON_MEDALS = {
   doubleTapKills: 2, deadeyePx: 500, twoBirdsHits: 2, longBarrelPx: 400, oneShotPx: 550, oneShotsForReaper: 3, noScopePx: 160, eagleEyePx: 900,

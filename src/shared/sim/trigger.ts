@@ -4,8 +4,8 @@ import { clamp } from './movement.ts';
 import type { Life } from './world.ts';
 
 export type TriggerState = Pick<Extract<Life, { k: 'alive' }>, 'ammo' | 'reloadUntil' | 'nextFireAt' | 'burstLeft' | 'pressUntil' | 'spray' | 'firedAt' | 'spin'>;
-/** `holdUntil` is when the gun is back up after a sprint (no shot before it); `bloomRecover` scales how fast spray bloom settles (Steady Hands). */
-export type HeldGun = { def: GunDef; mag: number; reloadMs: number; armed: boolean; holdUntil?: number; bloomRecover?: number };
+/** `bloomRecover` scales how fast spray bloom settles (Steady Hands). */
+export type HeldGun = { def: GunDef; mag: number; reloadMs: number; armed: boolean; bloomRecover?: number };
 export type Pull = Pick<InputState, 'fire' | 'reload'> & { pressed: boolean };
 
 export function consumePresses(seen: { shotsSeen: number }, shots: number): boolean {
@@ -29,14 +29,14 @@ export function pullTrigger(s: TriggerState, gun: HeldGun, pull: Pull, now: numb
   }
   if (pull.pressed) {
     const cooledAt = s.burstLeft > 0 && def.burst ? s.nextFireAt + (s.burstLeft - 1) * def.burst.gapMs + fireMs : s.nextFireAt;
-    const readyAt = Math.max(now, cooledAt, s.reloadUntil ?? 0, gun.holdUntil ?? 0);
+    const readyAt = Math.max(now, cooledAt, s.reloadUntil ?? 0);
     if (readyAt - now <= PRESS_BUFFER_MS) s.pressUntil = readyAt + PRESS_GRACE_MS;
   }
   // A lowered gun (a sprint, the round over) drops the rest of a burst, so it never fires on its own once the gun is back up.
   if (!gun.armed) s.burstLeft = 0;
   const bursting = s.burstLeft > 0;
   const wantsShot = bursting || now <= s.pressUntil || (def.auto && pull.fire);
-  if (!gun.armed || now < (gun.holdUntil ?? 0) || !wantsShot || s.reloadUntil !== null || s.ammo <= 0 || now < s.nextFireAt) return false;
+  if (!gun.armed || !wantsShot || s.reloadUntil !== null || s.ammo <= 0 || now < s.nextFireAt) return false;
   if (!bursting) {
     s.pressUntil = -Infinity;
     s.burstLeft = def.burst?.count ?? 1;

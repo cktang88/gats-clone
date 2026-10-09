@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ARMOR_IDS, ARMORS, ATTACHMENTS, GUN_IDS, GUNS, minSpreadOf, PICK_OPTIONS, pickOptions, rulesOf, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
+import { ARMOR_IDS, ARMORS, ATTACHMENTS, GUN_IDS, GUNS, minSpreadOf, PICK_OPTIONS, pickOptions, rulesOf, SPREAD_EASE, WEAPON_IDS, WORLD, type GunId, type PickOption } from '../src/shared/defs.ts';
 import type { InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -65,7 +65,8 @@ test('a sniper settles almost half a second after its last step, an assault rifl
 test('a sniper\'s patient rounds stay inside its still cone standing and stray far past it walking', () => {
   const cone = GUNS.sniper.spread;
   const { w, p } = shooter('sniper');
-  run(w, 400);
+  // Planted (its steadyMs) and the pinpoint eased in (SPREAD_EASE: spread never jumps, even tightening).
+  run(w, rulesOf(GUNS.sniper).steadyMs + SPREAD_EASE.ms + 100);
   const patient: number[] = [];
   while (patient.length < 5) {
     patient.push(...tick(w, p, { fire: true, shots: p.input.shots + 1 }));

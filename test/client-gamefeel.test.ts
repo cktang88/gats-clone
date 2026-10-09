@@ -238,7 +238,7 @@ test('the reticle opens with the spread cone at the cursor distance, within read
   assert.ok(Math.abs(reticleGap(0.1, 300) - Math.tan(0.1) * 300) < 1e-9);
   assert.ok(reticleGap(0.1, 400) > reticleGap(0.1, 200), 'farther aim, wider cone');
   assert.equal(reticleGap(0.01, 50), 5, 'never closes onto the center dot');
-  assert.equal(reticleGap(0.3, 2000), 90, 'never sprawls across the screen');
+  assert.equal(reticleGap(0.3, 2000), 120, 'never sprawls across the screen (wide enough to show a post-sprint bloom)');
 });
 
 test('the death screen names the killer\'s gun and what the life had earned', () => {

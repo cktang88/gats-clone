@@ -1,4 +1,4 @@
-import { COLORS, GUNS, raiseMsOf, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
+import { COLORS, GUNS, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
 import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
 import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView } from '../shared/protocol.ts';
 import { BLAST_RADIUS } from '../shared/sim/abilities.ts';
@@ -12,7 +12,7 @@ import { drawHordeEyes } from './zombieart.ts';
 import { drawCoreGlow, drawCoreTop, drawDowned, drawFloorItems, drawGhost, drawSiegeTops, drawZombies, wallFlashes } from './siege.ts';
 import { drawSiegeFx } from './siegefx.ts';
 import { drawBodyShadows, drawSoldier, gaitAmount, stepGait, type Gait } from './bodies.ts';
-import { stepCarry } from './raise.ts';
+import { stepCarry, swingMsOf } from './raise.ts';
 import { drawProps, drawPropTops, drawFireSlick } from './propfx.ts';
 import { drawRadioOverlay, drawRadios } from './radio.ts';
 import { drawZoneFloor, drawZoneOverlay, zonesOf } from './zoneart.ts';
@@ -432,8 +432,8 @@ function gaitOf(p: PlayerView, now: number): Gait {
   return g;
 }
 
-/** Each body's sprint carry this frame (see raise.ts `stepCarry`): down into the carry while it sprints, back up over its gun's `raiseMsOf` after. */
-const sprintOf = (p: PlayerView, sprinting: boolean, now: number): number => stepCarry(p.id, sprinting, raiseMsOf(GUNS[p.gun]), now, reducedMotion());
+/** Each body's sprint carry this frame (see raise.ts `stepCarry`): down into the carry while it sprints, swung back up over its gun's short `swingMsOf` after. */
+const sprintOf = (p: PlayerView, sprinting: boolean, now: number): number => stepCarry(p.id, sprinting, swingMsOf(p.gun), now, reducedMotion());
 
 /** Adrenaline and Second Wind: a few short streaks trail behind a body that is running on a boost. */
 function drawSpeedLines(ctx: CanvasRenderingContext2D, heading: number, now: number, strength = 1) {

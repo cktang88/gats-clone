@@ -238,6 +238,8 @@ export function setRangeLoadout(w: World, p: Player, l: RangeLoadout): boolean {
   life.nextFireAt = 0;
   life.pressUntil = -Infinity;
   life.settleLeft = 0;
+  life.spreadHist = [];
+  life.spreadShot = 0;
   p.abilityReadyAt = 0;
   return true;
 }

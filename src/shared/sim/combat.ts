@@ -199,8 +199,8 @@ function weaponMedals(w: World, killer: Player, victim: Player, how: KillHow, ow
       if (range >= WEAPON_MEDALS.deadeyePx) out.push('deadeye');
       break;
     case 'smg':
-      // On the move, and only just out of a sprint: the gun came up at most `runAndGunMs` ago.
-      if (life.k === 'alive' && life.lastMoveAt === w.now && w.now >= life.raiseUntil && w.now - life.raiseUntil <= WEAPON_MEDALS.runAndGunMs) out.push('runAndGun');
+      // On the move, and only just out of a sprint: it ended at most `runAndGunMs` ago.
+      if (life.k === 'alive' && life.lastMoveAt === w.now && w.now >= life.sprintEndAt && w.now - life.sprintEndAt <= WEAPON_MEDALS.runAndGunMs) out.push('runAndGun');
       break;
     case 'shotgun':
       if (range >= WEAPON_MEDALS.longBarrelPx) out.push('longBarrel');

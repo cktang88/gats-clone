@@ -18,7 +18,7 @@ const traits = (id: GunId): string => {
   return [
     g.burst && `burst${g.burst.count}`, g.auto ? 'auto' : 'semi', g.pellets > 1 && `x${g.pellets}`, g.penetrate && `pierce${g.penetrate}`, g.blast && `blast${g.blast.radius}`, g.silenced && 'quiet',
     r.falloff && `fade${r.falloff.startPx}-${r.falloff.endPx}`, r.deploy && `deploy${r.deploy.ms}`, r.spinUp && `spin${r.spinUp.upMs}`, r.bloom && `bloom${r.bloom.maxMul}`,
-    r.raiseMs !== null && `raise${r.raiseMs}`, r.shoveMul !== 1 && `shove${r.shoveMul}`, r.breach && 'breach', r.sprintMul !== 1 && `sprint${r.sprintMul}`,
+    r.settle !== null && `settle${r.settle.mul}x${r.settle.ms}`, r.shoveMul !== 1 && `shove${r.shoveMul}`, r.breach && 'breach', r.sprintMul !== 1 && `sprint${r.sprintMul}`,
     `mv${r.movingSpreadMul}${r.movingSpreadAdd ? `+${r.movingSpreadAdd}` : ''}`, r.steadyMs ? `steady${r.steadyMs}` : '', r.viewMul !== 1 ? `view${r.viewMul}` : '', r.suppress ? `sup${r.suppress}` : '',
   ].filter(Boolean).join(' ');
 };

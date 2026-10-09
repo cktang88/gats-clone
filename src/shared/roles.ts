@@ -12,7 +12,7 @@ export const TRAIT_IDS = [
 export type TraitId = (typeof TRAIT_IDS)[number];
 
 export const TRAITS: Record<TraitId, { label: string; hint: string }> = {
-  quickdraw: { label: 'Quick draw', hint: 'Gun is back up fast after a sprint (about a second or less)' },
+  quickdraw: { label: 'Quick draw', hint: 'Quick off a sprint: the post-sprint bloom settles fast' },
   strafe: { label: 'Strafes', hint: 'Stays accurate while you move' },
   plant: { label: 'Plant to aim', hint: 'Accurate only when you stop' },
   burst: { label: 'Bursts', hint: 'One press, a short burst' },
@@ -31,13 +31,13 @@ export const TRAITS: Record<TraitId, { label: string; hint: string }> = {
   pin: { label: 'Pins foes', hint: 'Near misses spoil their aim' },
   breach: { label: 'Door breaker', hint: 'Blows swing doors open' },
   fast: { label: 'Fast feet', hint: 'Quicker than most to cross ground' },
-  slow: { label: 'Slow feet', hint: 'Heavy: slow to move and to raise' },
+  slow: { label: 'Slow feet', hint: 'Heavy: slow to move and to settle off a sprint' },
   deploy: { label: 'Plants down', hint: 'Stand still and it locks in' },
 };
 
 export const CLASS_ROLES: Record<WeaponId, string> = {
-  pistol: 'Sidearm duelist: precise and quick on the draw',
-  smg: 'Rusher: deadly up close, outruns everything',
+  pistol: 'Sidearm duelist: precise, and quick off a sprint',
+  smg: 'Rusher: deadly up close, outruns everything, quick off a sprint',
   shotgun: 'Door-breaker: devastating inside 200 px',
   assault: 'Anchor: stand, tap, hold the middle',
   sniper: 'Long-range pick: plant, fire, work the bolt, let the cone settle',
@@ -46,11 +46,11 @@ export const CLASS_ROLES: Record<WeaponId, string> = {
 
 type Role = { role: string; traits: readonly TraitId[] };
 export const GUN_ROLES: Record<GunId, Role> = {
-  pistol: { role: 'Precise sidearm: quick to draw, steady on the run', traits: ['quickdraw', 'strafe'] },
+  pistol: { role: 'Precise sidearm: quick off a sprint, steady on the run', traits: ['quickdraw', 'strafe'] },
   handCannon: { role: 'Slow and deliberate: two big hits that shove', traits: ['heavy', 'shove'] },
   machinePistol: { role: 'Run-and-gun: burst as you sprint in', traits: ['burst', 'strafe', 'quickdraw'] },
   executioner: { role: 'Plant and punch through two bodies', traits: ['pierce', 'reach', 'plant'] },
-  gunslinger: { role: 'Duelist on the move: fast feet, fast draw', traits: ['strafe', 'quickdraw', 'fast'] },
+  gunslinger: { role: 'Duelist on the move: fast feet, quickest off a sprint', traits: ['strafe', 'quickdraw', 'fast'] },
   akimbo: { role: 'Six-round burst hose for tight quarters', traits: ['burst', 'spray', 'close'] },
   hailstorm: { role: 'Suppressor: a long stream that pins them', traits: ['auto', 'pin', 'deep'] },
 

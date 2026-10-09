@@ -1,6 +1,7 @@
-import { GUNS, PRESS_BUFFER_MS, raiseMsOf, settleRulesOf, WORLD, type GunId } from '../shared/defs.ts';
+import { GUNS, settleRulesOf, WORLD, type GunId, type PerkId, type Tier } from '../shared/defs.ts';
 import type { InputState, Snapshot } from '../shared/protocol.ts';
-import { bloomRecoverMul, postSprint, reloadMsFor, sprintWanted } from '../shared/sim/stats.ts';
+import { walks } from '../shared/sim/movement.ts';
+import { bloomRecoverMul, easedSpread, easeSpread, isDeployed, isSteady, reloadMsFor, settleShare, spreadFor, sprintWanted } from '../shared/sim/stats.ts';
 import { consumePresses, pullTrigger } from '../shared/sim/trigger.ts';
 import { worksBolt } from './reloadbeats.ts';
 
@@ -10,8 +11,12 @@ const CONFIRM_SLACK_TICKS = 4;
 type Trigger = {
   gun: GunId; mag: number; reloadMs: number; alive: boolean; armed: boolean;
   ammo: number; reloadUntil: number | null; nextFireAt: number; burstLeft: number; pressUntil: number; spray: number; firedAt: number; spin: number; shotsSeen: number;
-  /** Sprinting, when the gun is back up after it, and the post-sprint clock still to run (the raise, then `settleMs` of settle; see `postSprint`); `bloomRecover` is Steady Hands'. */
-  sprint: boolean; raiseUntil: number; settleLeft: number; settleMs: number; bloomRecover: number;
+  /** Sprinting, and the post-sprint bloom still to ease out (ms of its `settleMs`; see `settleShare`); `bloomRecover` is Steady Hands'. */
+  sprint: boolean; settleLeft: number; settleMs: number; bloomRecover: number;
+  /** What the spread is read from, as the sim reads it: your perks and suppression (the server's word), and when you last moved. */
+  perks: Partial<Record<Tier, PerkId>>; suppression: number; lastMoveAt: number;
+  /** The eased spread, stepped tick by tick exactly as the sim steps it (see `easeSpread`). */
+  spreadHist: readonly number[]; spreadShot: number;
 };
 /**
  * The keys are optional so a bare trigger test need not name them; a missing key reads as not held. `dashing` is whether a
@@ -19,31 +24,36 @@ type Trigger = {
  */
 export type TriggerInput = Pick<InputState, 'fire' | 'shots' | 'reload'> & Partial<Pick<InputState, 'up' | 'down' | 'left' | 'right' | 'sprint'>> & { dashing?: boolean };
 
-const FRESH_LIFE = { reloadUntil: null, nextFireAt: -Infinity, burstLeft: 0, pressUntil: -Infinity, spray: 0, firedAt: -Infinity, spin: 0, sprint: false, raiseUntil: -Infinity, settleLeft: 0 } as const;
-const UNARMED: Trigger = { gun: 'pistol', mag: 0, reloadMs: GUNS.pistol.reloadMs, alive: false, armed: false, ammo: 0, shotsSeen: 0, settleMs: settleRulesOf(GUNS.pistol).ms, bloomRecover: 1, ...FRESH_LIFE };
+const FRESH_LIFE = { reloadUntil: null, nextFireAt: -Infinity, burstLeft: 0, pressUntil: -Infinity, spray: 0, firedAt: -Infinity, spin: 0, sprint: false, settleLeft: 0, lastMoveAt: -Infinity, spreadHist: [], spreadShot: 0 } as const;
+const UNARMED: Trigger = { gun: 'pistol', mag: 0, reloadMs: GUNS.pistol.reloadMs, alive: false, armed: false, ammo: 0, shotsSeen: 0, settleMs: settleRulesOf(GUNS.pistol).ms, bloomRecover: 1, perks: {}, suppression: 0, ...FRESH_LIFE };
 
 /** One tick of `tickPlayer`'s trigger at time `now`: whether the server fires a shot on the input that carries `input`. */
 export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: Trigger; fired: boolean } {
   const g = { ...t };
   const pressed = consumePresses(g, input.shots);
   if (!g.alive) return { t: g, fired: false };
-  // The server's sprint: held while moving and not firing, ended by a click or a dash; leaving it starts the post-sprint clock (the raise, then the settle).
+  // The server's sprint: held while moving and not firing, ended by a click (which fires) or a dash; the post-sprint bloom is full while it runs and eases out after.
   const sprinting = !input.dashing && sprintWanted(input) && !pressed;
-  if (sprinting !== g.sprint) {
-    g.sprint = sprinting;
-    if (!sprinting) { g.settleLeft = raiseMsOf(GUNS[g.gun]) + g.settleMs; g.raiseUntil = now + raiseMsOf(GUNS[g.gun]); }
-  } else if (!sprinting) g.settleLeft = Math.max(0, g.settleLeft - TICK_MS);
-  const fired = pullTrigger(g, { def: GUNS[g.gun], mag: g.mag, reloadMs: g.reloadMs, armed: g.armed && !sprinting, holdUntil: g.raiseUntil, bloomRecover: g.bloomRecover }, { pressed, fire: input.fire, reload: input.reload }, now, TICK_MS);
+  const moving = walks({ up: !!input.up, down: !!input.down, left: !!input.left, right: !!input.right }) || !!input.dashing;
+  if (moving) g.lastMoveAt = now;
+  g.sprint = sprinting;
+  g.settleLeft = sprinting ? g.settleMs : Math.max(0, g.settleLeft - TICK_MS);
+  const fired = pullTrigger(g, { def: GUNS[g.gun], mag: g.mag, reloadMs: g.reloadMs, armed: g.armed && !sprinting, bloomRecover: g.bloomRecover }, { pressed, fire: input.fire, reload: input.reload }, now, TICK_MS);
+  // The eased spread, stepped as `tickPlayer` steps it.
+  const sinceMove = moving ? 0 : now - g.lastMoveAt;
+  const shot = fired ? g.spray : g.spray + 1;
+  const spreadAt = (sprayShot: number) => spreadFor(g.gun, g.perks, isSteady(g.gun, sinceMove), sprayShot, g.suppression, settleShare(g.settleLeft, g.settleMs), isDeployed(g.gun, sinceMove));
+  const target = spreadAt(shot);
+  g.spreadHist = easeSpread(g.spreadHist, target, shot > g.spreadShot && g.spreadHist.length > 0 ? target - spreadAt(g.spreadShot) : 0);
+  g.spreadShot = shot;
   return { t: g, fired };
 }
 
-export const nextSprayShot = (f: Firing): number => f.trigger.spray + 1;
+/** The share (0..1) of the post-sprint bloom still to ease out, as of the newest input sent (1 while sprinting). */
+export const settleOf = (f: Firing): number => settleShare(f.trigger.settleLeft, f.trigger.settleMs);
 
-/** The share (0..1) of the post-sprint settle still to ease out, for the reticle and the next shot's spread (1 while the gun is still coming up). */
-export const settleOf = (f: Firing): number => postSprint(f.trigger.settleLeft, f.trigger.settleMs).settle;
-
-/** How long (ms) the gun is still coming up after a sprint, as of the newest input sent: no shot until it is 0. */
-export const raiseLeftOf = (f: Firing): number => (f.trigger.sprint ? 0 : postSprint(f.trigger.settleLeft, f.trigger.settleMs).raiseLeft);
+/** The spread your next shot gets, as of the newest input sent: the eased spread the sim will fire it with, and what the reticle draws. */
+export const spreadOf = (f: Firing): number => easedSpread(f.trigger.spreadHist);
 
 /**
  * How long (ms) a bolt-action's bolt is still being worked after its last shot, as of the page clock `now`: 0 for every other gun, while
@@ -55,10 +65,6 @@ export function boltLeftOf(f: Firing, now: number): number {
   const clock = f.sent.seq * TICK_MS + Math.min(100, Math.max(0, now - f.sent.at));
   return Math.max(0, t.nextFireAt - clock);
 }
-
-/** Whether a click now would find the gun down: sprinting (the click ends it and starts the raise) or still too far from up to be kept. */
-export const clickFindsGunDown = (f: Firing): boolean =>
-  f.trigger.alive && f.trigger.armed && (f.trigger.sprint || raiseLeftOf(f) > PRESS_BUFFER_MS);
 
 /** A shot the page drew before the server fired it: the input that fires it and the rounds drawn for it. */
 export type PredictedShot = { seq: number; rounds: readonly number[] };
@@ -111,7 +117,7 @@ export function sendInput(f: Firing, seq: number, input: TriggerInput, at: numbe
 /** What the server says of your gun in a snapshot, as of the input it acknowledged. */
 export type ServerGun = {
   gun: GunId; mag: number; reloadMs: number; ammo: number; reloading: boolean; reloadFrac: number; alive: boolean; armed: boolean;
-  sprint?: boolean; settle?: number; settleMs?: number; bloomRecover?: number;
+  sprint?: boolean; settle?: number; settleMs?: number; bloomRecover?: number; perks?: Partial<Record<Tier, PerkId>>; suppression?: number;
 };
 
 export function serverGun(snap: Snapshot): ServerGun {
@@ -121,20 +127,21 @@ export function serverGun(snap: Snapshot): ServerGun {
   return {
     gun, mag, reloadMs: reloadMsFor(gun, perks), ammo, reloading, reloadFrac, alive: alive && !!me, armed: snap.match.winner === null,
     sprint: snap.self.sprint ?? false, settle: snap.self.settle ?? 0, settleMs: snap.self.settleMs ?? settleRulesOf(GUNS[gun]).ms, bloomRecover: bloomRecoverMul(perks),
+    perks, suppression: snap.self.suppression ?? 0,
   };
 }
 
 function rebase(base: Trigger, sv: ServerGun, late: number, now: number): Trigger {
   if (!sv.alive) return { ...base, alive: false, armed: sv.armed };
-  const t: Trigger = { ...base, ...(base.alive ? {} : FRESH_LIFE), alive: true, armed: sv.armed, gun: sv.gun, mag: sv.mag, reloadMs: sv.reloadMs, ammo: Math.max(0, sv.ammo - late) };
-  // The post-sprint clock runs from the server's word: whatever of it is beyond the settle is the gun's raise still to go.
+  const t: Trigger = { ...base, ...(base.alive ? {} : { ...FRESH_LIFE, lastMoveAt: now }), alive: true, armed: sv.armed, gun: sv.gun, mag: sv.mag, reloadMs: sv.reloadMs, ammo: Math.max(0, sv.ammo - late) };
+  // The post-sprint bloom runs from the server's word; the eased spread carries on from the page's own steps (it follows the same inputs).
   const settleMs = sv.settleMs ?? settleRulesOf(GUNS[sv.gun]).ms, left = sv.settle ?? 0;
   t.sprint = sv.sprint ?? false;
   t.settleMs = settleMs;
   t.settleLeft = left * settleMs;
-  const raiseLeft = postSprint(t.settleLeft, settleMs).raiseLeft;
-  t.raiseUntil = !t.sprint && raiseLeft > 0 ? now + raiseLeft : -Infinity;
   t.bloomRecover = sv.bloomRecover ?? 1;
+  t.perks = sv.perks ?? {};
+  t.suppression = sv.suppression ?? 0;
   if (base.gun !== sv.gun) { t.burstLeft = 0; t.spray = 0; t.spin = 0; }
   if (sv.reloading !== (t.reloadUntil !== null)) t.reloadUntil = sv.reloading ? now + (1 - sv.reloadFrac) * sv.reloadMs : null;
   return t;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WORLD } from '../src/shared/defs.ts';
 import { knifeLunge, moveStep, startDash, walks, KNIFE_LUNGE, type Motion } from '../src/shared/sim/movement.ts';
-import { postSprint } from '../src/shared/sim/stats.ts';
+import { settleShare } from '../src/shared/sim/stats.ts';
 import { emptyWorld, press, run, spawnAt } from './helpers.ts';
 
 const SIZE = 3000;
@@ -63,9 +63,10 @@ test('a knife reaches only enemies in front of it: one beside or behind, in reac
   assert.ok(knifeLunge([], from, 0, [{ x: 1000 + WORLD.playerRadius - 4, y: 1000 }], SIZE).victim, 'and one overlapping the knifer, whatever the angle');
 });
 
-test('after a sprint the gun is down for the raise, then the spread settles over the last settleMs', () => {
-  assert.deepEqual(postSprint(1500, 500), { raiseLeft: 1000, settle: 1 }, 'raising: the settle has not begun');
-  assert.deepEqual(postSprint(250, 500), { raiseLeft: 0, settle: 0.5 }, 'up, halfway settled');
-  assert.deepEqual(postSprint(0, 500), { raiseLeft: 0, settle: 0 });
-  assert.deepEqual(postSprint(300, 0), { raiseLeft: 300, settle: 0 }, 'a gun with no settle only raises');
+test('after a sprint the post-sprint bloom eases out over settleMs, with no wait for the gun', () => {
+  assert.equal(settleShare(500, 500), 1, 'full the moment the sprint ends');
+  assert.equal(settleShare(250, 500), 0.5, 'halfway settled');
+  assert.equal(settleShare(0, 500), 0);
+  assert.equal(settleShare(900, 500), 1, 'never more than full');
+  assert.equal(settleShare(300, 0), 0, 'a gun with no settle has none');
 });

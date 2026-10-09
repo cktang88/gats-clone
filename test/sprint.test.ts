@@ -2,12 +2,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CONTROLS, assembleInput, actionForKey } from '../src/client/input.ts';
-import { stepTrigger, NO_FIRING, settle, settleOf, type ServerGun } from '../src/client/fire.ts';
+import { stepTrigger, NO_FIRING, settle, settleOf, spreadOf, type ServerGun } from '../src/client/fire.ts';
 import { NO_STICKS, dragStick, pressStick, touchMoves } from '../src/client/touch.ts';
-import { GUNS, LOAD_SPEED_FLOOR, minSpreadOf, raiseMsOf, rulesOf, settleRulesOf, SPRINT, WORLD } from '../src/shared/defs.ts';
+import { GUNS, LOAD_SPEED_FLOOR, minSpreadOf, rulesOf, settleRulesOf, SPREAD_EASE, SPRINT, WORLD, type GunId } from '../src/shared/defs.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { effectiveStats, settleSpreadMul, spreadFor } from '../src/shared/sim/stats.ts';
+import { easedSpread, effectiveStats, postSprintSpread, spreadFor } from '../src/shared/sim/stats.ts';
+import type { Player } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, equip, grantPerks, press, run, spawnAt, TICK_MS } from './helpers.ts';
@@ -42,7 +43,7 @@ test('sprint multiplies the loadout speed after the 58% floor, and Lightweight s
   assert.ok(Math.abs(light - WORLD.baseSpeed * 1.25 * SPRINT.speedMul) < 4, `Lightweight sprint ${light.toFixed(1)}`);
 });
 
-test('a sprinting player cannot fire; a click ends the sprint and the shot waits for the gun to come up', () => {
+test('a sprinting player cannot fire; a click ends the sprint and fires at once', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500, { loadout: { weapon: 'assault' } });
   spawnAt(w, 1500, 900);
@@ -50,19 +51,10 @@ test('a sprinting player cannot fire; a click ends the sprint and the shot waits
   run(w, 400);
   assert.equal(snapshotFor(w, a.id).self.sprint, true);
   const shots = () => w.events.filter((e) => e.e === 'shot' && e.owner === a.id).length;
-  let fired = 0;
-  const clickAt = w.now;
   press(w, a, { right: true, sprint: true, fire: true, shots: a.input.shots + 1 });
-  let firstShotMs: number | null = null;
-  for (let i = 0; i < Math.ceil(raiseMsOf(GUNS.assault) / TICK_MS) + 10; i++) {
-    run(w, TICK_MS);
-    fired += shots();
-    if (fired > 0 && firstShotMs === null) firstShotMs = w.now - clickAt;
-  }
+  run(w, TICK_MS);
+  assert.equal(shots(), 1, 'the click\'s own tick fires: no wait for the gun to come up');
   assert.equal(snapshotFor(w, a.id).self.sprint, false, 'the click ended the sprint even with the key still held');
-  assert.ok(firstShotMs !== null, 'the held trigger fires once the gun is up');
-  assert.ok(firstShotMs! >= raiseMsOf(GUNS.assault) - TICK_MS, `no shot before the gun is raised (${firstShotMs}ms)`);
-  assert.ok(firstShotMs! <= raiseMsOf(GUNS.assault) + 2 * TICK_MS + 1, `a held trigger fires right as it comes up (${firstShotMs}ms)`);
 });
 
 test('sprinting never fires, however long the trigger is held without a click ending it', () => {
@@ -85,78 +77,149 @@ test('reloading while sprinting is allowed', () => {
   assert.equal(self.sprint, true, 'the sprint carried on through the reload');
 });
 
-test('leaving sprint runs the raise, then a settle that eases spread from the gun\'s settle multiple back to normal', () => {
-  assert.equal(settleSpreadMul(1), SPRINT.settleMul);
-  assert.equal(settleSpreadMul(0), 1);
-  assert.equal(settleSpreadMul(2), SPRINT.settleMul, 'a share above 1 (the gun still coming up) counts as the full settle');
-  assert.ok(Math.abs(settleSpreadMul(0.5) - (1 + (SPRINT.settleMul - 1) * 0.25)) < 1e-9, 'ease-out: most of the bloom is gone by the half-way point');
-  assert.ok(settleSpreadMul(0.25) < settleSpreadMul(0.5) && settleSpreadMul(0.5) < settleSpreadMul(0.75));
+/** The spread player `p`'s next shot gets right now (the eased spread, see `easeSpread`). */
+const easedOf = (p: Player): number => (p.life.k === 'alive' ? easedSpread(p.life.spreadHist) : 0);
+/** Its target this tick, still or on the move, with `settle` of the post-sprint bloom left. */
+const moving = (gun: GunId) => GUNS[gun].spread * rulesOf(GUNS[gun]).movingSpreadMul + rulesOf(GUNS[gun]).movingSpreadAdd;
+
+test('leaving sprint throws the post-sprint bloom: ~4x the gun\'s moving spread, easing out over its settle to whatever the stance gives', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500, { loadout: { weapon: 'assault' } });
-  const raise = raiseMsOf(GUNS.assault), { ms: settleMs } = settleRulesOf(GUNS.assault);
+  const { ms: settleMs } = settleRulesOf(GUNS.assault);
   press(w, a, { right: true, sprint: true });
-  run(w, 300);
+  run(w, 600);
+  assert.equal(snapshotFor(w, a.id).self.settle, 1, 'full while sprinting');
   press(w, a, {});
   run(w, TICK_MS);
   const early = snapshotFor(w, a.id).self;
   assert.equal(early.settleMs, settleMs);
-  assert.ok(Math.abs(early.settle! - (raise + settleMs) / settleMs) < 0.03, `the clock starts with the raise ahead of the settle (${early.settle})`);
-  run(w, raise);
-  const up = snapshotFor(w, a.id).self.settle!;
-  assert.ok(up <= 1 && up > 0.95, `the settle starts in full only once the gun is up (${up})`);
+  assert.ok(early.settle! > 0.97, `it starts in full the moment the sprint ends (${early.settle})`);
+  const peak = easedOf(a);
+  assert.ok(Math.abs(peak / (SPRINT.settleMul * moving('assault')) - 1) < 0.02, `the eased spread is already at the peak (sprinting built it): ${peak}`);
   run(w, settleMs / 2);
   const mid = snapshotFor(w, a.id).self.settle!;
   assert.ok(Math.abs(mid - 0.5) < 0.04, `half the settle time, half the settle (${mid})`);
   run(w, settleMs / 2 + TICK_MS);
   assert.equal(snapshotFor(w, a.id).self.settle, 0, 'gone once the settle has run');
-  const steady = spreadFor('assault', {}, true);
-  assert.ok(Math.abs(spreadFor('assault', {}, true, 0, 0, 1) / steady - SPRINT.settleMul) < 1e-9);
-  assert.equal(spreadFor('assault', {}, true, 0, 0, 0), steady);
+  run(w, SPREAD_EASE.ms + 100);
+  assert.ok(Math.abs(easedOf(a) - spreadFor('assault', {}, true)) < 1e-9, 'and the spread is back to the standing spread');
+  // The curve: quadratic ease-out from the peak to the stance's own.
+  assert.equal(postSprintSpread(0.02, 0.05, 1, 4), 0.2);
+  assert.equal(postSprintSpread(0.02, 0.05, 0, 4), 0.02);
+  assert.ok(Math.abs(postSprintSpread(0.02, 0.05, 0.5, 4) - (0.02 + 0.18 * 0.25)) < 1e-12, 'most of the bloom is gone half-way');
+  assert.equal(postSprintSpread(0.3, 0.05, 1, 4), 0.3, 'never tighter than the stance');
+  for (const still of [true, false]) {
+    assert.ok(Math.abs(spreadFor('assault', {}, still, 0, 0, 1) - SPRINT.settleMul * moving('assault')) < 1e-9, `${still ? 'standing' : 'walking'}: the peak is 4x the moving spread`);
+    assert.equal(spreadFor('assault', {}, still, 0, 0, 0), spreadFor('assault', {}, still), 'and it settles to the stance\'s');
+  }
 });
 
-test('the settle is horrific on the anchors (x4) but kinder and quicker on the pistol and the rushing SMG', () => {
-  const at = (gun: 'pistol' | 'smg' | 'shotgun' | 'assault' | 'sniper' | 'lmg') => spreadFor(gun, {}, false, 0, 0, 1) / spreadFor(gun, {}, false);
-  for (const gun of ['assault', 'lmg'] as const) assert.ok(Math.abs(at(gun) - 4) < 1e-9, `${gun} starts at x${at(gun)}`);
-  assert.ok(at('sniper') > 3, 'a just-sprinted sniper sprays');
-  for (const gun of ['pistol', 'smg', 'shotgun'] as const) assert.ok(at(gun) >= 1.5 && at(gun) <= 3, `${gun} starts at x${at(gun)}`);
-  const ms = (gun: keyof typeof GUNS) => settleRulesOf(GUNS[gun]).ms;
-  assert.ok(ms('pistol') < ms('assault') && ms('smg') < ms('assault') && ms('smg') <= 500, 'the light guns settle fastest');
-  assert.ok(ms('lmg') >= ms('assault') && ms('sniper') >= ms('assault'), 'the heavy guns settle slowest');
-  // The SMG stays a rusher: up and fully steady before an assault rifle is even up.
-  assert.ok(raiseMsOf(GUNS.smg) + ms('smg') < raiseMsOf(GUNS.assault));
+test('every class blooms to ~4x off a sprint, wider than walking; the pistol and SMG settle far faster than the long guns', () => {
+  for (const gun of ['pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg'] as const) {
+    const peak = spreadFor(gun, {}, false, 0, 0, 1), walk = spreadFor(gun, {}, false);
+    assert.ok(peak / moving(gun) >= 3.9 && peak / moving(gun) <= 4.1, `${gun} peaks at x${(peak / moving(gun)).toFixed(2)} of its moving spread`);
+    assert.ok(peak > walk * 2, `${gun}: far wider than walking`);
+  }
+  const ms = (gun: GunId) => settleRulesOf(GUNS[gun]).ms;
+  assert.ok(ms('pistol') <= 550 && ms('smg') <= 650, `the sidearm and the rusher settle in about half a second (${ms('pistol')}, ${ms('smg')})`);
+  assert.ok(ms('gunslinger') <= 400 && ms('skirmisher') <= 400, 'their quickest variants faster still');
+  assert.ok(ms('shotgun') >= 1000 && ms('shotgun') <= 1400, 'the shotgun in between');
+  assert.ok(ms('assault') >= 1900 && ms('assault') <= 2100, 'the anchor takes ~2 s');
+  assert.ok(ms('sniper') >= 2200 && ms('lmg') >= 2200 && ms('sniper') <= 2500 && ms('lmg') <= 2500, 'the long guns longest');
+  assert.ok(ms('smg') * 3 <= ms('assault'), 'quick off a sprint is the SMG\'s edge');
 });
 
 for (const gun of ['pistol', 'smg', 'shotgun', 'assault', 'sniper', 'lmg'] as const) {
-  test(`${gun}: no round leaves (and no ammo is spent) until the gun is up after a sprint`, () => {
+  test(`${gun}: a click ends a sprint and the round leaves at once, wide with the post-sprint bloom`, () => {
     const w = emptyWorld();
     const a = spawnAt(w, 500, 500, { loadout: { weapon: gun } });
     press(w, a, { right: true, sprint: true });
     run(w, 400);
-    const mag = snapshotFor(w, a.id).self.ammo;
     const shots = () => w.events.filter((e) => e.e === 'shot' && e.owner === a.id).length;
-    const clickAt = w.now;
-    let firstShotMs: number | null = null;
-    // A click ends the sprint; the trigger is then held (a semi-auto gets a fresh click each tick).
     press(w, a, { right: true, sprint: true, fire: true, shots: a.input.shots + 1 });
-    for (let i = 0; i < Math.ceil(raiseMsOf(GUNS[gun]) / TICK_MS) + 6 && firstShotMs === null; i++) {
-      run(w, TICK_MS);
-      if (shots() > 0) firstShotMs = w.now - clickAt;
-      else {
-        assert.equal(snapshotFor(w, a.id).self.ammo, mag, `no ammo spent ${w.now - clickAt}ms in`);
-        if (!GUNS[gun].auto) press(w, a, { right: true, fire: true, shots: a.input.shots + 1 });
-      }
-    }
-    assert.ok(firstShotMs !== null, 'it fires once up');
-    assert.ok(firstShotMs! >= raiseMsOf(GUNS[gun]) - TICK_MS, `not before ${raiseMsOf(GUNS[gun])}ms (${firstShotMs}ms)`);
-    assert.ok(firstShotMs! <= raiseMsOf(GUNS[gun]) + 2 * TICK_MS + 1, `as soon as it is up (${firstShotMs}ms)`);
+    run(w, TICK_MS);
+    assert.equal(shots(), 1, 'fired on the click\'s tick');
+    assert.ok(easedOf(a) >= 3.9 * moving(gun), `at the full post-sprint bloom (${easedOf(a).toFixed(3)})`);
   });
 }
 
-test('the settle also breaks a planted sniper\'s pinpoint, and suppression still stacks on top', () => {
+test('the bloom also breaks a planted sniper\'s pinpoint, and suppression still stacks on top', () => {
   assert.equal(spreadFor('sniper', {}, true), minSpreadOf(GUNS.sniper));
   assert.ok(spreadFor('sniper', {}, true, 0, 0, 1) > GUNS.sniper.spread, 'a just-sprinted sniper rifle is not pinpoint');
   const base = spreadFor('assault', {}, true, 0, 0, 0.6);
-  assert.ok(spreadFor('assault', {}, true, 0, 1, 0.6) > base, 'suppression stacks on the settle');
+  assert.ok(spreadFor('assault', {}, true, 0, 1, 0.6) > base, 'suppression stacks on the bloom');
+  assert.ok(spreadFor('sniper', {}, true, 2, 0, 0.5) > spreadFor('sniper', {}, true, 0, 0, 0.5), 'a bolt\'s kick composes with it');
+});
+
+/** Steps `p` tick by tick on `input` for `ms`, the eased spread after each tick. */
+function trace(w: ReturnType<typeof emptyWorld>, p: Player, ms: number): number[] {
+  const out: number[] = [];
+  for (let t = 0; t < ms - 1e-6; t += TICK_MS) { run(w, TICK_MS); out.push(easedOf(p)); }
+  return out;
+}
+/** How long (ms) a trace takes to come within 1% of the way from `from` to `to` (Infinity if it never does). */
+const arrival = (xs: number[], from: number, to: number) => {
+  const i = xs.findIndex((x) => Math.abs(x - to) <= Math.abs(to - from) * 0.01);
+  return i < 0 ? Infinity : (i + 1) * TICK_MS;
+};
+
+test('spread never jumps: a stance change, a sprint, suppression or a gun swap each ease in over at least SPREAD_EASE.ms, and settle after', () => {
+  const ease = SPREAD_EASE.ms;
+  // `delayMs`: how long the target itself waits to change (an assault rifle's `steadyMs` before its still spread takes hold).
+  const check = (what: string, xs: number[], from: number, to: number, delayMs = 0) => {
+    const at = arrival(xs, from, to);
+    assert.ok(at >= ease + delayMs, `${what}: done after ${at.toFixed(0)} ms, under ${ease}`);
+    assert.ok(at <= ease + delayMs + 3 * TICK_MS, `${what}: still not settled ${at.toFixed(0)} ms in`);
+    for (let i = 1; i < xs.length; i++) assert.ok((xs[i] - xs[i - 1]) * Math.sign(to - from) >= -1e-12, `${what}: monotone`);
+  };
+  // Walking to standing (an assault rifle tightens a lot when planted).
+  let w = emptyWorld();
+  let a = spawnAt(w, 500, 500, { loadout: { weapon: 'assault' } });
+  press(w, a, { right: true });
+  run(w, 600);
+  const walk = easedOf(a), stand = spreadFor('assault', {}, true);
+  assert.ok(Math.abs(walk - spreadFor('assault', {}, false)) < 1e-9);
+  press(w, a, {});
+  check('walk to stand', trace(w, a, 600), walk, stand, rulesOf(GUNS.assault).steadyMs - TICK_MS);
+  // Standing to walking.
+  press(w, a, { right: true });
+  check('stand to walk', trace(w, a, 600), stand, walk);
+  // Into a sprint: the reticle opens to the bloom it will have when the sprint ends, eased.
+  press(w, a, { right: true, sprint: true });
+  check('into a sprint', trace(w, a, 600), walk, SPRINT.settleMul * moving('assault'));
+  // A gun swap.
+  w = emptyWorld();
+  a = spawnAt(w, 500, 500, { loadout: { weapon: 'assault' } });
+  run(w, 600);
+  equip(a, 'smg');
+  check('gun swap', trace(w, a, 600), spreadFor('assault', {}, true), spreadFor('smg', {}, true));
+  // Suppression arriving all at once.
+  w = emptyWorld();
+  a = spawnAt(w, 500, 500, { loadout: { weapon: 'assault' } });
+  run(w, 600);
+  const calm = easedOf(a);
+  if (a.life.k === 'alive') { a.life.suppression = 1; a.life.suppressedAt = Infinity; }
+  check('suppression', trace(w, a, 600), calm, spreadFor('assault', {}, true, 1, 1));
+});
+
+test('a shot\'s bloom kick lands at once, but comes back down no faster than SPREAD_EASE.ms', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'sniper' } });
+  spawnAt(w, 1500, 900);
+  run(w, 1000);
+  const rest = easedOf(a);
+  assert.equal(rest, minSpreadOf(GUNS.sniper), 'planted: pinpoint');
+  press(w, a, { fire: true, shots: a.input.shots + 1 });
+  run(w, TICK_MS);
+  press(w, a, { fire: false });
+  run(w, TICK_MS);
+  const kicked = easedOf(a), target = spreadFor('sniper', {}, true, a.life.k === 'alive' ? a.life.spray + 1 : 0);
+  assert.ok(kicked > rest * 5 && Math.abs(kicked - target) < target * 0.05, `the kick is on the reticle the tick after the shot (${kicked} vs ${target})`);
+  // The sniper's own recovery is slow anyway; a reload drops the bloom to nothing at once, which the ease spreads out.
+  if (a.life.k === 'alive') a.life.ammo = 0;
+  const xs = trace(w, a, 600);
+  assert.ok(arrival(xs, kicked, rest) >= SPREAD_EASE.ms, `the drop takes at least ${SPREAD_EASE.ms} ms (${arrival(xs, kicked, rest)})`);
+  assert.ok(Math.abs(xs.at(-1)! - rest) < 1e-9, 'and lands on the rested spread');
 });
 
 test('a sprint ending mid-settle restarts it, and sprint speed appears in the self snapshot', () => {
@@ -172,28 +235,33 @@ test('a sprint ending mid-settle restarts it, and sprint speed appears in the se
 
 const SERVER: ServerGun = { gun: 'assault', mag: GUNS.assault.mag, reloadMs: GUNS.assault.reloadMs, ammo: GUNS.assault.mag, reloading: false, reloadFrac: 0, alive: true, armed: true };
 
-test('the client trigger mirrors the sprint: no shot while sprinting, the raise delay and the settle after', () => {
-  let t = settle(NO_FIRING, SERVER, 0, 0, []).firing.trigger;
-  const moving = { up: false, down: false, left: false, right: true, reload: false };
-  let now = TICK_MS;
-  let step = stepTrigger(t, { ...moving, fire: false, shots: 0, sprint: true }, now);
-  t = step.t;
-  assert.equal(t.sprint, true);
-  now += TICK_MS;
-  step = stepTrigger(t, { ...moving, fire: false, shots: 1, sprint: true }, now);
-  assert.equal(step.fired, false, 'the click ends the sprint but the gun is not up yet');
-  t = step.t;
-  assert.equal(t.sprint, false);
-  assert.equal(t.settleLeft, raiseMsOf(GUNS.assault) + t.settleMs, 'the post-sprint clock: the raise, then the settle');
-  let firedAfter: number | null = null;
-  for (let i = 0; i < Math.ceil(raiseMsOf(GUNS.assault) / TICK_MS) + 10 && firedAfter === null; i++) {
-    now += TICK_MS;
-    step = stepTrigger(t, { ...moving, right: false, fire: true, shots: 1, sprint: true }, now);
-    t = step.t;
-    if (step.fired) firedAfter = i + 1;
+test('the client trigger mirrors the sprint and the eased spread tick for tick: no shot while sprinting, a click fires at once, the reticle reads what the sim fires', () => {
+  const w = emptyWorld();
+  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'assault' } });
+  let t = settle(NO_FIRING, { ...SERVER }, 0, 0, []).firing.trigger;
+  const script: Array<[number, { right?: boolean; sprint?: boolean; fire?: boolean; click?: boolean }]> = [
+    [10, { right: true }], [8, {}], [20, { right: true, sprint: true }], [1, { right: true, sprint: true, fire: true, click: true }],
+    [12, { right: true, fire: true }], [30, {}], [6, { fire: true }], [40, {}],
+  ];
+  let shots = 0, now = 0, sawSprint = false;
+  for (const [ticks, keys] of script) {
+    for (let i = 0; i < ticks; i++) {
+      if (keys.click && i === 0) shots++;
+      const input = { up: false, down: false, left: false, right: !!keys.right, sprint: !!keys.sprint, fire: !!keys.fire, reload: false, shots };
+      press(w, a, input);
+      const before = w.events.length;
+      run(w, TICK_MS);
+      now += TICK_MS;
+      const step = stepTrigger(t, input, now);
+      t = step.t;
+      const simFired = w.events.slice(before).some((e) => e.e === 'shot' && e.owner === a.id);
+      assert.equal(step.fired, simFired, `fires on the same tick (${now.toFixed(0)} ms)`);
+      if (t.sprint) { sawSprint = true; assert.equal(step.fired, false); }
+      assert.ok(Math.abs(spreadOf({ ...NO_FIRING, trigger: t }) - easedOf(a)) < 1e-9, `the same eased spread at ${now.toFixed(0)} ms`);
+    }
   }
-  assert.ok(firedAfter !== null && firedAfter * TICK_MS >= raiseMsOf(GUNS.assault) - TICK_MS, `fired after ${firedAfter} ticks`);
-  assert.ok(settleOf({ ...NO_FIRING, trigger: t }) < 1, 'the settle is draining');
+  assert.ok(sawSprint);
+  assert.ok(settleOf({ ...NO_FIRING, trigger: t }) === 0, 'the bloom has run out');
 });
 
 test('input parsing keeps sprint, and Shift and the move stick\'s outer ring both sprint', () => {
@@ -250,26 +318,7 @@ test('a bot sprints to travel and walks the moment an enemy is in sight, so it c
   assert.ok(fires > 0, 'it fought');
 });
 
-test('a single click while a slow gun is coming up after a sprint is not kept: no shot until it is up and you click again (a quick draw keeps a click made just before)', () => {
-  const w = emptyWorld();
-  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'shotgun' } });
-  spawnAt(w, 1500, 900);
-  press(w, a, { right: true, sprint: true });
-  run(w, 400);
-  const shots = () => w.events.filter((e) => e.e === 'shot' && e.owner === a.id).length;
-  let fired = 0;
-  // The click ends the sprint; release it at once (a shotgun does not fire on a held trigger).
-  press(w, a, { right: true, sprint: true, fire: true, shots: a.input.shots + 1 });
-  run(w, TICK_MS); fired += shots();
-  press(w, a, { right: true, sprint: false, fire: false, shots: a.input.shots });
-  for (let i = 0; i < Math.ceil((raiseMsOf(GUNS.shotgun) + 300) / TICK_MS); i++) { run(w, TICK_MS); fired += shots(); }
-  assert.equal(fired, 0, 'the click made while the gun was down never fires');
-  press(w, a, { right: true, fire: true, shots: a.input.shots + 1 });
-  for (let i = 0; i < 4; i++) { run(w, TICK_MS); fired += shots(); }
-  assert.equal(fired, 1, 'a fresh click once the gun is up fires');
-});
-
-test('a sprint started mid-burst drops the rest of the burst: no round leaves on its own once the gun is back up', () => {
+test('a sprint started mid-burst drops the rest of the burst: no round leaves on its own once the sprint ends', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   equip(a, 'machinePistol');
@@ -284,6 +333,6 @@ test('a sprint started mid-burst drops the rest of the burst: no round leaves on
   assert.equal(snapshotFor(w, a.id).self.sprint, true);
   assert.equal(fired, 1, 'the lowered gun cut the burst');
   press(w, a, { right: true, shots: a.input.shots });
-  for (let i = 0; i < Math.ceil((raiseMsOf(GUNS.machinePistol) + 1000) / TICK_MS); i++) tick();
-  assert.equal(fired, 1, 'no click, no shot: the cut burst does not resume when the gun comes up');
+  for (let i = 0; i < Math.ceil(1000 / TICK_MS); i++) tick();
+  assert.equal(fired, 1, 'no click, no shot: the cut burst does not resume when the sprint ends');
 });

@@ -1,4 +1,4 @@
-import { AIRDROP, GUNS, raiseMsOf, SUPPRESSION, WORLD, ZOM, type PlayerKind } from './defs.ts';
+import { AIRDROP, GUNS, SUPPRESSION, WORLD, ZOM, type PlayerKind } from './defs.ts';
 import type { InputState, Loadout, Team } from './protocol.ts';
 import { ABILITIES, tickThrown } from './sim/abilities.ts';
 import { standsOn, tickAirdrops } from './sim/airdrop.ts';
@@ -11,7 +11,7 @@ import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, watchCloseCall
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
-import { abilityCooldownMs, abilityOf, bloomRecoverMul, BOT_SPREAD_MUL, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, postSprint, resetProgress, rushMul, spreadFor, sprintWanted } from './sim/stats.ts';
+import { abilityCooldownMs, abilityOf, bloomRecoverMul, BOT_SPREAD_MUL, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, resetProgress, rushMul, settleShare, spreadFor, sprintWanted, easeSpread, easedSpread } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
 import { crateRect, freshFeats, IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
@@ -92,12 +92,11 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
   const shoved = life.knock !== null;
   if (w.now - life.suppressedAt >= SUPPRESSION.holdMs) life.suppression = Math.max(0, life.suppression - SUPPRESSION.decayPerSec * dt);
   const stats = effectiveStats(p);
-  // Sprint is held while moving and not firing; a click ends it. Leaving it starts the post-sprint clock: the gun comes up, then the bloom settles.
+  // Sprint is held while moving and not firing; a click ends it (and fires). The post-sprint bloom is full while it runs and eases out once it ends.
   const sprinting = life.dash === null && sprintWanted(inp) && !pressed;
-  if (sprinting !== life.sprint) {
-    life.sprint = sprinting;
-    if (!sprinting) { life.settleLeft = raiseMsOf(gun) + stats.settleMs; life.raiseUntil = w.now + raiseMsOf(gun); }
-  } else if (!sprinting) life.settleLeft = Math.max(0, life.settleLeft - dtMs);
+  if (life.sprint && !sprinting) life.sprintEndAt = w.now;
+  life.sprint = sprinting;
+  life.settleLeft = sprinting ? stats.settleMs : Math.max(0, life.settleLeft - dtMs);
   if (moving || shoved) {
     const m = moveStep(solidRects(w), { x: p.x, y: p.y, dash: life.dash, knock: life.knock }, inp, (sprinting ? stats.sprintSpeed : stats.speed) * empMul(w, p) * rushMul(w, p), dtMs, MAPS[w.map].size);
     p.x = m.x;
@@ -108,14 +107,20 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
 
   const armed = w.match.k === 'playing';
   const wasReloading = life.reloadUntil !== null;
-  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed: armed && !sprinting, holdUntil: life.raiseUntil, bloomRecover: bloomRecoverMul(p.perks, p.kind === 'bot') }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
+  const fired = pullTrigger(life, { def: gun, mag: stats.mag, reloadMs: stats.reloadMs, armed: armed && !sprinting, bloomRecover: bloomRecoverMul(p.perks, p.kind === 'bot') }, { pressed, fire: inp.fire, reload: inp.reload }, w.now, dtMs);
   // A fresh magazine starts the count of kills from one mag again.
   if (!wasReloading && life.reloadUntil !== null) p.feats.magKills = 0;
+  // The spread eases toward its target every tick (see `easeSpread`), a shot's own bloom kick landing at once; the shot fired this tick takes it as it stands.
+  const sinceMove = moving ? 0 : w.now - life.lastMoveAt;
+  const shot = fired ? life.spray : life.spray + 1;
+  const spreadAt = (sprayShot: number) => spreadFor(p.gun, p.perks, isSteady(p.gun, sinceMove), sprayShot, life.suppression, settleShare(life.settleLeft, stats.settleMs), isDeployed(p.gun, sinceMove));
+  const target = spreadAt(shot);
+  life.spreadHist = easeSpread(life.spreadHist, target, shot > life.spreadShot && life.spreadHist.length > 0 ? target - spreadAt(life.spreadShot) : 0);
+  life.spreadShot = shot;
   if (fired) {
     life.shieldUntil = -Infinity;
     const muzzle = MUZZLE_PX;
-    const sinceMove = moving ? 0 : w.now - life.lastMoveAt;
-    const spread = spreadFor(p.gun, p.perks, isSteady(p.gun, sinceMove), life.spray, life.suppression, postSprint(life.settleLeft, stats.settleMs).settle, isDeployed(p.gun, sinceMove)) * (p.kind === 'bot' ? BOT_SPREAD_MUL : 1);
+    const spread = easedSpread(life.spreadHist) * (p.kind === 'bot' ? BOT_SPREAD_MUL : 1);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
       const a = p.angle + (rand(w) - 0.5) * spread * 2;

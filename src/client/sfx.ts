@@ -7,7 +7,7 @@ import { FOLEY, actionCycle, type FoleyId } from './foley.ts';
 
 export type SoundId =
   | `shot:${GunId}` | 'shot:silenced' | FoleyId
-  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | `kill:${KillStep}` | `medal:${MedalTier}` | 'fanfare' | 'bounty' | 'death' | 'levelup' | 'evolve' | 'perk' | 'click' | 'gunUp' | 'notReady'
+  | 'hit' | 'hurt' | 'boom' | 'slash' | 'kill' | `kill:${KillStep}` | `medal:${MedalTier}` | 'fanfare' | 'bounty' | 'death' | 'levelup' | 'evolve' | 'perk' | 'click' | 'notReady'
   | 'bite' | 'splat' | 'wallHit' | 'wallUp' | 'wallDown' | 'coreHit' | 'horn' | 'chime' | 'downed' | 'revived' | `turret:${TurretKind}`
   | 'build:wood' | 'build:sandbag' | 'build:steel' | 'build:spikes' | 'upgrade' | 'aid:depot' | 'aid:post'
   | 'knock' | 'ring' | 'step' | 'stepSprint' | 'tink' | 'spawn' | 'impact:flesh' | 'impact:wall' | 'impact:crate' | 'impact:zombie'
@@ -246,9 +246,7 @@ const RAW: Record<SoundId, Recipe> = {
   perk: [{ src: 'tone', wave: 'triangle', pitchHz: [660, 660], ms: 60, gain: 0.22 }, { src: 'tone', wave: 'triangle', pitchHz: [990, 990], ms: 90, gain: 0.22, delayMs: 60 }, ping(1980, 60, 200, 0.06)],
   bounty: [note(988, 0, 80, 0.22), note(1319, 80, 320, 0.24), { src: 'noise', filter: 'highpass', q: 1, cutoffHz: [7000, 7000], ms: 200, gain: 0.1, delayMs: 80 }, ...ching(1.5)],
   click: [{ src: 'tone', wave: 'square', pitchHz: [1800, 1800], ms: 18, gain: 0.15 }],
-  // The gun coming up after a sprint locks onto the aim: a short bright latch, a hair of ring, so the ear knows it can fire now.
-  gunUp: [snap(4200, 0.16, 0, 6), { src: 'tone', wave: 'triangle', pitchHz: [1250, 1150], ms: 30, gain: 0.08 }, snap(6000, 0.08, 28, 5)],
-  // A click while the gun is still down: a dull, soft wooden tick, nothing like a shot or a dry fire.
+  // A click while a bolt is still being worked: a dull, soft wooden tick, nothing like a shot or a dry fire.
   notReady: [{ src: 'noise', filter: 'bandpass', q: 2.5, cutoffHz: [900, 700], ms: 22, gain: 0.14 }, { src: 'tone', wave: 'sine', pitchHz: [320, 260], ms: 35, gain: 0.07 }],
   bite: [{ src: 'noise', filter: 'bandpass', q: 1.4, cutoffHz: [900, 260], ms: 130, gain: 0.5 }, { src: 'tone', wave: 'sawtooth', pitchHz: [150, 60], ms: 110, gain: 0.22 }],
   splat: [{ src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [700, 180], ms: 110, gain: 0.35 }, { src: 'tone', wave: 'triangle', pitchHz: [210, 70], ms: 90, gain: 0.25 },

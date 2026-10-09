@@ -1,5 +1,5 @@
 import {
-  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, VIEW, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
+  ABILITY_COOLDOWN_MS, ARMORS, GUN_IDS, LOAD_SPEED_FLOOR, SPREAD_EASE, SPRINT, SUPPRESSION, TIER2_OFFER, GUNS, HP_MULTIPLIER, LEVELS, minSpreadOf, PERK_TIERS, pickOptions, rulesOf, settleRulesOf, VIEW, WORLD, type AbilityId, type GunId, type GunRules, type PendingPick, type PerkId, type PickOption, type Tier,
 } from '../defs.ts';
 import { rand, type Life, type PerkOfTier, type Player, type World } from './world.ts';
 
@@ -48,7 +48,7 @@ export const PERK_RULES = {
 
 export const hasPerk = (p: Pick<Player, 'perks'>, perk: PerkId): boolean => Object.values(p.perks).includes(perk);
 
-/** `settleMs`: how long the post-sprint settle takes to ease out once the gun is up (the gun's, after perks). */
+/** `settleMs`: how long the post-sprint bloom takes to ease out once a sprint ends (the gun's, after perks). */
 type Stats = {
   speed: number; sprintSpeed: number; settleMs: number; maxHp: number; mag: number; range: number; reloadMs: number; regenPerSec: number; regenDelayMs: number;
   viewRadius: number; piercing: boolean; silenced: boolean; shield: boolean; thermal: boolean; ghillie: boolean;
@@ -69,34 +69,54 @@ export const BOT_BLOOM_DECAY_MUL = 1.8;
  * Spread of the `sprayShot`th shot of a spray (0 outside one), on the move or `still`, after perks and `suppression`. Nothing fires tighter than
  * the gun's floor (`minSpreadOf`), however planted or perked; a pinpoint gun planted, steady and unsuppressed sits right on it. Bloom adds on
  * top of that: all of its growth on the move, `bloom.still` of it standing, `deploy.bloom` with a bipod down; a pinpoint gun's grows from
- * its own still spread (not from zero), so a sniper's follow-up opens the cone wide even planted.
+ * its own still spread (not from zero), so a sniper's follow-up opens the cone wide even planted. `settle` (0..1, see `settleShare`) is the
+ * post-sprint bloom still to ease out (see `postSprintSpread`). This is the spread's target; what a shot gets is it eased (see `easeSpread`).
  */
 export function spreadFor(gun: GunId, perks: Partial<Record<Tier, PerkId>>, still: boolean, sprayShot = 0, suppression = 0, settle = 0, deployed = false): number {
   const def = GUNS[gun], rules = rulesOf(def);
   const pin = still && rules.pinpoint && suppression <= SUPPRESSION.breaksPinpoint && settle <= 0.05;
   const bloomBuild = Object.values(perks).reduce((m, perk) => m * (PERK_MODS[perk].bloomBuildMul ?? 1), 1);
   const bipod = still && deployed && rules.deploy ? rules.deploy : null;
-  const base = pin ? 0 : still ? def.spread * (bipod?.spreadMul ?? 1) : def.spread * rules.movingSpreadMul + rules.movingSpreadAdd;
+  const moving = def.spread * rules.movingSpreadMul + rules.movingSpreadAdd;
+  const base = pin ? 0 : still ? def.spread * (bipod?.spreadMul ?? 1) : moving;
   const share = !still ? 1 : bipod ? bipod.bloom : rules.bloom?.still ?? 1;
   // A pinpoint gun's bloom is a kick of its own still spread whatever its stance, so a sniper on the move is not thrown a mile wide on top of its walking cone.
   const grown = (rules.pinpoint ? def.spread : base) * (bloomMul(rules, sprayShot, bloomBuild) - 1) * share;
-  let mul = settleSpreadMul(settle, settleRulesOf(def).mul);
+  let mul = 1;
   for (const perk of Object.values(perks)) mul *= (PERK_MODS[perk].spreadMul ?? 1) * (def.pellets > 1 ? PERK_MODS[perk].pelletSpreadMul ?? 1 : 1);
-  return (Math.max(minSpreadOf(def, bipod !== null), base * mul) + grown * mul) * suppressionMul(suppression);
+  const stance = Math.max(minSpreadOf(def, bipod !== null), base * mul) + grown * mul;
+  return postSprintSpread(stance, moving * mul, settle, settleRulesOf(def).mul) * suppressionMul(suppression);
 }
 
 /**
- * How much the post-sprint settle widens spread, `settle` being the share (0..1) still to ease out: `mul` (the gun's, see `settleRulesOf`) at 1,
- * easing out quadratically to 1 at 0. A share above 1 is the gun still coming up, and counts as 1.
+ * The post-sprint bloom over a `stance` spread, `settle` being the share (0..1) of it still to ease out: at 1 the spread is `mul` times
+ * the gun's `moving` spread (or the stance's, if that is wider still), easing out quadratically to the stance's own at 0.
  */
-export const settleSpreadMul = (settle: number, mul: number = SPRINT.settleMul): number => 1 + (mul - 1) * Math.max(0, Math.min(1, settle)) ** 2;
+export function postSprintSpread(stance: number, moving: number, settle: number, mul: number = SPRINT.settleMul): number {
+  const k = Math.max(0, Math.min(1, settle)) ** 2;
+  return stance + Math.max(0, mul * moving - stance) * k;
+}
+
+/** The share (0..1) of the post-sprint bloom still to ease out, `left` ms of its `settleMs` still to run. */
+export const settleShare = (left: number, settleMs: number): number => (settleMs > 0 ? Math.max(0, Math.min(1, left / settleMs)) : 0);
+
+/** How many ticks of spread targets the eased spread averages: a change takes at least `SPREAD_EASE.ms` to come through in full. */
+export const SPREAD_EASE_TICKS = Math.ceil(SPREAD_EASE.ms / (1000 / WORLD.tickHz)) + 1;
 
 /**
- * The post-sprint clock, `left` ms of it to run: the gun comes up over its first `raiseMs`, then the spread settles over the last `settleMs`.
- * Returns how long the gun is still down and the settle's share (0..1) still to ease out.
+ * One tick of the eased spread (`SPREAD_EASE`): the last `SPREAD_EASE_TICKS` targets, oldest first, this tick's `target` on the end. Their
+ * mean is the spread a shot gets, so any change of the target ramps in linearly over the window and never in less than `SPREAD_EASE.ms`.
+ * `kick` is the part of the target a shot's bloom added since last tick: it lands at once (every kept target is raised by it), and
+ * comes back down with the target, eased like the rest. An empty history (a fresh life) starts settled on the target.
  */
-export const postSprint = (left: number, settleMs: number): { raiseLeft: number; settle: number } =>
-  ({ raiseLeft: Math.max(0, left - settleMs), settle: settleMs > 0 ? Math.max(0, Math.min(1, left / settleMs)) : 0 });
+export function easeSpread(hist: readonly number[], target: number, kick = 0): number[] {
+  if (hist.length === 0) return new Array<number>(SPREAD_EASE_TICKS).fill(target);
+  const out = hist.slice(hist.length >= SPREAD_EASE_TICKS ? 1 : 0).map((x) => x + Math.max(0, kick));
+  out.push(target);
+  return out;
+}
+/** The eased spread a history holds (see `easeSpread`). */
+export const easedSpread = (hist: readonly number[]): number => (hist.length === 0 ? 0 : hist.reduce((a, b) => a + b, 0) / hist.length);
 
 /** How fast spray bloom recovers, as a multiplier (Steady Hands, and `BOT_BLOOM_DECAY_MUL` for a bot). */
 export const bloomRecoverMul = (perks: Partial<Record<Tier, PerkId>>, bot = false): number =>
@@ -212,7 +232,7 @@ export function freshLife(p: Player, now: number): Extract<Life, { k: 'alive' }>
     k: 'alive', hp: s.maxHp, ammo: s.mag, reloadUntil: null, nextFireAt: 0, burstLeft: 0, spray: 0, firedAt: -Infinity, spin: 0,
     lastDamageAt: -Infinity, lastMoveAt: now, shieldUntil: now + WORLD.spawnShieldMs, dash: null, knock: null, pressUntil: -Infinity, hits: [],
     suppression: 0, suppressedAt: -Infinity, golden: false,
-    sprint: false, settleLeft: 0, raiseUntil: -Infinity, rushUntil: -Infinity, windUntil: -Infinity, windUsed: false, tracks: {},
+    sprint: false, settleLeft: 0, sprintEndAt: -Infinity, spreadHist: [], spreadShot: 0, rushUntil: -Infinity, windUntil: -Infinity, windUsed: false, tracks: {},
   };
 }
 

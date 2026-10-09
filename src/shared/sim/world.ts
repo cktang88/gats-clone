@@ -39,10 +39,13 @@ export type Life =
     suppressedAt: number;
     /** Holds an airdrop's golden gun for this life: its rounds hit `AIRDROP.goldMul` as hard. */
     golden: boolean;
-    /** Sprinting this tick (see `SPRINT`); `settleLeft` ms of the post-sprint clock still to run (the raise, then the bloom settle; see `postSprint`), and the gun is down until `raiseUntil`. */
+    /** Sprinting this tick (see `SPRINT`); `settleLeft` ms of the post-sprint bloom still to ease out (see `settleShare`); when the last sprint ended. */
     sprint: boolean;
     settleLeft: number;
-    raiseUntil: number;
+    sprintEndAt: number;
+    /** The eased spread (see `easeSpread`): the last few ticks' spread targets, and the spray shot the newest was taken at (a rise in it is a bloom kick, which lands at once). */
+    spreadHist: number[];
+    spreadShot: number;
     /** Perk timers: Adrenaline's kill rush and Second Wind (used once a life) run to these server times. */
     rushUntil: number;
     windUntil: number;
