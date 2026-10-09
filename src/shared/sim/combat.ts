@@ -1,7 +1,7 @@
 import { ARMORS, GUNS, HP_MULTIPLIER, KNOCK, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
 import { blastDoors } from './doors.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
-import { flownAfter } from './ballistics.ts';
+import { flightSec, flownAfter } from './ballistics.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentBlocked, segmentEntersCircleAt, segmentEntersRectAt, segmentHits } from './movement.ts';
 import { goDown } from './downed.ts';
@@ -18,8 +18,12 @@ import { barrelRect, crateRect, friendly, propRect, propSolid, type Bullet, type
 const CRATE_RESPAWN_MS = 15000;
 const SHIELD_BLOCK = 0.33;
 const SHIELD_ARC = (40 * Math.PI) / 180;
-/** Covers the ~330ms p90 view lag measured at 100ms one-way lag with 40ms jitter; a 200ms cap left those shooters at a 10% hit rate. */
-export const MAX_REWIND_MS = 350;
+/**
+ * Covers the ~330ms p90 view lag measured at 100ms one-way lag with 40ms jitter, and a 150ms one-way lag's ~430ms (its round trip,
+ * the render delay and a tick in the input queue); 350ms clipped those shots and judged them against a world the shooter never saw.
+ * Each client's own cap (`rewindCapFor`) keeps a low ping's rewind far shorter.
+ */
+export const MAX_REWIND_MS = 500;
 const REWIND_MARGIN_MS = 60;
 /** A client sees the world its round trip plus its render delay ago, so it may claim no staler view than that; until a round trip is measured it gets the full cap. */
 export const rewindCapFor = (rttMs: number | null): number =>
@@ -296,8 +300,23 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
 }
 
 /** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */
-type View = { poseOf: (p: Player) => Pose | undefined; walls: readonly Wall[]; /** The server time a rewound shot is judged at, for targets that slide; absent for a live view. */ at?: number };
-const liveView = (w: World): View => ({ poseOf: (p) => p, walls: w.walls });
+/** `poseBefore` is where a body stood when the step began, so a round meets it moving through the step, not frozen where the step ends. */
+type View = { poseOf: (p: Player) => Pose | undefined; walls: readonly Wall[]; /** The server time a rewound shot is judged at, for targets that slide; absent for a live view. */ at?: number; poseBefore?: (p: Player) => Pose | undefined };
+/** The last recorded poses are the previous tick's: where everyone stood as this step began. */
+const liveView = (w: World): View => ({ poseOf: (p) => p, walls: w.walls, poseBefore: (p) => w.history[w.history.length - 1]?.poses.get(p.id) });
+/** Further than this in one step is a respawn or a teleport, not motion a round can sweep. */
+const SWEEP_MAX_PX = 80;
+
+/**
+ * Where (0..1) a round's step (b, b + d) meets a circle that moved from `was` to `at` over the step: in the circle's own frame
+ * the round flies d less the circle's motion over the `span` (0..1) of the step it flies (less than all of it when it dies mid-step). Judged only where the step ends, a body crossing the line mid-step was missed by a
+ * round the page drew straight through it (and hit when it had already left).
+ */
+function meetsMoving(bx: number, by: number, dx: number, dy: number, at: Pose, was: Pose | undefined, r: number, span: number): number | null {
+  const mx = was ? (at.x - was.x) * span : 0, my = was ? (at.y - was.y) * span : 0;
+  if (!was || mx * mx + my * my > SWEEP_MAX_PX * SWEEP_MAX_PX) return segmentEntersCircleAt(bx, by, dx, dy, at.x, at.y, r);
+  return segmentEntersCircleAt(bx, by, dx - mx, dy - my, was.x, was.y, r);
+}
 
 const sheltered = (walls: readonly Wall[], x: number, y: number, tx: number, ty: number) => segmentBlocked(walls, x, y, tx - x, ty - y, 'nb');
 
@@ -375,7 +394,11 @@ function suppressAlong(w: World, b: Bullet, dx: number, dy: number, view: View) 
 function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   const speed = Math.hypot(b.vx, b.vy);
   const from = b.flown ?? 0;
-  const travel = Math.min(b.left, b.gun === null ? speed * dt : flownAfter(speed, dt, from, rulesOf(GUNS[b.gun]).muzzleBoost) - from);
+  const boost = b.gun === null ? 0 : rulesOf(GUNS[b.gun]).muzzleBoost;
+  const full = b.gun === null ? speed * dt : flownAfter(speed, dt, from, boost) - from;
+  const travel = Math.min(b.left, full);
+  /** The share of the step's time the round flies: all of it, unless it reaches the end of its range first. */
+  const span = travel >= full || dt <= 0 ? 1 : b.gun === null ? travel / full : (flightSec(speed, from + travel, boost) - flightSec(speed, from, boost)) / dt;
   if (b.gun !== null) b.flown = from + travel;
   const dx = (b.vx / speed) * travel, dy = (b.vy / speed) * travel;
   const owner = w.players.get(b.owner) ?? null;
@@ -402,12 +425,12 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
       .flatMap((p) => {
         const at = view.poseOf(p);
         return at ? [{
-          t: segmentEntersCircleAt(b.x, b.y, dx, dy, at.x, at.y, WORLD.playerRadius),
+          t: meetsMoving(b.x, b.y, dx, dy, at, view.poseBefore?.(p), WORLD.playerRadius, span),
           victim: p,
           apply: (x: number, y: number) => damagePlayer(w, p, b.damage * fell(x, y), { attacker: owner, team: b.team, label: b.label, piercing: b.piercing, via: 'bullet', fromX: b.x, fromY: b.y, gun: b.gun, volley: b.volley, dirX: b.vx, dirY: b.vy }),
         }] : [];
       }),
-    ...targetHits(w, b, dx, dy, owner, view.at, fell),
+    ...targetHits(w, b, dx, dy, owner, view.at, fell, dt * 1000, span),
     // Zombies are judged where they stand now, even for a rewound shot: they are slow, and they keep no pose history.
     ...w.zombies
       .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)
@@ -452,15 +475,20 @@ function posesAt(w: World, at: number): ReadonlyMap<number, Pose> {
   return poses;
 }
 
-/** Any wall that stood during the rewound window blocks, so a rewound shot never passes where cover existed. */
+/**
+ * Any wall that stood during the rewound window blocks, so a rewound shot never passes where cover existed.
+ * It flies up to the start of this tick, the last recorded poses: `tickBullets` flies this tick's step against where everyone
+ * stands now, as for every round. Flown on to now here as well, it would take that step twice and stay a tick ahead of the world
+ * it is judged in for the rest of its flight, so a moving body was a tick's walk off from where the shooter saw the round meet it.
+ */
 export function flyThroughPast(w: World, b: Bullet, rewindMs: number): boolean {
-  const from = w.now - rewindMs;
+  const from = w.now - rewindMs, until = w.now - TICK_MS;
   const walls = [...new Set([...w.history.filter((f) => f.at >= from - TICK_MS).flatMap((f) => f.walls), ...w.walls])];
-  for (let t = from; t < w.now;) {
-    const dtMs = Math.min(TICK_MS, w.now - t);
+  for (let t = from; t < until - 1e-6;) {
+    const dtMs = Math.min(TICK_MS, until - t);
     t += dtMs;
-    const poses = posesAt(w, t);
-    if (!moveBullet(w, b, dtMs / 1000, { poseOf: (p) => poses.get(p.id), walls, at: t })) return false;
+    const poses = posesAt(w, t), before = posesAt(w, t - dtMs);
+    if (!moveBullet(w, b, dtMs / 1000, { poseOf: (p) => poses.get(p.id), walls, at: t, poseBefore: (p) => before.get(p.id) })) return false;
   }
   return true;
 }

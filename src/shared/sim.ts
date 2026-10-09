@@ -6,14 +6,14 @@ import { tickDoors } from './sim/doors.ts';
 import { tickBarrels } from './sim/barrels.ts';
 import { empMul, tickProps } from './sim/props.ts';
 import { tickRange } from './sim/targets.ts';
-import { MUZZLE_PX } from './sim/ballistics.ts';
+import { MUZZLE_PX, spreadPick } from './sim/ballistics.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, watchCloseCalls } from './sim/combat.ts';
 import { MAPS } from './maps.ts';
 import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
 import { abilityCooldownMs, abilityOf, bloomRecoverMul, BOT_SPREAD_MUL, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, resetProgress, rushMul, settleShare, spreadFor, sprintWanted, easeSpread, easedSpread } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
-import { crateRect, freshFeats, IDLE_INPUT, newId, rand, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
+import { crateRect, freshFeats, IDLE_INPUT, newId, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
 
 /** An unsilenced shot gives a still ghillie away for this long (it is never a minimap mark: enemies only hear it). */
 const REVEAL_MS = 2000;
@@ -25,7 +25,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   const team = opts.team !== undefined ? opts.team : MODES[w.mode].assignTeam(w);
   const p: Player = {
     id: newId(w), name, kind: opts.kind ?? 'bot', loadout, gun: loadout.weapon, team, x: 0, y: 0, angle: 0,
-    input: IDLE_INPUT, seq: 0, viewAt: null, rewindCapMs: MAX_REWIND_MS, shotsSeen: 0, life: { k: 'dead', respawnAt: 0 },
+    input: IDLE_INPUT, seq: 0, viewAt: null, rewindCapMs: MAX_REWIND_MS, shotsSeen: 0, fired: 0, life: { k: 'dead', respawnAt: 0 },
     score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, nemesis: null, badge: null, cos: null, chain: { count: 0, at: -Infinity }, lowAt: null, quiet: { px: 0, x: 0, y: 0, firedAt: -Infinity }, feats: freshFeats(), revealedUntil: 0, huntedPing: null, abilityReadyAt: 0, tier2Offer: [],
   };
   w.players.set(p.id, p);
@@ -124,7 +124,7 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
     const spread = easedSpread(life.spreadHist) * (p.kind === 'bot' ? BOT_SPREAD_MUL : 1);
     const rewindMs = p.viewAt === null ? 0 : clamp(w.now - p.viewAt, 0, p.rewindCapMs);
     for (let i = 0; i < gun.pellets; i++) {
-      const a = p.angle + (rand(w) - 0.5) * spread * 2;
+      const a = p.angle + (spreadPick(p.id, p.fired, i) - 0.5) * spread * 2;
       const b: Bullet = {
         id: newId(w), owner: p.id, team: p.team, x: p.x + Math.cos(p.angle) * muzzle, y: p.y + Math.sin(p.angle) * muzzle,
         vx: Math.cos(a) * gun.bulletSpeed, vy: Math.sin(a) * gun.bulletSpeed,
@@ -138,7 +138,8 @@ function tickPlayer(w: World, p: Player, dtMs: number) {
       // A hunted player's shot pings enemy minimaps at once, unless they have Ninja (then only the timed ping finds them).
       if (isHunted(w, p) && !hasPerk(p, 'ninja')) p.huntedPing = { x: p.x, y: p.y, at: w.now };
     }
-    w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id, gun: p.gun });
+    w.events.push({ e: 'shot', x: p.x, y: p.y, angle: p.angle, silenced: stats.silenced, owner: p.id, gun: p.gun, n: p.fired });
+    p.fired++;
   }
 
   const ability = abilityOf(p);

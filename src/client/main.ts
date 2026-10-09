@@ -27,7 +27,7 @@ import { actionForKey, assembleInput, keyRepeats, perkSlotForKey, type Action } 
 import { NO_STICKS, dragStick, pressStick, releaseStick, stickVector, touchAim, touchMoves, type Sticks } from './touch.ts';
 import { releaseDue, scheduleEffects } from './eventclock.ts';
 import { notePropEvents } from './propfx.ts';
-import { layoutOf, noteTargetEvents, releaseTargetFx, resetTargetArt } from './targetart.ts';
+import { layoutOf, noteTargetEvents, releaseTargetFx, resetTargetArt, targetBodies } from './targetart.ts';
 import { resetRangeLine } from './rangeline.ts';
 import { createRangeUi, openRangeRoom, renderRangeCard } from './rangeui.ts';
 import { frameStep, resyncNet } from './resync.ts';
@@ -45,7 +45,7 @@ import { gunFxOf, impact as gunImpact } from './gunfx.ts';
 import { flinchOf, noteFlinch } from './flinch.ts';
 import type { EffectSpec } from './eventclock.ts';
 import { createPool } from './particles.ts';
-import { coverServerRounds, drawnRounds, recentShooters, roundLive } from './rounds.ts';
+import { coverServerRounds, drawnRounds, meetBodies, recentShooters, roundLive, roundScene } from './rounds.ts';
 import { bodyColor, drawBackdrop, drawWorld, nightAmount } from './render.ts';
 import { enterMap } from './mapscope.ts';
 import { drawLightingDev } from './lightdev.ts';
@@ -546,13 +546,17 @@ function sendInputTick() {
   const touchAiming = shooting.pullTouchTrigger(s);
   const now = performance.now();
   shooting.fireBeforeSending(s, now);
-  const input = committed(s.firing, assembleInput(actions, active && (firing || touchAiming), s.shots, aimOffset(s)));
+  // A shot drawn ahead of this input goes out along the aim it was drawn with, judged against the world drawn then (see `PredictedShot`).
+  const ahead = s.firing.ahead;
+  const aimed = assembleInput(actions, active && (firing || touchAiming), s.shots, aimOffset(s));
+  const input = committed(s.firing, ahead?.angle !== undefined ? { ...aimed, angle: ahead.angle } : aimed);
   s.walk = { now: walks(input), at: walks(input) ? now : s.walk.at };
   // The trigger keeps no sprint through a dash, as the sim does (fire.ts), so it is told whether one runs as this input is taken.
   const sent = sendInput(s.firing, s.seq, { ...input, dashing: !!s.predict.afterNewest?.dash }, now);
   s.firing = sent.firing;
   if (sent.rejected) shooting.takeBack(s, sent.rejected);
-  const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, performance.now()));
+  else if (ahead) shooting.respreadShot(s, ahead, spreadOf(sent.firing));
+  const viewAt = ahead?.viewAt !== undefined ? ahead.viewAt : s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, performance.now()));
   send(s.ws, { t: 'input', seq: s.seq, input, viewAt });
   // A hidden tab's timer is throttled to about 1 Hz: sending neutral inputs keeps the player alive, but predicting a step for each would drift far from the server.
   if (hidden) return;
@@ -729,7 +733,11 @@ function drawFrame(realNow: number) {
   s.pendingShots = shots.rest;
   for (const { shot } of shots.due) shooting.fireOthersShot(s, shot, { ...interpolated, players }, now);
   s.roundCover = coverServerRounds(s.roundCover, interpolated.bullets, recentShooters(s.lastShotAt, rt));
-  const snap = { ...interpolated, players, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
+  // Rounds stop at the bodies and range targets as drawn this frame, which is the moment of the past the server judges them in.
+  const seenNow = { ...interpolated, players };
+  const targetsNow = targetBodies(interpolated, rt);
+  s.rounds = meetBodies(s.rounds, (owner) => roundScene(seenNow, [], owner, targetsNow).bodies, now);
+  const snap = { ...seenNow, bullets: drawnRounds(interpolated.bullets, s.rounds, s.roundCover, now) };
   const me = snap.players.find((p) => p.id === s.myId);
   const eye = me?.alive || me?.downed ? me : snap.players.find((p) => p.id === snap.royale?.watch);
   if (eye) s.lastSelf = { x: eye.x, y: eye.y };

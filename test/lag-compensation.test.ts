@@ -138,12 +138,12 @@ test('a rewound shot sees a moving victim where it was between two recorded tick
     const a = w.history[i]!, b = w.history[i + 1]!;
     const ya = a.poses.get(victim.id)!.y, yb = b.poses.get(victim.id)!.y;
     assert.ok(yb - ya > 6, 'the victim moved between the two ticks');
-    // A round crossing the victim's path 2px inside its edge as it stood halfway between the ticks; the rewind's first look is one tick after it starts.
+    // A round crossing the victim's path 2px inside its edge as it stood halfway between the ticks; it flies its 300px in the first 3ms after the moment rewound to.
     const mid = (a.at + b.at) / 2;
     const y = (ya + yb) / 2 + side * (R - 2);
     const round: Bullet = { id: 9999, owner: shooter.id, team: null, x: 600, y, vx: 1e5, vy: 0, left: 300, damage: 10, piercing: false, label: 'Test', gun: null, turret: null, lobbed: false, penetrate: 0, passed: [], blast: null, volley: 1 };
     w.events = [];
-    flyThroughPast(w, round, w.now - (mid - TICK_MS));
+    flyThroughPast(w, round, w.now - mid);
     return hitOn(w.events, victim);
   };
   assert.equal(graze(-1), true, 'grazing its trailing edge, above');

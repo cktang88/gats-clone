@@ -1,5 +1,6 @@
 import { GUNS, PERK_INFO, rulesOf, type GunId, type PerkId, type Tier } from '../shared/defs.ts';
-import { TARGETS, targetPos, type RangeLayout, type TargetKind } from '../shared/range.ts';
+import { TARGETS, targetAim, targetBody, targetPos, type RangeLayout, type TargetKind } from '../shared/range.ts';
+import { segmentEntersCapsuleAt } from '../shared/sim/movement.ts';
 import { MUZZLE_PX } from '../shared/sim/ballistics.ts';
 import { rangeFor } from '../shared/sim/stats.ts';
 import { INK } from './palette.ts';
@@ -13,7 +14,7 @@ import { reducedMotion } from './screenfx.ts';
  * Reach is a circle, not a line: a round leaves the muzzle `MUZZLE_PX` ahead of your centre and flies `rangeFor(gun, perks)` px in
  * whatever direction you aim (sim.ts, `left: stats.range`). So the arc is centred on you and follows you, and a target in the next
  * lane over is judged by its true distance, not its x. Falloff counts from the muzzle as well (`falloffMul` in sim/stats.ts takes
- * the distance flown). A target is reached when its edge is (`TARGETS[kind].r`), as `segmentEntersCircleAt` judges a round.
+ * the distance flown). A target is reached when the round aimed at its board meets its body (`targetBody`), as `targetHits` judges a round.
  * Only a Range snapshot (`snap.targets`) ever calls this, so the other modes pay nothing for it.
  */
 const ORANGE = '#ff5a1f', BONE = '#ece6d6', MUSTARD = '#b79a4a', GUNMETAL = '#3d4450', MUTED = '#9a9ea6';
@@ -58,11 +59,14 @@ export const rangeLineX = (r: Reach, x: number): number => x + r.reach;
 export type ReachClass = 'full' | 'falloff' | 'out';
 
 /**
- * Whether a round aimed from `from` at a `kind` target standing at `at` reaches it: `out` when its near edge lies past the reach,
- * `falloff` when the round meets it after the damage has started to fall, `full` otherwise. Walls are not range; this is reach only.
+ * Whether a round aimed from `from` at a `kind` target standing at `at` (at its board, `targetAim`) reaches it: `out` when the point
+ * it meets the target (`targetBody`) lies past the reach, `falloff` when the round meets it after the damage has started to fall,
+ * `full` otherwise. Walls are not range; this is reach only.
  */
 export function reachClass(r: Reach, from: { x: number; y: number }, at: { x: number; y: number }, kind: TargetKind): ReachClass {
-  const edge = Math.max(0, Math.hypot(at.x - from.x, at.y - from.y) - TARGETS[kind].r);
+  const aim = targetAim(kind, at), body = targetBody(kind, at);
+  const dx = aim.x - from.x, dy = aim.y - from.y;
+  const edge = Math.hypot(dx, dy) * (segmentEntersCapsuleAt(from.x, from.y, dx, dy, body.x, body.y, body.up, body.r) ?? 1);
   if (edge > r.reach) return 'out';
   return r.falloff && edge > r.falloff.start ? 'falloff' : 'full';
 }

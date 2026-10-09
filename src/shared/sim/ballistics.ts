@@ -38,3 +38,17 @@ export function intercept(from: Point, e: Point & { vx: number; vy: number }, cr
   }
   return { ...at, sec };
 }
+
+/**
+ * Where in its spread (0..1, 0.5 dead on) pellet `pellet` of shot `n` by player `owner` flies: a hash of the three, not a draw
+ * from the world's stream, so the page that drew the shot ahead of the server draws the very round the server flies.
+ */
+export function spreadPick(owner: number, n: number, pellet: number): number {
+  let h = Math.imul(owner + 0x9e3779b9, 0x85ebca6b) ^ Math.imul(n + 0x632be5ab, 0xc2b2ae35) ^ Math.imul(pellet + 0x27d4eb2f, 0x165667b1);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x2c1b3c6d);
+  h ^= h >>> 12;
+  h = Math.imul(h, 0x297a2d39);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}

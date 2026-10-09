@@ -182,6 +182,8 @@ export type SelfView = {
   viewRadius: number;
   /** 0..1, how suppressed you are by rounds passing close; it widens your reticle and shades the screen's edges. */
   suppression: number;
+  /** Shots you have fired, ever, as of the input acknowledged: the page numbers the shots it draws ahead from it (`spreadPick`). */
+  fired?: number;
   /** 0..1, how blinded you are by a flashbang: 1 is a full whiteout, easing to 0 as it wears off (absent when clear). */
   flash?: number;
   /** Kills this life, and the player who last killed you until you take your revenge. */
@@ -208,7 +210,8 @@ export type GameEvent =
   | { e: 'boom'; x: number; y: number; r: number }
   /** A flashbang burst: everyone near looks away. */
   | { e: 'flashburst'; x: number; y: number; r: number }
-  | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId }
+  /** `n` is the shooter's shot number (`Player.fired`), which picks where in the spread each pellet flies (`spreadPick`). */
+  | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId; n?: number }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number }
   /** A zombie died; `by` is the squad player whose own shot, blade or blast killed it, null for a turret's kill. */
   | { e: 'zkill'; id: number; kind: ZombieKind; x: number; y: number; by: number | null }

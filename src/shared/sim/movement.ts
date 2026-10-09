@@ -48,6 +48,19 @@ export function segmentEntersCircleAt(px: number, py: number, dx: number, dy: nu
 }
 
 /**
+ * Where (0..1) the segment (p, p + d) enters the upright capsule of radius `r` round the line from (cx, cy) up to (cx, cy - up),
+ * or null: the union of the two end circles and the box between them, so the earliest entry of the three.
+ */
+export function segmentEntersCapsuleAt(px: number, py: number, dx: number, dy: number, cx: number, cy: number, up: number, r: number): number | null {
+  const ts = [
+    segmentEntersCircleAt(px, py, dx, dy, cx, cy, r),
+    segmentEntersCircleAt(px, py, dx, dy, cx, cy - up, r),
+    up > 0 ? segmentEntersRectAt(px, py, dx, dy, { x: cx - r, y: cy - up, w: 2 * r, h: up }) : null,
+  ].filter((t): t is number => t !== null);
+  return ts.length ? Math.min(...ts) : null;
+}
+
+/**
  * Where (0..1) the segment (p, p + d) enters the rect, or null. The slab test runs for every wall against every round, sight
  * line and step, so it allocates nothing: written over a tuple loop it built three arrays a call, and on a map of 500+ walls
  * that garbage alone was a seventh of the server's time (and its GC pauses stalled whole ticks).

@@ -8,12 +8,14 @@ import { createWorld, rand } from '../src/shared/sim/world.ts';
 import { ROTATION, type MapId } from '../src/shared/maps.ts';
 import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { thinkBots } from '../src/server/bot/tick.ts';
-import { emptyWorld, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
 
 test('a bolt-action hit kills an unarmored full-health player', () => {
   const w = emptyWorld();
   const sniper = spawnAt(w, 1000, 1000, { loadout: { weapon: 'sniper' } });
   const target = spawnAt(w, 1600, 1000, { loadout: { armor: 'none' } });
+  // Planted first, so the round goes where it is aimed: a fresh spawn's unsettled spread can carry it 30 px wide at 600 px.
+  run(w, 600);
   shootOnce(w, sniper, 0, 800);
   assert.equal(target.life.k, 'dead');
 });

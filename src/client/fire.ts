@@ -17,6 +17,8 @@ type Trigger = {
   perks: Partial<Record<Tier, PerkId>>; suppression: number; lastMoveAt: number;
   /** The eased spread, stepped tick by tick exactly as the sim steps it (see `easeSpread`). */
   spreadHist: readonly number[]; spreadShot: number;
+  /** Shots fired, ever, as the sim counts them (`Player.fired`): the next shot's number, which picks its spread. */
+  fired: number;
 };
 /**
  * The keys are optional so a bare trigger test need not name them; a missing key reads as not held. `dashing` is whether a
@@ -25,7 +27,7 @@ type Trigger = {
 export type TriggerInput = Pick<InputState, 'fire' | 'shots' | 'reload'> & Partial<Pick<InputState, 'up' | 'down' | 'left' | 'right' | 'sprint'>> & { dashing?: boolean };
 
 const FRESH_LIFE = { reloadUntil: null, nextFireAt: -Infinity, burstLeft: 0, pressUntil: -Infinity, spray: 0, firedAt: -Infinity, spin: 0, sprint: false, settleLeft: 0, lastMoveAt: -Infinity, spreadHist: [], spreadShot: 0 } as const;
-const UNARMED: Trigger = { gun: 'pistol', mag: 0, reloadMs: GUNS.pistol.reloadMs, alive: false, armed: false, ammo: 0, shotsSeen: 0, settleMs: settleRulesOf(GUNS.pistol).ms, bloomRecover: 1, perks: {}, suppression: 0, ...FRESH_LIFE };
+const UNARMED: Trigger = { gun: 'pistol', mag: 0, reloadMs: GUNS.pistol.reloadMs, alive: false, armed: false, ammo: 0, shotsSeen: 0, fired: 0, settleMs: settleRulesOf(GUNS.pistol).ms, bloomRecover: 1, perks: {}, suppression: 0, ...FRESH_LIFE };
 
 /** One tick of `tickPlayer`'s trigger at time `now`: whether the server fires a shot on the input that carries `input`. */
 export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: Trigger; fired: boolean } {
@@ -46,6 +48,7 @@ export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: 
   const target = spreadAt(shot);
   g.spreadHist = easeSpread(g.spreadHist, target, shot > g.spreadShot && g.spreadHist.length > 0 ? target - spreadAt(g.spreadShot) : 0);
   g.spreadShot = shot;
+  if (fired) g.fired++;
   return { t: g, fired };
 }
 
@@ -66,8 +69,12 @@ export function boltLeftOf(f: Firing, now: number): number {
   return Math.max(0, t.nextFireAt - clock);
 }
 
-/** A shot the page drew before the server fired it: the input that fires it and the rounds drawn for it. */
-export type PredictedShot = { seq: number; rounds: readonly number[] };
+/**
+ * A shot the page drew before the server fired it: the input that fires it and the rounds drawn for it. `angle` and `viewAt` are
+ * the aim it was drawn along and the server time of the world drawn then, which the input that fires it carries, so the server
+ * flies the round the page drew and judges it against the world the page showed.
+ */
+export type PredictedShot = { seq: number; rounds: readonly number[]; angle?: number; viewAt?: number | null };
 
 export type Firing = {
   /** The trigger after the newest input sent, and after each input since the one the server last acknowledged. */
@@ -117,7 +124,7 @@ export function sendInput(f: Firing, seq: number, input: TriggerInput, at: numbe
 /** What the server says of your gun in a snapshot, as of the input it acknowledged. */
 export type ServerGun = {
   gun: GunId; mag: number; reloadMs: number; ammo: number; reloading: boolean; reloadFrac: number; alive: boolean; armed: boolean;
-  sprint?: boolean; settle?: number; settleMs?: number; bloomRecover?: number; perks?: Partial<Record<Tier, PerkId>>; suppression?: number;
+  sprint?: boolean; settle?: number; settleMs?: number; bloomRecover?: number; perks?: Partial<Record<Tier, PerkId>>; suppression?: number; fired?: number;
 };
 
 export function serverGun(snap: Snapshot): ServerGun {
@@ -127,7 +134,7 @@ export function serverGun(snap: Snapshot): ServerGun {
   return {
     gun, mag, reloadMs: reloadMsFor(gun, perks), ammo, reloading, reloadFrac, alive: alive && !!me, armed: snap.match.winner === null,
     sprint: snap.self.sprint ?? false, settle: snap.self.settle ?? 0, settleMs: snap.self.settleMs ?? settleRulesOf(GUNS[gun]).ms, bloomRecover: bloomRecoverMul(perks),
-    perks, suppression: snap.self.suppression ?? 0,
+    perks, suppression: snap.self.suppression ?? 0, ...(snap.self.fired !== undefined && { fired: snap.self.fired }),
   };
 }
 
@@ -142,6 +149,8 @@ function rebase(base: Trigger, sv: ServerGun, late: number, now: number): Trigge
   t.bloomRecover = sv.bloomRecover ?? 1;
   t.perks = sv.perks ?? {};
   t.suppression = sv.suppression ?? 0;
+  // The shots the server has fired, and those it is late on, which it fires next.
+  if (sv.fired !== undefined) t.fired = sv.fired + late;
   if (base.gun !== sv.gun) { t.burstLeft = 0; t.spray = 0; t.spin = 0; }
   if (sv.reloading !== (t.reloadUntil !== null)) t.reloadUntil = sv.reloading ? now + (1 - sv.reloadFrac) * sv.reloadMs : null;
   return t;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GUNS, type GunId, type PerkId, type Tier } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
-import { TARGETS } from '../src/shared/range.ts';
+import { TARGETS, targetAim } from '../src/shared/range.ts';
 import { MUZZLE_PX } from '../src/shared/sim/ballistics.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
@@ -155,7 +155,9 @@ function firstHit(gun: GunId, perks: Partial<Record<Tier, PerkId>>, i: number, x
   const p = spawnAt(w, x, y);
   assert.ok(setRangeLoadout(w, p, { gun, perks }));
   run(w, 900);
-  const angle = Math.atan2(t.y - p.y, t.x - p.x);
+  // Aimed at the board, as a player aims (`targetAim`).
+  const aim = targetAim(t.def.kind, t);
+  const angle = Math.atan2(aim.y - p.y, aim.x - p.x);
   const gap = Math.max(GUNS[gun].fireMs, 250) + 2000;
   for (let s = 0; s < tries; s++) {
     t.hp = 1e6;
@@ -202,11 +204,12 @@ test('right at the edge: a target a few px inside the reach is hit and a few px 
   const d = layout.targets[i]!;
   for (const [gun, perks] of GUNS_TRIED) {
     const r = reachOf(gun, perks);
-    const at = d.x - (r.reach + TARGETS[d.kind].r);
-    const inside = firstHit(gun, perks, i, at + 4, d.y, 8);
-    const outside = firstHit(gun, perks, i, at - 4, d.y, 3);
-    assert.equal(reachClass(r, { x: at + 4, y: d.y }, d, d.kind) !== 'out', true);
-    assert.equal(reachClass(r, { x: at - 4, y: d.y }, d, d.kind), 'out');
+    // Level with the middle of its board, where a round meets it `r` short of its post.
+    const at = d.x - (r.reach + TARGETS[d.kind].r), y = targetAim(d.kind, d).y;
+    const inside = firstHit(gun, perks, i, at + 4, y, 8);
+    const outside = firstHit(gun, perks, i, at - 4, y, 3);
+    assert.equal(reachClass(r, { x: at + 4, y }, d, d.kind) !== 'out', true);
+    assert.equal(reachClass(r, { x: at - 4, y }, d, d.kind), 'out');
     assert.notEqual(inside, null, `${gun}: 4 px inside the reach should hit`);
     assert.equal(outside, null, `${gun}: 4 px outside the reach should not`);
   }

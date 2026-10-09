@@ -95,6 +95,7 @@ function selfView(w: World, p: Player): SelfView {
     deaths: p.deaths,
     viewRadius: stats.viewRadius,
     suppression: life.k === 'alive' ? Math.round(life.suppression * 100) / 100 : 0,
+    fired: p.fired,
     ...(flashAmount(p, w.now) > 0 && { flash: Math.round(flashAmount(p, w.now) * 100) / 100 }),
     streak: p.lifeKills,
     nemesis: p.nemesis,

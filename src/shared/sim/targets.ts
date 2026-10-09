@@ -1,9 +1,9 @@
 import { ARMOR_IDS, GUNS, GUN_IDS, PERK_TIERS, PROP_FX, PROPS, BARREL, type ArmorId, type GunId, type PerkId, type Tier } from '../defs.ts';
 import { MAPS } from '../maps.ts';
-import { RANGE, TARGETS, targetPos, type RangeView, type TargetDef, type TargetView } from '../range.ts';
+import { RANGE, TARGETS, targetBody, targetPos, type RangeView, type TargetDef, type TargetView } from '../range.ts';
 import { explode } from './combat.ts';
 import { GAS_RADIUS } from './abilities.ts';
-import { dist2, segmentEntersCircleAt } from './movement.ts';
+import { dist2, segmentEntersCapsuleAt } from './movement.ts';
 import { effectiveStats } from './stats.ts';
 import type { Player, World } from './world.ts';
 
@@ -108,18 +108,23 @@ function standUp(w: World, t: Target) {
   w.events.push({ e: 'target', i: t.id - RANGE.idBase, k: 'up', by: null, x: t.x, y: t.y });
 }
 
-/** The hits a round flying from (`b.x`, `b.y`) by (`dx`, `dy`) would make on standing targets, as `moveBullet` weighs them; `at` is the time the shooter saw, for a sliding target, and `fell` what the round keeps of its damage at the hit point (its gun's falloff, as a body takes it). */
+/**
+ * The hits a round flying from (`b.x`, `b.y`) by (`dx`, `dy`) would make on standing targets, as `moveBullet` weighs them; `at` is the time the shooter saw, for a sliding target, and `fell` what the round keeps of its damage at the hit point (its gun's falloff, as a body takes it).
+ * The step took `stepMs`, over which a slider moved: the round meets it where it slides through the step, not frozen where the step ends;
+ * `span` is the share of the step the round flies (less than all of it when it dies mid-step).
+ */
 export function targetHits(
   w: World, b: { x: number; y: number; damage: number; label: string; volley?: number; passed: readonly number[] }, dx: number, dy: number, owner: Player | null, at: number = w.now,
-  fell: (x: number, y: number) => number = () => 1,
+  fell: (x: number, y: number) => number = () => 1, stepMs = 0, span = 1,
 ): { t: number | null; victim: { id: number }; apply: (x: number, y: number) => void }[] {
   const r = w.range;
   if (!r) return [];
   const out: { t: number | null; victim: { id: number }; apply: (x: number, y: number) => void }[] = [];
   for (const t of r.targets) {
     if (!standing(t) || b.passed.includes(t.id)) continue;
-    const p = targetPos(t.def, at);
-    const hit = segmentEntersCircleAt(b.x, b.y, dx, dy, p.x, p.y, TARGETS[t.def.kind].r);
+    const p = targetPos(t.def, at), was = targetPos(t.def, at - stepMs);
+    const body = targetBody(t.def.kind, was);
+    const hit = segmentEntersCapsuleAt(b.x, b.y, dx - (p.x - was.x) * span, dy - (p.y - was.y) * span, body.x, body.y, body.up, body.r);
     if (hit === null) continue;
     out.push({ t: hit, victim: { id: t.id }, apply: (x: number, y: number) => damageTarget(w, t, b.damage * fell(x, y), { attacker: owner, label: b.label, ...(b.volley !== undefined && { volley: b.volley }) }, p) });
   }

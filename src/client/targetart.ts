@@ -1,5 +1,5 @@
 import { MAPS } from '../shared/maps.ts';
-import { RANGE, TARGETS, targetPos, type RangeLayout, type TargetDef, type TargetKind } from '../shared/range.ts';
+import { RANGE, TARGETS, targetBody, targetPos, type RangeLayout, type TargetDef, type TargetKind } from '../shared/range.ts';
 import type { GameEvent, Snapshot } from '../shared/protocol.ts';
 import { celPart, ellipse, polygon, roundBox, TAU, type Trace } from './cel.ts';
 import { stencil } from './floor.ts';
@@ -47,6 +47,16 @@ const layouts = new Map<string, RangeLayout | undefined>();
 export function layoutOf(mapName: string): RangeLayout | undefined {
   if (!layouts.has(mapName)) layouts.set(mapName, Object.values(MAPS).find((m) => m.name === mapName)?.range);
   return layouts.get(mapName);
+}
+
+/** The standing targets as rounds meet them (`targetBody`), where `drawTargets` draws them at server time `serverMs`, each with its id. */
+export function targetBodies(snap: Pick<Snapshot, 'targets' | 'match'>, serverMs: number | null): { x: number; y: number; r: number; up: number; id: number }[] {
+  const layout = layoutOf(snap.match.map);
+  if (!layout || !snap.targets) return [];
+  return snap.targets.flatMap((tenths, i) => {
+    const def = layout.targets[i];
+    return def && tenths > 0 ? [{ ...targetBody(def.kind, targetPos(def, serverMs ?? 0)), id: RANGE.idBase + i }] : [];
+  });
 }
 
 export function noteTargetEvents(snap: Snapshot, serverMs: number) {

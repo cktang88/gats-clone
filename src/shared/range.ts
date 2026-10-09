@@ -7,13 +7,36 @@
 export const TARGET_KINDS = ['paper', 'plank', 'rail', 'dummy'] as const;
 export type TargetKind = (typeof TARGET_KINDS)[number];
 
-/** `hp` is raw damage, so a pistol round (25) takes four to drop a paper target; `r` is the radius rounds and blasts see. */
-export const TARGETS: Record<TargetKind, { name: string; desc: string; hp: number; r: number }> = {
-  paper: { name: 'Paper target', desc: 'A paper soldier on a stake', hp: 100, r: 24 },
-  plank: { name: 'Wood board', desc: 'A thick board on a post; takes a few hits', hp: 260, r: 28 },
-  rail: { name: 'Rail target', desc: 'A paper soldier on a cart that slides along its rail', hp: 100, r: 24 },
-  dummy: { name: 'Training dummy', desc: 'A sandbag soldier with a lot of stuffing', hp: 600, r: 27 },
+/**
+ * `hp` is raw damage, so a pistol round (25) takes four to drop a paper target; `r` is the radius rounds and blasts see. `top` is how
+ * far above its base (`targetPos`) the drawn board reaches (targetart.ts draws it standing up from the base), so a round meets what
+ * you see: see `targetBody`.
+ */
+export const TARGETS: Record<TargetKind, { name: string; desc: string; hp: number; r: number; top: number }> = {
+  paper: { name: 'Paper target', desc: 'A paper soldier on a stake', hp: 100, r: 24, top: 64 },
+  plank: { name: 'Wood board', desc: 'A thick board on a post; takes a few hits', hp: 260, r: 28, top: 66 },
+  rail: { name: 'Rail target', desc: 'A paper soldier on a cart that slides along its rail', hp: 100, r: 24, top: 68 },
+  dummy: { name: 'Training dummy', desc: 'A sandbag soldier with a lot of stuffing', hp: 600, r: 27, top: 87 },
 };
+
+/** How far below its base a target's drawn base plate or cart reaches. */
+const FOOT_PX = 6;
+
+/**
+ * What a round meets of a target standing at `at`: an upright capsule of radius `r` from just under its base plate to the top of its
+ * board, `up` px tall between its end circles, with (x, y) the lower circle's centre. Only the base used to count, so a round through
+ * the drawn bullseye (32 px up) passed over a circle of radius 24 at the base.
+ */
+export function targetBody(kind: TargetKind, at: { x: number; y: number }): { x: number; y: number; up: number; r: number } {
+  const { r, top } = TARGETS[kind];
+  return { x: at.x, y: at.y - (r - FOOT_PX), up: Math.max(0, top - 2 * r + FOOT_PX), r };
+}
+
+/** Where to aim at a target standing at `at`: the middle of what a round meets of it (`targetBody`), on its board. */
+export function targetAim(kind: TargetKind, at: { x: number; y: number }): { x: number; y: number } {
+  const b = targetBody(kind, at);
+  return { x: b.x, y: b.y - b.up / 2 };
+}
 
 export const RANGE = {
   /** A knocked-down target stays down this long, then pops up with a full health bar. */

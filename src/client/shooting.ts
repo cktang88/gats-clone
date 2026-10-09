@@ -7,9 +7,10 @@ import { noteLateShot, noteRejectedShot } from './devprobe.ts';
 import { gunFxOf, muzzleFlash } from './gunfx.ts';
 import { dueAt, serverGun, settle, spreadOf, type PredictedShot, type TriggerInput } from './fire.ts';
 import { newestSnap, renderTime, sampleAt, TICK_MS } from './interp.ts';
-import { fireRounds, roundScene, type Shot, type ShotEvent } from './rounds.ts';
+import { fireRounds, respread, roundScene, type Shot, type ShotEvent } from './rounds.ts';
 import { shotCue, type SoundCue } from './sfx.ts';
-import { muzzleTip } from './gunart.ts';
+import { heldMuzzleReach, muzzleTip } from './gunart.ts';
+import { MUZZLE_PX } from '../shared/sim/ballistics.ts';
 import type { Session } from './state.ts';
 import { raiseWatch } from './raise.ts';
 import { emitSfxAt } from './sfxbus.ts';
@@ -19,7 +20,7 @@ type Offset = { dx: number; dy: number };
 
 export type Hands = { active: boolean; firing: boolean; touchAim: Offset | null; reload: boolean; sinceMove: number; aim: Offset };
 
-const unperkedShot = (ev: ShotEvent): Shot => ({ owner: ev.owner, gun: ev.gun, range: GUNS[ev.gun].range, spread: GUNS[ev.gun].spread });
+const unperkedShot = (ev: ShotEvent): Shot => ({ owner: ev.owner, gun: ev.gun, range: GUNS[ev.gun].range, spread: GUNS[ev.gun].spread, ...(ev.n !== undefined && { n: ev.n }) });
 
 type Page = {
   hands: (s: Session) => Hands;
@@ -34,7 +35,9 @@ export function createShooting(page: Page) {
 
   function showShot(s: Session, shot: Shot, at: Point, angle: number, seen: Snapshot, now: number): number[] {
     const muzzle = muzzleTip(at.x, at.y, angle, shot.gun, WORLD.playerRadius);
-    const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, [...s.walls, ...leavesFromViews(doorsOf(s), seen.doors)], shot.owner), now, nextLocalRoundId);
+    // Drawn from the gun's muzzle, but flying from where the server's round starts, so it is where the server's is at every age.
+    const lead = Math.max(0, heldMuzzleReach(shot.gun, WORLD.playerRadius, angle) - MUZZLE_PX);
+    const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, [...s.walls, ...leavesFromViews(doorsOf(s), seen.doors)], shot.owner), now, nextLocalRoundId, undefined, lead);
     nextLocalRoundId -= rounds.length;
     s.rounds.push(...rounds);
     // The flash effect still times the shooter's recoil kick; gunfx draws the flash and ejects the casing.
@@ -43,13 +46,14 @@ export function createShooting(page: Page) {
     return rounds.map((r) => r.id);
   }
 
-  function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number): number[] {
+  /** Draws your own shot `n` (your shot count as it fires), along your aim; returns its rounds and the aim. */
+  function fireOwnShot(s: Session, snap: Snapshot, gun: GunId, silenced: boolean, now: number, n: number | undefined): { rounds: number[]; angle: number } {
     const { aim } = page.hands(s);
-    const shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadOf(s.firing) };
+    const shot: Shot = { owner: s.myId, gun, range: rangeFor(gun, snap.self.perks), spread: spreadOf(s.firing), ...(n !== undefined && { n }) };
     page.playCues(s, [shotCue(gun, silenced, s.lastSelf, true)], snap.self.viewRadius || WORLD.viewRadius);
     const angle = Math.atan2(aim.dy, aim.dx);
     page.recoil(gun, angle);
-    return showShot(s, shot, s.lastSelf, angle, sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now);
+    return { rounds: showShot(s, shot, s.lastSelf, angle, sampleAt(s.snaps.snaps, renderTime(s.snaps, now)) ?? snap, now), angle };
   }
 
   function triggerInput(s: Session): TriggerInput {
@@ -62,11 +66,19 @@ export function createShooting(page: Page) {
     const snap = newestSnap(s.snaps);
     if (due === null || due > dueBy || !snap) return;
     const { gun } = s.firing.trigger;
-    const rounds = fireOwnShot(s, snap, gun, silencedFor(gun, snap.self.perks), now);
-    s.firing = { ...s.firing, ahead: { seq: s.firing.sent.seq + 1, rounds } };
+    // The server numbers its shots as the trigger counts them, so this one is `fired`; the input that fires it carries its aim and the moment drawn.
+    const { rounds, angle } = fireOwnShot(s, snap, gun, silencedFor(gun, snap.self.perks), now, s.firing.trigger.fired);
+    const viewAt = s.snaps.serverClockOffset === null ? null : Math.round(renderTime(s.snaps, now));
+    s.firing = { ...s.firing, ahead: { seq: s.firing.sent.seq + 1, rounds, angle, viewAt } };
   }
 
   const fireIfDue = (s: Session, now: number) => fireAheadBy(s, now, now);
+
+  /** Your shot drawn ahead of the input that fires it, respread to the spread that input fires it with (`spread`, as the trigger stepped it). */
+  function respreadShot(s: Session, shot: PredictedShot, spread: number) {
+    const solids = roundScene({ players: [], crates: newestSnap(s.snaps)?.crates ?? [] }, [...s.walls, ...leavesFromViews(doorsOf(s), newestSnap(s.snaps)?.doors)], s.myId).solids;
+    s.rounds = s.rounds.map((r) => (shot.rounds.includes(r.id) ? respread(r, spread, solids) : r));
+  }
 
   function takeBack(s: Session, shot: PredictedShot) {
     s.rounds = s.rounds.filter((r) => !shot.rounds.includes(r.id));
@@ -77,6 +89,7 @@ export function createShooting(page: Page) {
     fireIfDue,
     fireBeforeSending: (s: Session, now: number) => fireAheadBy(s, now, Infinity),
     takeBack,
+    respreadShot,
 
     pullTouchTrigger(s: Session): boolean {
       const h = page.hands(s);
@@ -102,7 +115,7 @@ export function createShooting(page: Page) {
       s.firing = settled.firing;
       settled.rejected.forEach((shot) => takeBack(s, shot));
       for (const ev of own.slice(own.length - settled.unmatched)) {
-        fireOwnShot(s, snap, ev.gun, ev.silenced, now);
+        fireOwnShot(s, snap, ev.gun, ev.silenced, now, ev.n);
         noteLateShot();
       }
     },

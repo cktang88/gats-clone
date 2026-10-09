@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GUNS, rulesOf, WORLD } from '../src/shared/defs.ts';
 import type { BulletView, PlayerView } from '../src/shared/protocol.ts';
-import { coverServerRounds, drawnRounds, fireRounds, recentShooters, roundScene, TRACER, type RoundScene, type Shot } from '../src/client/rounds.ts';
+import { coverServerRounds, drawnRounds, fireRounds, meetBodies, recentShooters, roundScene, TRACER, type LocalRound, type RoundScene, type Shot } from '../src/client/rounds.ts';
 import { flightSec, flownAfter } from '../src/shared/sim/ballistics.ts';
 import { MAX_RANGE_MUL } from '../src/shared/sim/stats.ts';
 
@@ -41,14 +41,35 @@ test('a server round is judged the first frame it is seen, so it never pops in o
   assert.deepEqual([...coverServerRounds(later, [bullet(5, 3, 'smg')], new Set())], [[5, false]], 'forgets rounds that are gone');
 });
 
-test('a round stops at the first wall on its line, or at the first body past the ones its gun pierces', () => {
+test('a round stops at the first wall on its line, and at the first body it meets as drawn past the ones its gun pierces', () => {
   const wall = { x: 300, y: 50, w: 20, h: 100 };
-  const body = (x: number) => ({ x, y: 100, r: WORLD.playerRadius });
-  const reach = (gun: 'pistol' | 'executioner', scene: RoundScene) => fireRounds({ owner: ME, gun, range: 1000, spread: 0 }, MUZZLE, 0, scene, 0, -1, straight)[0]!.reach;
-  assert.ok(near(reach('pistol', { solids: [wall], bodies: [] }), 200));
-  assert.ok(near(reach('pistol', { solids: [wall], bodies: [body(250)] }), 150 - WORLD.playerRadius));
-  assert.ok(near(reach('executioner', { solids: [], bodies: [body(250), body(400)] }), 300 - WORLD.playerRadius), 'pierces one body');
-  assert.equal(reach('pistol', OPEN), 1000);
+  const body = (x: number, id: number) => ({ x, y: 100, r: WORLD.playerRadius, id });
+  const fire = (gun: 'pistol' | 'executioner', scene: RoundScene) => fireRounds({ owner: ME, gun, range: 1000, spread: 0 }, MUZZLE, 0, scene, 0, -1, straight);
+  /** Flies the round frame by frame (16ms) against `bodies`, as the page does, and gives where it stops. */
+  const flown = (gun: 'pistol' | 'executioner', bodies: ReturnType<typeof body>[], solids = [] as typeof wall[]) => {
+    let rounds = fire(gun, { solids, bodies: [] });
+    for (let t = 0; t < 2000; t += 16) rounds = meetBodies(rounds, () => bodies, t);
+    return rounds[0]!.reach;
+  };
+  assert.ok(near(fire('pistol', { solids: [wall], bodies: [] })[0]!.reach, 200));
+  assert.ok(near(flown('pistol', [body(250, 2)], [wall]), 150 - WORLD.playerRadius));
+  assert.ok(near(flown('executioner', [body(250, 2), body(400, 3)]), 300 - WORLD.playerRadius), 'pierces one body');
+  assert.equal(flown('pistol', []), 1000);
+});
+
+test('a drawn round meets a body that walks into its line after the shot, and flies past one that walked out of it', () => {
+  const pistol = (): LocalRound[] => fireRounds({ owner: ME, gun: 'pistol', range: 1000, spread: 0 }, MUZZLE, 0, OPEN, 0, -1, straight);
+  // A body 400px down the line steps into it 100ms after the shot (the round needs longer to get there); another steps out.
+  const walksIn = (t: number) => [{ x: 500, y: t < 100 ? 200 : 100, r: WORLD.playerRadius, id: 2 }];
+  const walksOut = (t: number) => [{ x: 500, y: t < 100 ? 100 : 200, r: WORLD.playerRadius, id: 2 }];
+  assert.ok(flightSec(GUNS.pistol.bulletSpeed, 300) > 0.1, 'the round is still on its way when they move');
+  const stop = (bodiesAt: (t: number) => { x: number; y: number; r: number; id: number }[]) => {
+    let rounds = pistol();
+    for (let t = 0; t < 2000; t += 16) rounds = meetBodies(rounds, () => bodiesAt(t), t);
+    return rounds[0]!.reach;
+  };
+  assert.ok(near(stop(walksIn), 400 - WORLD.playerRadius), 'stops at the body that stepped in');
+  assert.equal(stop(walksOut), 1000, 'flies on past where the other stood when it fired');
 });
 
 test('a shotgun fires one round per pellet, each its own id', () => {

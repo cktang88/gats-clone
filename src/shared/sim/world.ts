@@ -76,6 +76,8 @@ export type Player = {
   /** The furthest back this player's shots may be judged, from their measured round trip. */
   rewindCapMs: number;
   shotsSeen: number;
+  /** Shots this player has fired, ever: the number that picks each shot's spread (`spreadPick`), which their page predicts. */
+  fired: number;
   life: Life;
   score: number;
   level: number;
