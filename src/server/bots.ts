@@ -8,7 +8,7 @@ import { crawlThink, royaleThink } from './bot/royale.ts';
 import { supplyFor } from './bot/supplies.ts';
 import { isOpen } from './bot/nav.ts';
 import { readTactics, type Tactics } from './bot/tactics.ts';
-import { DEAD_ZONE, siegeThink } from './bot/siege.ts';
+import { DEAD_ZONE, siegeThink, type SiegeMemory } from './bot/siege.ts';
 
 export type BotMemory = {
   persona: PersonalityId;
@@ -19,6 +19,8 @@ export type BotMemory = {
   beat?: Beat;
   /** How it last saw each enemy, and where it pre-aims (see tactics.ts); fresh each life. */
   tactics?: Tactics;
+  /** The zombies a squad bot has lately had in sight (see siege.ts). */
+  siege?: SiegeMemory;
 };
 
 /**

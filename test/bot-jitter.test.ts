@@ -56,8 +56,18 @@ test('bots never shuffle along a wall for seconds without getting anywhere', () 
   assert.deepEqual([...new Set(stuck)].slice(0, 3), []);
 });
 
+/** Squad bots play a whole Zombies run on a few world seeds, since each seed brings the horde at them a different way. */
+const SHUTTLE_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
+
 test('squad bots shooting at the horde never shuttle back and forth between backing off and heading back', () => {
-  const w = createWorld('ZOM', 1, 'outpost');
+  const shuttles: string[] = [];
+  for (const seed of SHUTTLE_SEEDS) shuttles.push(...squadShuttles(seed).map((s) => `seed ${seed}: ${s}`));
+  assert.deepEqual(shuttles.slice(0, 3), []);
+});
+
+/** Each time a squad bot turns its keys round, while shooting, within 20 ticks of turning them round before. */
+function squadShuttles(seed: number): string[] {
+  const w = createWorld('ZOM', seed, 'outpost');
   const r = () => rand(w);
   const bots = new Map<number, BotMemory>();
   for (let i = 0; i < 4; i++) bots.set(addPlayer(w, `b${i}`, randomLoadout(r), { kind: 'bot' }).id, newBotMemory(r));
@@ -78,5 +88,5 @@ test('squad bots shooting at the horde never shuttle back and forth between back
     } });
     step(w, TICK_MS);
   }
-  assert.deepEqual(shuttles.slice(0, 3), []);
-});
+  return shuttles;
+}

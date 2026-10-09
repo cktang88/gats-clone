@@ -298,19 +298,27 @@ test('role edges hold in the numbers: each class leads somewhere and trails some
 test('balance smoke: bot duels between the six class guns leave none dominant or hopeless, and the close-range classes win close and lose far', () => {
   const ranges = [200, 450, 750] as const;
   const ids = WEAPON_IDS;
+  // Every pairing at every range on 8 seeds says whether a gun dominates. Whether one fights better close or far is a narrower gap
+  // (the SMG's is about ten points), and 8 seeds can swing it either way, so the guns it is asked of go 24 seeds at the near and far ranges.
+  const SWEEP_SEEDS = 8, RANGED_SEEDS = 24;
+  const ranged: readonly WeaponId[] = ['smg', 'shotgun', 'assault'];
   const score = new Map<string, { sum: number; n: number }>();
-  const add = (gun: GunId, range: number, s: number) => {
-    for (const key of [`${gun}`, `${gun}@${range}`]) { const t = score.get(key) ?? { sum: 0, n: 0 }; t.sum += s; t.n++; score.set(key, t); }
-  };
-  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) for (const range of ranges) for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) for (const swap of [false, true]) {
-    const r = duel({ a: ids[i]!, b: ids[j]!, range, seed, swap, armor: 'none' });
-    add(ids[i]!, range, r.score);
-    add(ids[j]!, range, 1 - r.score);
+  const add = (key: string, s: number) => { const t = score.get(key) ?? { sum: 0, n: 0 }; t.sum += s; t.n++; score.set(key, t); };
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) for (const range of ranges) for (let seed = 1; seed <= RANGED_SEEDS; seed++) {
+    const sweep = seed <= SWEEP_SEEDS, near = range !== 450 && (ranged.includes(ids[i]!) || ranged.includes(ids[j]!));
+    if (!sweep && !near) continue;
+    for (const swap of [false, true]) {
+      const r = duel({ a: ids[i]!, b: ids[j]!, range, seed, swap, armor: 'none' });
+      for (const [gun, s] of [[ids[i]!, r.score], [ids[j]!, 1 - r.score]] as const) {
+        if (sweep) add(gun, s);
+        if (near) add(`${gun}@${range}`, s);
+      }
+    }
   }
   const share = (key: string) => score.get(key)!.sum / score.get(key)!.n;
   for (const id of ids) assert.ok(share(id) > 0.2 && share(id) < 0.8, `${id} wins ${(100 * share(id)).toFixed(0)}% of its duels`);
   for (const id of ['smg', 'shotgun'] as const) assert.ok(share(`${id}@200`) > share(`${id}@750`), `${id}: ${(100 * share(`${id}@200`)).toFixed(0)}% at 200 px vs ${(100 * share(`${id}@750`)).toFixed(0)}% at 750`);
-  assert.ok(share('assault@750') > share('assault@200'), 'the assault rifle fights better far out than up close');
+  assert.ok(share('assault@750') > share('assault@200'), `the assault rifle fights better far out than up close: ${(100 * share('assault@750')).toFixed(0)}% at 750 px vs ${(100 * share('assault@200')).toFixed(0)}% at 200`);
 });
 
 test('bots lean to evolutions that suit their temper: rushers for the aggressive, long guns for the marksman, lane holders for the careful', () => {

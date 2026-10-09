@@ -1,11 +1,11 @@
 import { BUILDING_KINDS, GUNS, nightOf, rulesOf, SIDES, WORLD, ZOM, type BuildingKind, type Side } from '../../shared/defs.ts';
 import { DEFAULT_VIEW_ASPECT, viewExtents, type BuildingView, type InputState, type PlayerView, type RunView, type Snapshot } from '../../shared/protocol.ts';
 import { cellOf, cellRect, coreRectAt, costOf, levelOf, maxLevelOf, upgradeCost } from '../../shared/sim/build.ts';
-import { circleBlocked, circleHitsRect, segmentBlocked } from '../../shared/sim/movement.ts';
+import { circleBlocked, circleHitsRect, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, HANDS, intercept, MUZZLE_PX, SHARPNESS, TICK_MS, type Engagement, type Look } from './aim.ts';
 import type { BotArena } from './arena.ts';
-import { findPath, withSolids, type NavGrid } from './nav.ts';
+import { findPath, isOpen, walkable, withSolids, type NavGrid, type Point } from './nav.ts';
 import { ABILITY_RULES, HURTING_HP_FRAC, type Situation } from './motor.ts';
 
 export const DEAD_ZONE = 30;
@@ -22,7 +22,7 @@ type Watch = {
   core: { x: number; y: number };
   post: { x: number; y: number };
   zombie: { id: number; x: number; y: number; d: number } | null;
-  /** Every zombie in sight. */
+  /** Every zombie in sight, and those lately out of it where they were last seen (see `SiegeMemory`). */
   zombies: readonly { x: number; y: number }[];
   downed: PlayerView | null;
   needsTending: { x: number; y: number } | null;
@@ -32,10 +32,21 @@ type Watch = {
   /** Where the bot was backing off to, if it was. */
   kiteTo: { x: number; y: number } | null;
   coreMendable: boolean;
+  /** Whether it can walk straight from where it stands to a spot, past the map, the core and the buildings (see `clearWalk`). */
+  clear: (to: { x: number; y: number }) => boolean;
   next: { act: 'build' | 'upgrade'; kind: BuildingKind; lv: number; cx: number; cy: number; x: number; y: number } | null;
 };
 
 type Errand = { x: number; y: number; use: boolean };
+
+/**
+ * Zombies a squad bot has had in sight lately, where it last saw them. One that slips out of view is still there, so a job judged clear of
+ * zombies is judged on these, not only on what is in view this moment: otherwise a step toward a job that brought one into view would drop it,
+ * the step back would lose sight of it and take the job up again, and the bot would shuttle at the edge of its view.
+ */
+export type SiegeMemory = { zombies: readonly { id: number; x: number; y: number; tick: number }[] };
+/** How long a zombie out of view is kept in mind; one whose spot comes back into view without it is let go at once. */
+const REMEMBER_TICKS = Math.round(2000 / TICK_MS);
 
 const GUARD_RADIUS = 550;
 const WHOLE_TENTHS = 10;
@@ -66,7 +77,7 @@ function nearestOnTheWay(s: Watch, at: { x: number; y: number }): number {
  * A job starts only while no zombie is near the walk to it, and is dropped once one comes `BUSY_SLACK_PX` nearer. Measured along the walk rather than
  * from the bot, since walking toward a zombie by the job would otherwise close the gap itself, drop the job, walk back out, and pick it up again.
  */
-const hordeFar = (s: Watch, at: { x: number; y: number }) => nearestOnTheWay(s, at) > BUSY_ZOMBIE_PX - (s.tending ? BUSY_SLACK_PX : 0);
+const hordeFar = (s: Watch, at: { x: number; y: number }) => nearestOnTheWay(s, at) > BUSY_ZOMBIE_PX - (s.tending?.x === at.x && s.tending.y === at.y ? BUSY_SLACK_PX : 0);
 
 type Rule = (s: Watch) => Errand | null;
 
@@ -85,21 +96,40 @@ const kiting = (s: Watch) => !!s.zombie && s.zombie.d <= KITE_PX + (s.kiting ? K
 const REGAIN_PX = KITE_PX + KITE_SLACK_PX + 100;
 /** A way out kept while kiting may run this far off straight away from the zombie, a little past square, so a sideways step survives. */
 const KEEP_KITE_COS = -0.2;
+/**
+ * The ways out a bot backing off tries, in turn: straight away from the zombie, then aslant, then square to either side. Each must be a straight walk, since a way
+ * round the core or a turret may set off toward the zombie: with the core and a turret on either side of it the bot backs off along the gap between them.
+ */
+const KITE_TURNS = [0, Math.PI / 4, -Math.PI / 4, Math.PI / 2, -Math.PI / 2];
+const KITE_REACH_PX = [200, 150, 100];
 const holdPost: Rule = (s) => {
   const post = { ...s.post, use: false };
   const z = s.zombie;
   if (!z) return post;
   if (!kiting(s)) {
     const towardZombie = (post.x - s.me.x) * (z.x - s.me.x) + (post.y - s.me.y) * (z.y - s.me.y) > 0;
-    return z.d <= REGAIN_PX && towardZombie ? { x: s.me.x, y: s.me.y, use: false } : post;
+    // A job the horde holds it off (the rules before this one took it otherwise) waits where the bot stands, as a person stops and shoots,
+    // not back at its post: the zombie in the way falls soon, and the walk back out to the job would undo the walk to the post.
+    const heldOff = !!s.needsTending || s.coreMendable;
+    return heldOff || (z.d <= REGAIN_PX && towardZombie) ? { x: s.me.x, y: s.me.y, use: false } : post;
   }
   const inGuard = (p: { x: number; y: number }) => Math.hypot(p.x - s.core.x, p.y - s.core.y) <= GUARD_RADIUS;
+  // Away from every zombie at hand, the nearer the more, not just the nearest: between two, backing off one walks into the other, and the
+  // nearest would change sides with each step.
+  const at = KITE_PX + KITE_SLACK_PX;
+  const push = s.zombies.reduce((v, o) => {
+    const d = Math.max(1, Math.hypot(s.me.x - o.x, s.me.y - o.y));
+    return d > at ? v : { x: v.x + (s.me.x - o.x) / (d * d), y: v.y + (s.me.y - o.y) / (d * d) };
+  }, { x: (s.me.x - z.x) / Math.max(1, z.d) ** 2, y: (s.me.y - z.y) / Math.max(1, z.d) ** 2 });
+  const away = Math.atan2(push.y, push.x);
   const k = s.kiteTo, kx = k ? k.x - s.me.x : 0, ky = k ? k.y - s.me.y : 0, kd = Math.hypot(kx, ky);
-  // Keep backing off the way it started while that still does not close on the zombie, so a fresh pick each moment never swings it from side to side.
-  if (k && kd > DEAD_ZONE && inGuard(k) && (kx * (s.me.x - z.x) + ky * (s.me.y - z.y)) / (kd * Math.max(1, z.d)) > KEEP_KITE_COS) return { ...k, use: false };
-  const away = Math.atan2(s.me.y - z.y, s.me.x - z.x);
-  const steps = [away, away + Math.PI / 2, away - Math.PI / 2].map((a) => ({ x: s.me.x + Math.cos(a) * 200, y: s.me.y + Math.sin(a) * 200, use: false }));
-  return steps.find(inGuard) ?? post;
+  // Keep backing off the way it started while that still does not close on the zombies, so a fresh pick each moment never swings it from side to side.
+  if (k && kd > DEAD_ZONE && inGuard(k) && s.clear(k) && (kx * Math.cos(away) + ky * Math.sin(away)) / kd > KEEP_KITE_COS) return { ...k, use: false };
+  // Each way out as far as a straight walk goes, up to a full step, and only one that goes far enough to be worth the turn.
+  const reach = (a: number) => KITE_REACH_PX.map((d) => ({ x: s.me.x + Math.cos(away + a) * d, y: s.me.y + Math.sin(away + a) * d, use: false })).find((p) => inGuard(p) && s.clear(p));
+  // With no straight way out, straight away by the grid's way round.
+  const back = { x: s.me.x + Math.cos(away) * KITE_REACH_PX[0]!, y: s.me.y + Math.sin(away) * KITE_REACH_PX[0]!, use: false };
+  return KITE_TURNS.reduce<Errand | null>((found, a) => found ?? reach(a) ?? null, null) ?? (inGuard(back) ? back : post);
 };
 
 const SIEGE_RULES: readonly Rule[] = [revive, refillDry, mendBuilding, buildNext, mendCore, holdPost];
@@ -174,6 +204,7 @@ function nextBuild(run: RunView, buildings: readonly BuildingView[]): NonNullabl
 
 /** A spike strip lies on the floor: a bot walks over it. */
 const solid = (b: BuildingView) => b.kind !== 'spikes';
+const squadSolids = (core: { x: number; y: number }, buildings: readonly BuildingView[]): Rect[] => [coreRectAt(core), ...buildings.filter(solid).map((b) => cellRect(b.cx, b.cy))];
 const SQUAD_NAV = new WeakMap<BotArena, { key: string; nav: NavGrid }>();
 const MAX_EXPANSIONS = 4000;
 const NAV_SLACK = 8;
@@ -182,11 +213,31 @@ function wayTo(arena: BotArena, core: { x: number; y: number }, buildings: reado
   const key = buildings.filter(solid).map((b) => `${b.cx},${b.cy}`).join(' ');
   let cached = SQUAD_NAV.get(arena);
   if (cached?.key !== key) {
-    cached = { key, nav: withSolids(arena.nav, [coreRectAt(core), ...buildings.filter(solid).map((b) => cellRect(b.cx, b.cy))], WORLD.playerRadius - NAV_SLACK) };
+    cached = { key, nav: withSolids(arena.nav, squadSolids(core, buildings), WORLD.playerRadius - NAV_SLACK) };
     SQUAD_NAV.set(arena, cached);
   }
-  const path = findPath(cached.nav, me, to, MAX_EXPANSIONS);
+  let path = findPath(cached.nav, me, to, MAX_EXPANSIONS);
+  // A bot may stand closer to the core or a building than the grid's cells allow (`NAV_SLACK` rounds them out to whole cells), and a route from a shut cell starts at
+  // whichever open cell is nearest, which can lie behind it: the bot would turn round for it, step back into the open, and set off forward again.
+  // So the way runs from where the bot stands, past the legs it can walk straight by.
+  if (path && !isOpen(cached.nav, me)) {
+    const solids = squadSolids(core, buildings);
+    let i = 0;
+    while (i + 1 < path.length && clearWalk(arena.nav, solids, me, path[i + 1]!)) i++;
+    path = path.slice(i);
+  }
   return path?.find((p) => Math.abs(p.x - me.x) > DEAD_ZONE || Math.abs(p.y - me.y) > DEAD_ZONE) ?? to;
+}
+
+/** Whether a body walks straight from `a` to `b`: past the map as its grid has it, and past the core and buildings themselves, to the grid's `NAV_SLACK`, rather than their whole cells. */
+function clearWalk(base: NavGrid, solids: readonly Rect[], a: Point, b: Point): boolean {
+  if (!walkable(base, a, b)) return false;
+  const steps = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (base.cell / 2));
+  for (let i = 0; i <= steps; i++) {
+    const t = steps === 0 ? 0 : i / steps;
+    if (circleBlocked(solids, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, WORLD.playerRadius - NAV_SLACK)) return false;
+  }
+  return true;
 }
 
 function postFor(core: { x: number; y: number }, bearing: number, buildings: readonly BuildingView[]): { x: number; y: number } {
@@ -208,10 +259,11 @@ function swingTo(prev: Engagement | null, zombie: NonNullable<Watch['zombie']>, 
 export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: BotArena, mem: BotMemory, rand: () => number): Omit<BotDecision, 'pick'> {
   const walls = arena.walls;
   const sight = viewExtents(snap.self.viewRadius, DEFAULT_VIEW_ASPECT);
-  const zombies = (snap.zombies ?? [])
-    .map(([id, , x, y]) => ({ id, x, y, d: Math.hypot(x - me.x, y - me.y) }))
-    .filter((z) => Math.abs(z.x - me.x) <= sight.halfW && Math.abs(z.y - me.y) <= sight.halfH
-      && !segmentBlocked(walls, me.x, me.y, z.x - me.x, z.y - me.y));
+  const inSight = (p: { x: number; y: number }) => Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH
+    && !segmentBlocked(walls, me.x, me.y, p.x - me.x, p.y - me.y);
+  const zombies = (snap.zombies ?? []).map(([id, , x, y]) => ({ id, x, y, d: Math.hypot(x - me.x, y - me.y) })).filter(inSight);
+  const recalled = (mem.siege?.zombies ?? []).filter((z) => snap.tick - z.tick <= REMEMBER_TICKS && !inSight(z) && !zombies.some((s) => s.id === z.id));
+  const siege: SiegeMemory = { zombies: [...zombies.map((z) => ({ id: z.id, x: z.x, y: z.y, tick: snap.tick })), ...recalled] };
   const zombie = zombies.reduce<Watch['zombie']>((best, z) => (best && best.d <= z.d ? best : z), null);
   const down = snap.players.filter((p) => p.downed && p.id !== me.id);
   const downed = nearest(me, down.filter((p) => p.kind === 'human')) ?? nearest(me, down);
@@ -228,8 +280,9 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
   const buildable = plan && run.phase === 'day' && run.scrap >= plan.cost ? plan : null;
   const coreInDanger = run.phase === 'night' && run.core.hp < run.core.maxHp * CORE_EMERGENCY_FRAC;
   const post = postFor(run.core, me.id, snap.buildings ?? []);
+  const solids = squadSolids(run.core, snap.buildings ?? []);
   const watch: Watch = {
-    me, core: run.core, post, zombie, zombies, downed, needsTending: nearest(post, worn), dry: nearest(post, dry), tending, kiting: !!mem.motor.siegeStep?.kite, kiteTo: mem.motor.siegeStep?.kite ? mem.motor.siegeStep.to : null, next: buildable,
+    me, core: run.core, post, zombie, zombies: siege.zombies, downed, needsTending: nearest(post, worn), dry: nearest(post, dry), tending, clear: (to) => clearWalk(arena.nav, solids, me, to), kiting: !!mem.motor.siegeStep?.kite, kiteTo: mem.motor.siegeStep?.kite ? mem.motor.siegeStep.to : null, next: buildable,
     coreMendable: run.core.hp < run.core.maxHp && run.scrap > 0 && (coreInDanger || (spare && run.scrap > (run.phase === 'day' ? plan?.cost ?? 0 : 0))),
   };
   const errand = SIEGE_RULES.reduce<Errand | null>((found, rule) => found ?? rule(watch), null)!;
@@ -274,6 +327,6 @@ export function siegeThink(snap: Snapshot, run: RunView, me: PlayerView, arena: 
     up: !still && my < -DEAD_ZONE, down: !still && my > DEAD_ZONE, left: !still && mx < -DEAD_ZONE, right: !still && mx > DEAD_ZONE,
     angle: aim.angle, fire, shots, reload: !zombie && snap.self.ammo < snap.self.mag / 2, ability, aimDist: look.d, use: errand.use,
   };
-  const next = { ...mem, awareness: { ...mem.awareness, hitTick }, motor: { ...mem.motor, engaged, aim, shots, siegeStep, tending: tended ? { x: tended.x, y: tended.y } : null } };
+  const next = { ...mem, siege, awareness: { ...mem.awareness, hitTick }, motor: { ...mem.motor, engaged, aim, shots, siegeStep, tending: tended ? { x: tended.x, y: tended.y } : null } };
   return { input, mem: next, ...(builds && (buildable.act === 'upgrade' ? { upgrade: { cx: buildable.cx, cy: buildable.cy } } : { build: { kind: buildable.kind, cx: buildable.cx, cy: buildable.cy, lv: buildable.lv } })) };
 }
