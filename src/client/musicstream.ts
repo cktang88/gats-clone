@@ -1,11 +1,12 @@
 /**
- * The recorded soundtrack: one licensed track per map (the Plaza and the menu keep the original synthesized march, musicclassic.ts), the
- * Zombies night's own, and a few radio-only stations. Each file is in public/music/tracks/, trimmed, loudness-matched to -16 LUFS and credited
- * in public/music/tracks/CREDITS.md and the pause menu's credits. Files stream through an <audio> element into the music bus (so a track
- * costs a few hundred kilobytes of memory, not the ~70 MB a decoded buffer would); while one loads, or if it fails, the map's synthesized
- * track (musictracks.ts) plays instead.
+ * The recordings: Eric Skiff's "We're All Under the Stars" on Night Market (players asked to keep it), and the radio-only stations. Every
+ * other map plays its synthesized theme (musicthemes.ts), and the menu and the Plaza the original march. Each file is in public/music/tracks/,
+ * trimmed, loudness-matched to -16 LUFS and credited in public/music/tracks/CREDITS.md (scripts/music-credits.ts writes it) and the pause menu's
+ * credits. Files stream through an <audio> element into the music bus (so a track costs a few hundred kilobytes of memory, not the ~70 MB a
+ * decoded buffer would); while one loads, or if it fails, a synthesized theme plays instead.
  */
 import type { ExtraId, SongId, TrackId } from '../shared/radio.ts';
+import { TRACK_IDS } from '../shared/radio.ts';
 
 export type Licence = 'CC BY 4.0' | 'CC BY 3.0' | 'CC0 1.0';
 export const LICENCE_URL: Record<Licence, string> = {
@@ -27,7 +28,8 @@ export type StreamDef = {
   /** Why it is this map's (or station's) track. */
   why: string;
 };
-export type StreamKey = Exclude<SongId, 'march'> | 'outpost-night';
+/** The songs with a recording: Night Market's, and the radio-only stations. */
+export type StreamKey = 'market' | ExtraId;
 
 const MACLEOD = 'Kevin MacLeod (incompetech.com)';
 const SKIFF = 'Eric Skiff (ericskiff.com)';
@@ -37,42 +39,14 @@ const mac = (title: string, isrc: string, changes: string): Credit => ({
 const skiff = (title: string, changes: string): Credit => ({ title, artist: SKIFF, source: 'https://ericskiff.com/music/', licence: 'CC BY 4.0', licenceUrl: LICENCE_URL['CC BY 4.0'], changes });
 const STD = 'Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3';
 const CUT = (s: number) => `Cut to its first ${s} s, ${STD.charAt(0).toLowerCase()}${STD.slice(1)}`;
-// Pitch classes: C 0, D 2, E 4, F 5, G 7, A 9, B 11 (keys estimated from each file's chroma, kept only where the estimate was clear).
-const C = 0, D = 2, E = 4, F = 5, G = 7, A = 9, B = 11;
+// Pitch classes: D 2, E 4, F 5, G 7 (keys estimated from each file's chroma, kept only where the estimate was clear).
+const D = 2, E = 4, F = 5, G = 7;
 
 const def = (key: StreamKey, bpm: number, tonic: number | null, minor: boolean, credit: Credit, why: string): StreamDef => ({ key, file: `music/tracks/${key}.mp3`, bpm, tonic, minor, credit, why });
 
 export const STREAMS: Record<StreamKey, StreamDef> = {
-  oldtown: def('oldtown', 215, A, false, mac('Bushwick Tarantella', 'USUAN1300002', CUT(200)),
-    'A breakneck accordion-and-clarinet tarantella: the old European quarter as a street band, bright and catchy, and fast enough to run to.'),
-  quarry: def('quarry', 126, G, true, mac('Rhinoceros', 'USUAN1500040', STD),
-    'Semi-8-bit 80s synth pop at full charge: a fat, pumping bass and a chiptune hook that stomps like the diggers and dump trucks in the pit.'),
-  harbor: def('harbor', 144, D, true, mac('Celtic Impulse', 'USUAN1100297', STD),
-    'A dark, driving folk tune in D Dorian on tin whistle, bouzouki and hammered dulcimer: a sea-shanty pulse for the night harbour.'),
   market: def('market', 132, E, false, skiff("We're All Under the Stars", `Starts at 0:45 of the original (where the hook comes in), cut to 200 s; ${STD.charAt(0).toLowerCase()}${STD.slice(1)}`),
     'Warm, singable 8-bit melody under neon: the night market as an arcade, catchy from the first bar.'),
-  museum: def('museum', 87, D, false, mac('Sneaky Snitch', 'USUAN1100772', STD),
-    'Tip-toeing pizzicato, oboe and snare: the classic sneaky-heist cue, playful enough for toy soldiers creeping past the exhibits.'),
-  subpen: def('subpen', 115, E, true, mac('Go Cart', 'USUAN1300006', CUT(200)),
-    'Clean, aggressive electronic build with a deep bass drop at 0:58: tension in the pens, then the floor drops out.'),
-  park: def('park', 102, C, false, mac('Life of Riley', 'USUAN1400054', CUT(200)),
-    'Ukulele, glockenspiel and a cheery walk: a city park at dusk, light enough to sit under a firefight.'),
-  railyard: def('railyard', 120, E, true, mac('Hustle', 'USUAN1100793', STD),
-    'A rolling 12-bar blues bass riff with organ and drums: the night freight rumbling through the terminus.'),
-  summit: def('summit', 160, B, true, mac('Hall of the Mountain King', 'USUAN1200072', `Starts at 0:45 of the original (skipping the quiet opening); ${STD.charAt(0).toLowerCase()}${STD.slice(1)}`),
-    "Grieg's mountain theme, building and accelerating to a full-orchestra frenzy: a blizzard at the summit that keeps getting closer."),
-  embassy: def('embassy', 110, B, true, mac('Spy Glass', 'USUAN1500058', CUT(200)),
-    'Cool, timeless spy jazz (vibes, saxes, muted trumpet): the gala band playing on while the agents go to work.'),
-  airbase: def('airbase', 172, A, true, mac('Ready Aim Fire', 'USUAN1500002', CUT(200)),
-    'An amped-up secret-agent rock theme with a wall of guitars and a crazy drummer: engines spooling, night scramble.'),
-  wasteland: def('wasteland', 84, null, false, mac('Neo Western', 'USUAN1100615', STD),
-    'Big drums and a twangy, exposed western guitar: the post-apocalyptic settlers\' town as a spaghetti-western standoff.'),
-  range: def('range', 100, A, true, mac('Aerosol of my Love', 'USUAN2000020', STD),
-    'Relaxed, grooving synths over a laid-back beat: lo-fi practice music for the firing lanes.'),
-  outpost: def('outpost', 101, D, false, mac('Goblin Tinker Soldier Spy', 'USUAN2300001', STD),
-    'Tuba, melodica and marimba bouncing along ("Ya wants ta make things?"): the Zombies day, building the defences.'),
-  'outpost-night': def('outpost-night', 102, null, false, mac('Ossuary 4 - Animate', 'USUAN1500046', CUT(200)),
-    'Dark, intense synths and percussion that never settle: the horde night (the heartbeat still thickens over it as the horde grows).'),
   groove: def('groove', 140, null, false, mac('Laser Groove', 'USUAN1700017', STD),
     'Radio only: 80s synthwave mutated by trap drums.'),
   dizzy: def('dizzy', 150, G, true, skiff('A Night Of Dizzy Spells', STD),
@@ -95,26 +69,19 @@ export const DROP = {
   credit: { ...STREAMS.wraghstep.credit, changes: 'A 5.2 s excerpt (9.3 s to 14.5 s, the drop) used as a sting, faded out and loudness-normalised' } satisfies Credit,
 };
 
-/** The original march (synthesized here, no file), credited in the same list. */
-export const MARCH_CREDIT = 'Toy March (original): composed and synthesized for Tinwar';
+/** The synthesized music (no files), credited in the same list: the original march and every map's theme. */
+export const MARCH_CREDIT = 'Toy March (original) and the map themes: composed for Tinwar and synthesized live in the browser';
 
-/** The file a song plays from, if it has one: the march is synthesized; a Zombies night has its own. */
-export function streamKeyFor(song: SongId, night: boolean): StreamKey | null {
-  if (song === 'march') return null;
-  if (song === 'outpost' && night) return 'outpost-night';
-  return song;
-}
+/** The file a song plays from, if it has one (Night Market and the radio-only stations); every other song is synthesized. */
+export const streamKeyFor = (song: SongId): StreamKey | null => (song in STREAMS ? (song as StreamKey) : null);
 
-/** The synthesized track that stands in for a song while its file loads (radio-only stations borrow the march). */
-export const synthFor = (song: SongId): TrackId => ((song as string) in SYNTH_OK ? (song as TrackId) : 'march');
-const SYNTH_OK: Record<TrackId, true> = {
-  march: true, oldtown: true, quarry: true, harbor: true, market: true, museum: true, subpen: true, park: true, railyard: true, summit: true,
-  embassy: true, airbase: true, wasteland: true, range: true, outpost: true,
-};
+const SYNTH: ReadonlySet<string> = new Set(TRACK_IDS);
+/** The synthesized track that plays a song, or stands in for its recording while the file loads (radio-only stations borrow the march). */
+export const synthFor = (song: SongId): TrackId => (SYNTH.has(song) ? (song as TrackId) : 'march');
 
-/** The radio's name for a station: the recording's title (the pause menu's credits name the artists). */
-export const songLabel = (song: SongId): string | null => (song === 'march' ? null : STREAMS[song as Exclude<SongId, 'march'>].credit.title);
-export const isExtra = (song: SongId): song is ExtraId => !(song in SYNTH_OK);
+/** The radio's name for a station with a recording: the recording's title (the pause menu's credits name the artists); null for a synthesized one. */
+export const songLabel = (song: SongId): string | null => STREAMS[song as StreamKey]?.credit.title ?? null;
+export const isExtra = (song: SongId): song is ExtraId => !SYNTH.has(song);
 
 /** Every credit, once each, in the order the soundtrack lists them. */
 export function allCredits(): Credit[] {

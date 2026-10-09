@@ -1,11 +1,12 @@
 /// <reference types="node" />
 /**
- * The recorded soundtrack: every map but the Plaza has a licensed, credited recording on disk; the director plays it (and falls back to the
- * synthesized track while it loads or if it fails); the radio dial reaches every recording and the radio-only stations. One file, one
- * module instance: music.ts keeps its state in module scope.
+ * The recordings: Night Market keeps Eric Skiff's, the radio-only stations theirs, and every other map plays its synthesized theme. Each recording
+ * is licensed, credited and on disk, nothing else is left in the folder, and CREDITS.md is what scripts/music-credits.ts writes. The director plays
+ * a recording (falling back to a synthesized theme while it loads or if it fails) and the radio dial reaches all of them. One file, one module
+ * instance: music.ts keeps its state in module scope.
  */
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { test } from 'node:test';
 import { EXTRA_IDS, STATION_IDS, TRACK_IDS, cycleStation, isStationId, type StationId } from '../src/shared/radio.ts';
 import { allCredits, DROP, LICENCE_URL, setStreamFactory, STREAMS, streamKeyFor, synthFor, type StreamKey } from '../src/client/musicstream.ts';
@@ -14,17 +15,19 @@ import { EMPTY_BUFFER } from '../src/client/interp.ts';
 
 const pub = (f: string) => new URL(`../public/${f}`, import.meta.url);
 
-test('every map but the Plaza has its own licensed recording, credited, on disk and small; the Plaza and the menu keep the original march', () => {
-  const keys = new Set<StreamKey>();
+test('Night Market keeps Skiff\'s recording and every other map its synthesized theme; the recordings are credited, on disk and small, and nothing unused is shipped', async () => {
   for (const [map, id] of Object.entries(MAP_TRACK)) {
-    const key = streamKeyFor(id, false);
-    if (map === 'plaza') { assert.equal(key, null, 'the Plaza plays the original march'); continue; }
-    assert.ok(key && STREAMS[key], `${map} has a recording`);
-    assert.ok(!keys.has(key), `${map}: no two maps share a recording`);
-    keys.add(key);
+    const key = streamKeyFor(id);
+    if (map === 'market') { assert.equal(key, 'market'); assert.equal(STREAMS.market.credit.artist, 'Eric Skiff (ericskiff.com)'); continue; }
+    assert.equal(key, null, `${map} plays its synthesized theme`);
+    assert.ok(TRACKS[id].pop || id === 'march', `${map}: a theme or the march`);
   }
-  assert.equal(streamKeyFor('outpost', true), 'outpost-night', 'the Zombies night has its own');
   for (const id of EXTRA_IDS) assert.ok(STREAMS[id], `radio-only ${id} has a recording`);
+  // The folder holds exactly the files the registry names, and the credits are what the script writes.
+  const files = readdirSync(pub('music/tracks')).filter((f) => f.endsWith('.mp3')).sort();
+  assert.deepEqual(files, [...Object.values(STREAMS).map((s) => s.file), DROP.file].map((f) => f.split('/').pop()!).sort(), 'every recording on disk is used, and every one used is on disk');
+  const { creditsMarkdown } = await import('../scripts/music-credits.ts');
+  assert.equal(readFileSync(pub('music/tracks/CREDITS.md'), 'utf8'), creditsMarkdown(), 'CREDITS.md is up to date (node scripts/music-credits.ts)');
   const titles = new Set<string>();
   for (const s of Object.values(STREAMS)) {
     const c = s.credit;
@@ -59,10 +62,10 @@ test('the radio dial reaches every recording, the radio-only stations and the or
   assert.ok(seen.has('off'));
   for (const id of EXTRA_IDS) { assert.equal(stationLabel(id), STREAMS[id].credit.title); assert.equal(synthFor(id), 'march', 'a radio-only station borrows the march while it loads'); }
   assert.equal(stationLabel('march'), 'Toy March (original)');
-  assert.equal(stationLabel('harbor'), 'Celtic Impulse');
-  // The Quarry plays a catchy synth-pop stomper, not the guitar rock it had (players found it grating): Rhinoceros, 126 bpm, G minor.
-  assert.equal(stationLabel('quarry'), 'Rhinoceros');
-  assert.deepEqual([STREAMS.quarry.bpm, STREAMS.quarry.tonic, STREAMS.quarry.minor], [126, 7, true]);
+  assert.equal(stationLabel('market'), "We're All Under the Stars");
+  assert.equal(stationLabel('harbor'), 'Harbour Lights', 'a synthesized theme goes by its own name');
+  assert.equal(stationLabel('quarry'), 'Rockfall Phonk');
+  assert.equal(synthFor('market'), 'market', 'Night Market\'s theme stands in for its recording');
 });
 
 /** A Web Audio stand-in for the scheduler: nodes take any call; connections are counted on the music bus so leaks would show. */
@@ -84,8 +87,8 @@ function fakeAudioContext(now: () => number) {
 test('the director plays a map\'s recording, crossfades between maps, retunes at once, and lets the synth stand in while a file is late or broken', async () => {
   let clock = 0;
   // Files load in 0.4 s, except the ones this test breaks or holds back.
-  const broken = new Set<string>(['music/tracks/quarry.mp3']);
-  const slow = new Map<string, number>([['music/tracks/summit.mp3', 3]]);
+  const broken = new Set<string>(['music/tracks/chibi.mp3']);
+  const slow = new Map<string, number>([['music/tracks/groove.mp3', 3]]);
   const players: { file: string; started: boolean; stopped: boolean }[] = [];
   setStreamFactory((c, file) => {
     const born = clock;
@@ -111,14 +114,23 @@ test('the director plays a map\'s recording, crossfades between maps, retunes at
   assert.equal(music.getDeckState(), 'synth', 'the Plaza plays the synthesized original march');
   assert.ok(music.musicProbe().lastBar!.voices.length > 0);
 
-  // A map change: the harbour's recording crossfades in at a bar line and plays; the march fades out.
+  // A map change to a theme: it is synthesized, no file is opened.
   (state as { s: { mapId: string } }).s.mapId = 'causeway';
   for (let i = 0; i < 400 && music.getPlayingTrack() !== 'harbor'; i++) step(0.1);
   assert.deepEqual(music.getCrossfade(), { from: 'march', to: 'harbor' });
+  for (let i = 0; i < 80 && music.getCrossfade(); i++) step(0.1);
+  assert.equal(music.getDeckState(), 'synth');
+  assert.ok(music.musicProbe().lastBar!.voices.length > 0, 'the harbour\'s theme plays');
+  assert.equal(players.length, 0, 'and no recording is opened for it');
+
+  // Night Market: Skiff's recording crossfades in at a bar line and plays; the theme fades out.
+  (state as { s: { mapId: string } }).s.mapId = 'market';
+  for (let i = 0; i < 400 && music.getPlayingTrack() !== 'market'; i++) step(0.1);
+  assert.deepEqual(music.getCrossfade(), { from: 'harbor', to: 'market' });
   for (let i = 0; i < 10; i++) step(0.1);
   assert.equal(music.getDeckState(), 'playing', 'the recording plays once it can');
-  assert.ok(players.some((p) => p.file === STREAMS.harbor.file && p.started));
-  assert.equal(music.musicProbe().lastBar!.stream, 'harbor');
+  assert.ok(players.some((p) => p.file === STREAMS.market.file && p.started));
+  assert.equal(music.musicProbe().lastBar!.stream, 'market');
   assert.deepEqual(music.musicProbe().lastBar!.voices, [], 'no synthesized notes over a recording');
   for (let i = 0; i < 80 && music.getCrossfade(); i++) step(0.1);
   assert.equal(music.getCrossfade(), null);
@@ -128,22 +140,29 @@ test('the director plays a map\'s recording, crossfades between maps, retunes at
   step(0.03);
   assert.equal(music.getPlayingTrack(), 'dekalb');
   assert.equal(music.getCrossfade(), null, 'no crossfade: the old station is cut');
-  assert.ok(players.find((p) => p.file === STREAMS.harbor.file)!.stopped, 'the harbour\'s file is let go');
+  assert.ok(players.find((p) => p.file === STREAMS.market.file)!.stopped, 'the market\'s file is let go');
   for (let i = 0; i < 6; i++) step(0.1);
   assert.equal(music.getDeckState(), 'playing');
   assert.ok(players.some((p) => p.file === STREAMS.dekalb.file && p.started));
 
-  // A broken file: the synthesized track stands in at once, and the station still changed.
-  music.setRoomStation('quarry');
+  // A broken file: the synthesized march stands in at once, and the station still changed.
+  music.setRoomStation('chibi');
   step(0.03); step(0.05);
-  assert.equal(music.getPlayingTrack(), 'quarry');
+  assert.equal(music.getPlayingTrack(), 'chibi');
   assert.equal(music.getDeckState(), 'fallback');
   for (let i = 0; i < 30; i++) step(0.1);
-  assert.ok(music.musicProbe().lastBar!.voices.length > 0, 'the quarry\'s synthesized track plays');
+  assert.ok(music.musicProbe().lastBar!.voices.length > 0, 'the stand-in plays');
   assert.equal(music.musicProbe().lastBar!.stream, null);
 
+  // A synthesized station: the Quarry's theme, on its hook at once.
+  music.setRoomStation('quarry');
+  step(0.03);
+  assert.equal(music.getPlayingTrack(), 'quarry');
+  assert.equal(music.getDeckState(), 'synth');
+  assert.ok(music.musicProbe().lastBar!.tune.length > 0, 'the cowbell hook');
+
   // A late file: silence for a moment, then the stand-in, then the recording swells in over it when it arrives.
-  music.setRoomStation('summit');
+  music.setRoomStation('groove');
   step(0.03);
   assert.equal(music.getDeckState(), 'waiting');
   for (let i = 0; i < 15; i++) step(0.1);
@@ -154,7 +173,7 @@ test('the director plays a map\'s recording, crossfades between maps, retunes at
   // Untuned: back to the map's own.
   music.setRoomStation(null);
   for (let i = 0; i < 20; i++) step(0.1);
-  assert.equal(music.getPlayingTrack(), 'harbor');
+  assert.equal(music.getPlayingTrack(), 'market');
 
   // The hype: a kill streak of five over a recording drops the bass (the sting file loads when a streak gets going).
   const fetched: string[] = [];
@@ -163,7 +182,7 @@ test('the director plays a map\'s recording, crossfades between maps, retunes at
   const me = { id: 1, name: 'me', x: 0, y: 0, hp: 100, maxHp: 100, team: null, alive: true, hunted: false };
   let tick = 1;
   const killAt = (streak: number) => {
-    (state as { s: { snaps: unknown } }).s.snaps = { snaps: [{ t: 'snap', tick: ++tick, self: { id: 1, streak, viewRadius: 600 }, players: [me], bullets: [], match: { mode: 'FFA', map: 'causeway', winner: null, roundEndsAt: null, teamScore: { red: 0, blue: 0 } }, events: [{ e: 'kill', killerId: 1, victimId: 9, bounty: false }] }], serverClockOffset: null };
+    (state as { s: { snaps: unknown } }).s.snaps = { snaps: [{ t: 'snap', tick: ++tick, self: { id: 1, streak, viewRadius: 600 }, players: [me], bullets: [], match: { mode: 'FFA', map: 'market', winner: null, roundEndsAt: null, teamScore: { red: 0, blue: 0 } }, events: [{ e: 'kill', killerId: 1, victimId: 9, bounty: false }] }], serverClockOffset: null };
     step(0.05);
   };
   killAt(3);

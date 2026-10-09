@@ -1,9 +1,9 @@
 /**
- * The soundtrack director. The menu and the Plaza play the original seeded march (musicclassic.ts) bar by bar, in layers that swell with
- * the fight; every other map plays its licensed recording (musicstream.ts), opened up from a muffled low-pass when calm to full range in a
- * fight, with kill stings in its key over it, a bass drop on a big streak, and its synthesized track (musictracks.ts) standing in while the
- * file loads or if it fails. Maps crossfade; radios retune at once under the static. `musicStart` runs from a user gesture, `musicUpdate`
- * once a frame; `onBeat` and `getBeat` give the visuals a clock.
+ * The soundtrack director. The menu and the Plaza play the original seeded march (musicclassic.ts), and every other map its own synthesized
+ * theme (musicthemes.ts, arranged by musicpop.ts), bar by bar, in layers that swell with the fight. Night Market and the radio-only stations
+ * play recordings (musicstream.ts), opened up from a muffled low-pass when calm to full range in a fight, with kill stings in their key over them,
+ * a bass drop on a big streak, and a synthesized theme standing in while the file loads or if it fails. Maps crossfade; radios retune at once
+ * under the static. `musicStart` runs from a user gesture, `musicUpdate` once a frame; `onBeat` and `getBeat` give the visuals a clock.
  */
 import { newestSnap } from './interp.ts';
 import { createRig, type Deck, type Rig } from './musicsynth.ts';
@@ -134,8 +134,8 @@ export function musicStart(audioCtx: AudioContext, out: AudioNode) {
 /** Reseeds the score's small ornaments (drum fills, sparkles); every track's tune, chords and key stay its own. Takes effect from the next bar. */
 export function musicSeed(n: number) { seed = hash(n, 17); }
 
-/** The recording a song wants right now (a Zombies night has its own), or null for the synthesized march. */
-const wantStream = (song: SongId): StreamKey | null => streamKeyFor(song, input.night);
+/** The recording a song plays, or null for a synthesized one. */
+const wantStream = (song: SongId): StreamKey | null => streamKeyFor(song);
 
 /** A new deck for `song`, starting at `t`: its recording opens at once and the deck waits for it, or it is synthesized. */
 function newPlaying(song: SongId, t: number, startBar: number, fadeIn: Playing['fadeIn']): Playing {
@@ -192,16 +192,16 @@ function stepStream(p: Playing, now: number) {
 const streaming = (p: Playing | null): p is Playing & { stream: StreamKey } => !!p && p.stream !== null && (p.state === 'playing' || p.state === 'waiting');
 const deckBpm = (p: Playing) => (streaming(p) ? STREAMS[p.stream].bpm : p.track.bpm(input));
 
-/** Plays one bar of a deck: the whole synthesized bar, or over a recording only the night's heartbeat. */
+/** Plays one bar of a deck: the whole synthesized bar, or nothing over a recording. */
 function playDeckBar(p: Playing, bar: ReturnType<TrackDef['bar']>, t: number, spb: number, on: Record<LayerId, boolean>) {
   if (!rig || !audible()) return;
-  const events = streaming(p) ? (p.stream === 'outpost-night' ? bar.events.filter((e) => e.layer === 'heart' && e.inst === 'heart' && on.heart) : []) : bar.events.filter((e) => on[e.layer]);
+  const events = streaming(p) ? [] : bar.events.filter((e) => on[e.layer]);
   if (!events.length) return;
   if (p.track.voice === 'classic' && classic) classic.playBar({ ...bar, events }, t, spb, heartTier(input.horde), p.deck);
   else rig.playBar({ ...bar, events }, t, spb, heartTier(input.horde), p.deck);
 }
 
-/** Whether the playing deck is the one wanted: the same song, made for the same recording (a Zombies night swaps the outpost's). */
+/** Whether the playing deck is the one wanted: the same song, made for the same recording. */
 const isWanted = (p: Playing) => p.song === wantTrack && p.stream === wantStream(wantTrack);
 
 function activeLayers(): Record<LayerId, boolean> {
@@ -406,7 +406,7 @@ function playDrop(now: number) {
   return true;
 }
 
-/** A kill sting: over a recording in its key (or unpitched where its key is unclear), over the march in the march's own voice. */
+/** A kill sting: over a recording in its key (or unpitched where its key is unclear), over the march in the march's own voice, over a theme on its chord. */
 function sting(chord: ReturnType<typeof chordFor>, mode: Mode, streak: number, t: number, bounty: boolean) {
   if (!rig || !ctx) return;
   if (streaming(current)) {
@@ -461,7 +461,7 @@ export function musicUpdate(state: ClientState, now: number, firing = false) {
   wasEnded = tracker.ended;
   const map = phase === 'menu' ? 'march' : trackIdFor(state.phase === 'menu' ? undefined : state.s.mapId ?? snap?.match.map);
   // A new map warms its recording's file while the match is still coming up.
-  if (map !== mapTrack) { const k = streamKeyFor(map, false); if (k) prefetchStream(k); }
+  if (map !== mapTrack) { const k = streamKeyFor(map); if (k) prefetchStream(k); }
   mapTrack = map;
   wantTrack = pickTrack(mapTrack, effectiveStation(), input.night);
   for (const cue of seen.cues) onCue(cue);
@@ -526,7 +526,7 @@ export const getDeckState = (): DeckState | null => current?.state ?? null;
 /** The map change in progress, or null: the song going out and the one coming in. */
 export const getCrossfade = (): { from: SongId; to: SongId } | null => (leaving && current ? { from: leaving.song, to: current.song } : null);
 /** Warms the file of a song the player is likely to tune to next (the radio calls it for the next station on the dial). */
-export function musicPrefetch(song: SongId) { const k = streamKeyFor(song, false); if (k) prefetchStream(k); }
+export function musicPrefetch(song: SongId) { const k = streamKeyFor(song); if (k) prefetchStream(k); }
 /** The tune-in: a burst of static sweeping across the dial and a click. Honours mute and volume, but not Off (the click that turns it off is heard). */
 export function playTuneIn() {
   if (rig && ctx && audibleBase()) rig.playTuneIn(ctx.currentTime + 0.01);

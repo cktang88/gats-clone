@@ -12,8 +12,8 @@ export type Kit = {
   env(dest: AudioNode, t: number, peak: number, attack: number, hold: number, release: number): GainNode;
   osc(type: OscillatorType, hz: number, t: number, end: number, dest: AudioNode, detune?: number): OscillatorNode;
 };
-/** One note: start time, midi pitch (ignored by most drums), length in seconds, velocity 0..1, and where it goes. */
-export type Voice = (t: number, midi: number, dur: number, v: number, dest: AudioNode) => void;
+/** One note: start time, midi pitch (ignored by most drums), length in seconds, velocity 0..1, where it goes, and (an 808) the pitch it glides in from. */
+export type Voice = (t: number, midi: number, dur: number, v: number, dest: AudioNode, from?: number) => void;
 
 type Part = {
   w: OscillatorType;
@@ -100,6 +100,9 @@ const TONES: Partial<Record<Inst, ToneSpec>> = {
   square: { parts: [P('square')], level: 0.055, att: 0.002, sus: 0.85, rel: 0.03, vib: { rate: 6.5, cents: 22, delay: 0.2 } },
   saw: { parts: [P('sawtooth', 1, 1, 1, -9), P('sawtooth', 1, 1, 1, 9), P('sawtooth', 2, 0.2)], level: 0.055, att: 0.01, sus: 0.9, rel: 0.25, filt: { type: 'lowpass', f0: 1200, f1: 3200, tf: 0.15, q: 1.5 }, vib: { rate: 5.5, cents: 12, delay: 0.3 } },
   synbass: { parts: [P('sawtooth'), P('square', 0.5, 0.5)], level: 0.3, att: 0.003, sus: 0.6, rel: 0.06, filt: { type: 'lowpass', f0: 1500, f1: 260, tf: 0.12, q: 4 } },
+  // The pop themes: a two-saw synth pluck whose filter snaps shut, and the eight-bit triangle bass (no filter, no frills).
+  pluck: { parts: [P('sawtooth', 1, 1, 1, -7), P('sawtooth', 1, 1, 1, 7)], level: 0.075, att: 0.002, sus: 0, rel: 0.38, filt: { type: 'lowpass', f0: 4200, f1: 520, tf: 0.2, q: 2 } },
+  tri: { parts: [P('triangle')], level: 0.4, att: 0.002, sus: 0.85, rel: 0.04 },
 };
 
 /** Builds the pitched voices from the table. */
@@ -163,6 +166,7 @@ export const EXTRA_INSTS: readonly Inst[] = [
   ...(Object.keys(TONES) as Inst[]),
   'brush', 'swirl', 'clap', 'bongo', 'sleigh', 'shaker', 'rim', 'chug', 'ohat', 'stomp', 'scrape', 'dust', 'wind', 'drone',
   'k909', 'kbb', 'krock', 'sbb', 'srock', 'sgate', 'crash', 'ride', 'chip', 'tamb',
+  'b808', 'b808d', 'cowbell', 'snap', 'riser', 'impact',
 ];
 
 /** All the voices the scores add, keyed by instrument. */
@@ -277,6 +281,66 @@ export function createVoices(k: Kit): Partial<Record<Inst, Voice>> {
     lfo.start(t); lfo.stop(end);
     k.osc('sawtooth', hz, t, end, f, -8); k.osc('sawtooth', hz * 1.004, t, end, f, 8);
     burst(k, t, 0.3, dur, 'lowpass', 500, 0.5, 0.12 * v, chop);
+  };
+  // ---- the pop themes' voices ----
+  // The 808: a sine sub with a second harmonic so it reads on small speakers, the pitch drop of the drum on its attack, and a glide in from
+  // `from` (the slide). `grit` adds a lowpassed square for the distorted phonk 808.
+  const b808 = (grit: number): Voice => (t, midi, dur, v, dest, from) => {
+    const hz = midiToHz(midi);
+    const len = Math.max(0.22, dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.6 * v, t + 0.004);
+    g.gain.setValueAtTime(0.6 * v, t + len * 0.75);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.22);
+    g.connect(dest);
+    const end = t + len + 0.3;
+    const parts: [OscillatorType, number, number][] = [['sine', 1, 1], ['sine', 2, 0.22]];
+    if (grit) parts.push(['square', 1, grit]);
+    for (const [w, r, lvl] of parts) {
+      let sink: AudioNode = g;
+      if (lvl !== 1) { const pg = ctx.createGain(); pg.gain.value = lvl; pg.connect(g); sink = pg; }
+      if (w === 'square') { const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900; f.Q.value = 0.7; f.connect(sink); sink = f; }
+      const o = k.osc(w, hz * r, t, end, sink);
+      if (from !== undefined) { o.frequency.setValueAtTime(midiToHz(from) * r, t); o.frequency.exponentialRampToValueAtTime(hz * r, t + Math.min(0.11, len * 0.5)); }
+      else { o.frequency.setValueAtTime(hz * r * 2.2, t); o.frequency.exponentialRampToValueAtTime(hz * r, t + 0.035); }
+    }
+  };
+  voices.b808 = b808(0);
+  voices.b808d = b808(0.18);
+  // The phonk cowbell: the 808's two detuned squares (a ratio of about 1.48) through a band-pass, tuned to the note and short.
+  voices.cowbell = (t, midi, dur, v, dest) => {
+    const hz = midiToHz(midi);
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = hz * 2; f.Q.value = 1.1;
+    const g = k.env(dest, t, 0.13 * v, 0.001, 0.01, Math.min(0.34, Math.max(0.12, dur * 0.8)));
+    f.connect(g);
+    const end = t + 0.5;
+    k.osc('square', hz, t, end, f);
+    k.osc('square', hz * 1.4836, t, end, f);
+    const body = k.env(dest, t, 0.05 * v, 0.001, 0, 0.12);
+    k.osc('triangle', hz, t, t + 0.2, body);
+  };
+  voices.snap = (t, _m, _d, v, dest) => {
+    burst(k, t, 0.0005, 0.035, 'bandpass', 2600, 2.5, 0.42 * v, dest);
+    burst(k, t + 0.004, 0.0005, 0.06, 'highpass', 4500, 0.6, 0.12 * v, dest);
+  };
+  // The build's riser: noise sweeping up the band and swelling over the note's length, cut dead on the drop.
+  voices.riser = (t, _m, dur, v, dest) => {
+    const src = ctx.createBufferSource();
+    src.buffer = k.noise; src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.Q.value = 2.2;
+    f.frequency.setValueAtTime(350, t); f.frequency.exponentialRampToValueAtTime(7500, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.11 * v, t + dur * 0.97); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(dest);
+    src.start(t, 0, dur + 0.05); src.stop(t + dur + 0.05);
+  };
+  // The drop's impact: a sub boom falling away under a burst of low noise.
+  voices.impact = (t, _m, _d, v, dest) => {
+    thump(t, v, dest, 90, 30, 0.8, 1.3, 0.75);
+    burst(k, t, 0.003, 0.7, 'lowpass', 400, 0.7, 0.35 * v, dest, 90);
   };
   return voices;
 }

@@ -237,7 +237,7 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode, samples: Sample
         case 'stab': brass(t, e.midi, step * 0.9, e.vel, LEVEL.stab, dark, dest, false); break;
         case 'lead': brass(t, e.midi, dur, e.vel, LEVEL.lead * (e.layer === 'finale' ? 0.8 : 1), dark, dest); break;
         case 'heart': heart(t, e.vel, dest); break;
-        default: extra[e.inst]?.(t, e.midi, dur, e.vel, dest);
+        default: extra[e.inst]?.(t, e.midi, dur, e.vel, dest, e.from);
       }
     }
   }

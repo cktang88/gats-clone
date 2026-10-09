@@ -1,74 +1,54 @@
 # Soundtrack credits
 
-The menu and the Plaza play the original Tinwar march. Toy March (original): composed and synthesized for Tinwar; it is synthesized live, so there is no recording.
-Every other map, the Zombies night and the radio-only stations play the recordings below. Each was trimmed, loudness-normalised to
--16 LUFS (true peak -1.5 dBTP) and re-encoded to MP3 for the game; the changes column says what else was done. All are used under the
-licence named, which requires this attribution; none is endorsed by its author.
+Toy March (original) and the map themes: composed for Tinwar and synthesized live in the browser, so there are no recordings of them (docs/music/CRAFT.md says how the themes are written).
+Night Market and the radio-only stations play the recordings below. Each was trimmed, loudness-normalised to -16 LUFS (true peak
+-1.5 dBTP) and re-encoded to MP3 for the game; the changes column says what else was done. All are used under the licence named,
+which requires this attribution; none is endorsed by its author.
+
+## Synthesized themes
+
+| Map | Theme | Tempo and progression |
+| --- | --- | --- |
+| Plaza (and the menu) | "Toy March (original)" | the original seeded toy march |
+| Old Town | "Cobblestone Kolo" | 136 bpm, i-VII-VI-V |
+| Quarry | "Rockfall Phonk" | 144 bpm, i-VI-iv-V |
+| Causeway (harbour) | "Harbour Lights" | 112 bpm, i-VII-VI-VII |
+| Night Market | "We're All Under the Stars" (Eric Skiff (ericskiff.com), a recording, below); its stand-in theme while the file loads is "Lantern Arcade" | 132 bpm, I-V-vi-IV |
+| Museum | "Velvet Rope" | 100 bpm, i-iv-VII-III |
+| Sub Pen | "Deep Contact" | 140 bpm, i-VI-III-VII |
+| Park | "Picnic Parade" | 118 bpm, I-V-vi-IV |
+| Rail Yard | "Freight Boogie" | 126 bpm, I-bVII-IV-I |
+| Summit | "Whiteout" | 128 bpm, i-VI-III-VII |
+| Embassy | "Gala Night" | 116 bpm, ii-V-I-vi |
+| Airbase | "Scramble" | 150 bpm, vi-IV-I-V |
+| Wasteland | "Dust Devil" | 96 bpm, i-VI-VII-V |
+| Shooting Range | "Practice Lane" | 84 bpm, IV-V-iii-vi |
+| Outpost (Zombies) | "Bastion" | day: 112 bpm, I-vi-IV-V; night "Horde Night": 108 bpm, i-iv-VI-V |
+
+## Recordings
 
 | Where | Title | Artist | Licence | Source | Changes | File |
 | --- | --- | --- | --- | --- | --- | --- |
-| Old Town | "Bushwick Tarantella" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1300002 | Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `oldtown.mp3` |
-| Quarry | "Rhinoceros" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1500040 | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `quarry.mp3` |
-| Causeway (harbour) | "Celtic Impulse" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100297 | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `harbor.mp3` |
 | Night Market | "We're All Under the Stars" | Eric Skiff (ericskiff.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://ericskiff.com/music/ | Starts at 0:45 of the original (where the hook comes in), cut to 200 s; trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `market.mp3` |
-| Museum | "Sneaky Snitch" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100772 | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `museum.mp3` |
-| Sub Pen | "Go Cart" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1300006 | Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `subpen.mp3` |
-| Park | "Life of Riley" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1400054 | Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `park.mp3` |
-| Railyard | "Hustle" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100793 | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `railyard.mp3` |
-| Summit | "Hall of the Mountain King" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1200072 | Starts at 0:45 of the original (skipping the quiet opening); trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `summit.mp3` |
-| Embassy | "Spy Glass" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1500058 | Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `embassy.mp3` |
-| Airbase | "Ready Aim Fire" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1500002 | Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `airbase.mp3` |
-| Wasteland | "Neo Western" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100615 | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `wasteland.mp3` |
-| Shooting Range | "Aerosol of my Love" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN2000020 | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `range.mp3` |
-| Outpost / Zombies (day) | "Goblin Tinker Soldier Spy" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN2300001 | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `outpost.mp3` |
-| Outpost / Zombies (night) | "Ossuary 4 - Animate" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1500046 | Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `outpost-night.mp3` |
 | Radio | "Laser Groove" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1700017 | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `groove.mp3` |
 | Radio | "A Night Of Dizzy Spells" | Eric Skiff (ericskiff.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://ericskiff.com/music/ | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `dizzy.mp3` |
 | Radio | "Chibi Ninja" | Eric Skiff (ericskiff.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://ericskiff.com/music/ | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `chibi.mp3` |
 | Radio | "Lewis and Dekalb" | Kevin MacLeod (incompetech.com) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600027 | Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `dekalb.mp3` |
 | Radio | "Wraghstep [v2]" | Of Far Different Nature (opengameart.org) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://opengameart.org/content/huge-loop-box-2-heavy-bass-music-for-action-racing-fighting-rpg-adventure-and-cutscenes | Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3 | `wraghstep.mp3` |
-| Bass-drop sting (big streaks) | "Wraghstep [v2]" | Of Far Different Nature (opengameart.org) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://opengameart.org/content/huge-loop-box-2-heavy-bass-music-for-action-racing-fighting-rpg-adventure-and-cutscenes | A 5.2 s excerpt (9.3 s to 14.5 s, the drop) used as a sting, faded out and loudness-normalised | `drop.mp3` |
+| Bass-drop sting (big streaks over a recording) | "Wraghstep [v2]" | Of Far Different Nature (opengameart.org) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | https://opengameart.org/content/huge-loop-box-2-heavy-bass-music-for-action-racing-fighting-rpg-adventure-and-cutscenes | A 5.2 s excerpt (9.3 s to 14.5 s, the drop) used as a sting, faded out and loudness-normalised | `drop.mp3` |
 
 ## Attribution lines
 
-- "Bushwick Tarantella" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1300002). Modified: Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Rhinoceros" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1500040). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Celtic Impulse" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100297). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
 - "We're All Under the Stars" Eric Skiff (ericskiff.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://ericskiff.com/music/). Modified: Starts at 0:45 of the original (where the hook comes in), cut to 200 s; trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Sneaky Snitch" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100772). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Go Cart" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1300006). Modified: Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Life of Riley" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1400054). Modified: Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Hustle" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100793). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Hall of the Mountain King" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1200072). Modified: Starts at 0:45 of the original (skipping the quiet opening); trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Spy Glass" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1500058). Modified: Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Ready Aim Fire" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1500002). Modified: Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Neo Western" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100615). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Aerosol of my Love" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN2000020). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Goblin Tinker Soldier Spy" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN2300001). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
-- "Ossuary 4 - Animate" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1500046). Modified: Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
 - "Laser Groove" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1700017). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
 - "A Night Of Dizzy Spells" Eric Skiff (ericskiff.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://ericskiff.com/music/). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
 - "Chibi Ninja" Eric Skiff (ericskiff.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://ericskiff.com/music/). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
 - "Lewis and Dekalb" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600027). Modified: Cut to its first 200 s, trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
 - "Wraghstep [v2]" Of Far Different Nature (opengameart.org). Licensed under Creative Commons: By Attribution 4.0 https://creativecommons.org/licenses/by/4.0/ (source: https://opengameart.org/content/huge-loop-box-2-heavy-bass-music-for-action-racing-fighting-rpg-adventure-and-cutscenes). Modified: Trimmed of silence, loudness-normalised to -16 LUFS, faded at the loop point, re-encoded to MP3.
 
-## Why each track
+## Why each recording
 
-- **Old Town**, "Bushwick Tarantella": A breakneck accordion-and-clarinet tarantella: the old European quarter as a street band, bright and catchy, and fast enough to run to.
-- **Quarry**, "Rhinoceros": Semi-8-bit 80s synth pop at full charge: a fat, pumping bass and a chiptune hook that stomps like the diggers and dump trucks in the pit.
-- **Causeway (harbour)**, "Celtic Impulse": A dark, driving folk tune in D Dorian on tin whistle, bouzouki and hammered dulcimer: a sea-shanty pulse for the night harbour.
 - **Night Market**, "We're All Under the Stars": Warm, singable 8-bit melody under neon: the night market as an arcade, catchy from the first bar.
-- **Museum**, "Sneaky Snitch": Tip-toeing pizzicato, oboe and snare: the classic sneaky-heist cue, playful enough for toy soldiers creeping past the exhibits.
-- **Sub Pen**, "Go Cart": Clean, aggressive electronic build with a deep bass drop at 0:58: tension in the pens, then the floor drops out.
-- **Park**, "Life of Riley": Ukulele, glockenspiel and a cheery walk: a city park at dusk, light enough to sit under a firefight.
-- **Railyard**, "Hustle": A rolling 12-bar blues bass riff with organ and drums: the night freight rumbling through the terminus.
-- **Summit**, "Hall of the Mountain King": Grieg's mountain theme, building and accelerating to a full-orchestra frenzy: a blizzard at the summit that keeps getting closer.
-- **Embassy**, "Spy Glass": Cool, timeless spy jazz (vibes, saxes, muted trumpet): the gala band playing on while the agents go to work.
-- **Airbase**, "Ready Aim Fire": An amped-up secret-agent rock theme with a wall of guitars and a crazy drummer: engines spooling, night scramble.
-- **Wasteland**, "Neo Western": Big drums and a twangy, exposed western guitar: the post-apocalyptic settlers' town as a spaghetti-western standoff.
-- **Shooting Range**, "Aerosol of my Love": Relaxed, grooving synths over a laid-back beat: lo-fi practice music for the firing lanes.
-- **Outpost / Zombies (day)**, "Goblin Tinker Soldier Spy": Tuba, melodica and marimba bouncing along ("Ya wants ta make things?"): the Zombies day, building the defences.
-- **Outpost / Zombies (night)**, "Ossuary 4 - Animate": Dark, intense synths and percussion that never settle: the horde night (the heartbeat still thickens over it as the horde grows).
 - **Radio**, "Laser Groove": Radio only: 80s synthwave mutated by trap drums.
 - **Radio**, "A Night Of Dizzy Spells": Radio only: a fast, fizzing chiptune anthem.
 - **Radio**, "Chibi Ninja": Radio only: bright, bouncing chiptune.

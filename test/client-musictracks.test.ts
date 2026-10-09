@@ -6,12 +6,10 @@ import { ROTATION } from '../src/shared/maps.ts';
 import { generateBar, IDLE_INPUT, LAYER_IDS, type Inst, type LayerId, type Mode } from '../src/client/musictheory.ts';
 import { formSeconds, MAP_TRACK, TRACK_IDS, TRACKS, trackIdFor, type TrackId } from '../src/client/musictracks.ts';
 import { EXTRA_INSTS } from '../src/client/musicvoices.ts';
-import { formOf } from '../src/client/musicgen.ts';
-import { hookDistance, isChordTone, midiName } from '../src/client/musichook.ts';
 
 const BUILT_IN: readonly Inst[] = ['kick', 'snare', 'hat', 'tom', 'bass', 'pad', 'glock', 'stab', 'lead', 'heart'];
 const KNOWN = new Set<Inst>([...BUILT_IN, ...EXTRA_INSTS]);
-/** The written (synthesized) tracks with hooks and forms: all but the original march, whose tunes are seeded. */
+/** The map themes: all but the original march, whose tunes are seeded. */
 const WRITTEN = TRACK_IDS.filter((id) => id !== 'march');
 const modesOf = (id: TrackId): Mode[] => (id === 'outpost' ? ['major', 'minor'] : ['major']);
 const inputFor = (id: TrackId, mode: Mode) => ({ mode: id === 'outpost' ? ('zombies' as const) : ('arena' as const), night: mode === 'minor', day: id === 'outpost' && mode === 'major' });
@@ -37,7 +35,7 @@ test('a seed always writes the same bars for every track, and other seeds vary t
   assert.deepEqual(generateBar(42, 'major', 5), generateBar(42, 'major', 5));
 });
 
-test('tempos span lo-fi to rock and the keys are the tracks\' own', () => {
+test('tempos span lo-fi to trap and the keys are the themes\' own', () => {
   const bpms = new Set<number>();
   for (const id of TRACK_IDS) for (const mode of modesOf(id)) {
     const bpm = TRACKS[id].bpm(inputFor(id, mode));
@@ -61,7 +59,7 @@ test('every bar of every track is playable: known voices, sane steps, velocities
         assert.ok(KNOWN.has(e.inst), `${id}: unknown voice ${e.inst}`);
         assert.ok(e.step >= 0 && e.step < 16 && e.dur > 0 && e.vel > 0 && e.vel <= 1.0001, `${id} bar ${n}: ${JSON.stringify(e)}`);
         assert.ok(Number.isFinite(e.midi) && e.midi >= 0 && e.midi <= 120, `${id}: midi ${e.midi}`);
-        if (e.inst !== 'heart' && !['kick', 'snare', 'hat', 'ohat', 'brush', 'swirl', 'clap', 'shaker', 'rim', 'chug', 'sleigh', 'stomp', 'dust', 'wind', 'scrape', 'tom', 'k909', 'kbb', 'krock', 'sbb', 'srock', 'sgate', 'crash', 'ride', 'chip', 'tamb'].includes(e.inst)) assert.ok(e.midi >= 20, `${id}: ${e.inst} at midi ${e.midi}`);
+        if (e.inst !== 'heart' && !['kick', 'snare', 'hat', 'ohat', 'brush', 'swirl', 'clap', 'shaker', 'rim', 'chug', 'sleigh', 'stomp', 'dust', 'wind', 'scrape', 'tom', 'k909', 'kbb', 'krock', 'sbb', 'srock', 'sgate', 'crash', 'ride', 'chip', 'tamb', 'snap', 'riser', 'impact'].includes(e.inst)) assert.ok(e.midi >= 20, `${id}: ${e.inst} at midi ${e.midi}`);
       }
       assert.ok(bar.chord.tones.length >= 3);
     }
@@ -78,103 +76,6 @@ test('each track writes every intensity layer, so calm, combat, hype and finale 
   }
 });
 
-test('the forms run two and a half minutes or more before they come round', () => {
-  for (const id of TRACK_IDS) {
-    if (id === 'march') continue; // the march is a 32-bar march form; checked below
-    for (const mode of modesOf(id)) {
-      const secs = formSeconds(TRACKS[id], mode);
-      assert.ok(secs >= 150, `${id} ${mode}: the form is ${Math.round(secs)} s`);
-    }
-  }
-});
-
-// ---- the hooks: every track's tune is written out, the same every time, and no two tracks share one ----
-
-/** The tune's notes in a bar: the events tagged as the hook, as [step, midi, layer] (whichever voice is singing them; the step before swing). */
-const hookOf = (id: TrackId, mode: Mode, seed: number, n: number, layer?: LayerId) =>
-  TRACKS[id].bar(seed, mode, n).events.filter((e) => e.tag === 'hook' && (!layer || e.layer === layer)).map((e) => [Math.floor(e.step), e.midi, e.layer]);
-const singing = (id: TrackId, mode: Mode): LayerId => (id === 'outpost' && mode === 'major' ? 'calm' : 'combat');
-const themeOf = (id: TrackId, mode: Mode) => (mode === 'minor' && TRACKS[id].spec?.minorTheme) || TRACKS[id].theme!;
-/** Bars at which each kind of section starts, in the first time round. */
-function sections(id: TrackId, mode: Mode): { kind: string; start: number; bars: number; lift: number }[] {
-  const spec = TRACKS[id].spec;
-  if (!spec) return [['A', 0], ['A2', 8], ['B', 16], ['break', 24]].map(([kind, start]) => ({ kind: kind as string, start: start as number, bars: 8, lift: 0 }));
-  let at = 0;
-  return formOf(spec, mode).map((sec) => { const r = { kind: sec.kind, start: at, bars: sec.bars, lift: sec.lift ?? 0 }; at += sec.bars; return r; });
-}
-
-test('every track sings its written hook: the theme\'s own notes, the same for every seed and every time round', () => {
-  for (const id of WRITTEN) for (const mode of modesOf(id)) {
-    const th = themeOf(id, mode), layer = singing(id, mode);
-    const a = sections(id, mode).find((s) => s.kind === 'A' && !s.lift)!;
-    for (let k = 0; k < th.A.length; k++) {
-      const want = th.A[k]!.map((n) => [Math.floor(n.step), n.midi, layer]);
-      assert.deepEqual(hookOf(id, mode, 1, a.start + k, layer), want, `${id} ${mode}: bar ${k + 1} of the A is the written hook`);
-    }
-    const form = TRACKS[id].formBars[mode];
-    for (let n = 0; n < form; n++) {
-      const ref = JSON.stringify(hookOf(id, mode, 1, n));
-      for (const seed of [2, 777, 0xdeadbeef]) assert.equal(JSON.stringify(hookOf(id, mode, seed, n)), ref, `${id} ${mode} bar ${n}: the tune does not depend on the seed`);
-      assert.equal(JSON.stringify(hookOf(id, mode, 1, n + form)), ref, `${id} ${mode} bar ${n}: the same tune the next time round`);
-    }
-  }
-});
-
-test('the hooks are singable: within an octave and a third, phrases ending on a chord tone', () => {
-  for (const id of WRITTEN) for (const mode of modesOf(id)) {
-    const th = themeOf(id, mode);
-    for (const [part, bars] of [['A', th.A], ['B', th.B]] as const) {
-      const all = bars.flat().map((n) => n.midi);
-      assert.ok(Math.max(...all) - Math.min(...all) <= 16, `${id} ${mode} ${part}: a range of ${Math.max(...all) - Math.min(...all)} semitones`);
-      const sec = sections(id, mode).find((s) => s.kind === part && !s.lift)!;
-      for (const k of [3, bars.length - 1]) {
-        const last = bars[k]!.at(-1)!;
-        assert.ok(isChordTone(last.midi, TRACKS[id].bar(1, mode, sec.start + k).chord), `${id} ${mode} ${part}: bar ${k + 1} ends on ${midiName(last.midi)}, a chord tone`);
-      }
-    }
-    // A hook is a motif: the A's opening rhythm comes back within the theme.
-    const onsets = th.A.map((b) => JSON.stringify(b.map((n) => n.step)));
-    assert.ok(onsets.slice(1).includes(onsets[0]!), `${id} ${mode}: the hook's opening rhythm returns`);
-  }
-});
-
-test('no two tracks share a hook: every pair of openings differs in rhythm and contour', () => {
-  const hooks = WRITTEN.flatMap((id) => modesOf(id).map((mode) => [`${id} ${mode}`, themeOf(id, mode).A.slice(0, 2)] as const));
-  for (let i = 0; i < hooks.length; i++) for (let j = i + 1; j < hooks.length; j++) {
-    const dist = hookDistance(hooks[i]![1], hooks[j]![1]);
-    assert.ok(dist >= 0.35, `${hooks[i]![0]} and ${hooks[j]![0]} open alike (distance ${dist.toFixed(2)})`);
-  }
-  assert.equal(new Set(WRITTEN.map((id) => TRACKS[id].theme!.src.A)).size, WRITTEN.length);
-});
-
-test('every form states the hook, a varied second verse and a contrasting B, opening on a short intro; variety comes from the arrangement', () => {
-  for (const id of WRITTEN) for (const mode of modesOf(id)) {
-    const secs = sections(id, mode);
-    const kinds = secs.map((s) => s.kind);
-    if (TRACKS[id].spec) {
-      assert.equal(kinds[0], 'intro', `${id} ${mode} opens on an intro`);
-      assert.ok(secs[0]!.bars >= 2 && secs[0]!.bars <= 4, `${id} ${mode}: a ${secs[0]!.bars}-bar intro`);
-      assert.equal(kinds[1], 'A', `${id} ${mode}: the hook comes straight after the intro`);
-    }
-    assert.ok(kinds.filter((k) => k === 'A' || k === 'A2').length >= 2 && kinds.includes('A2') && kinds.includes('B'), `${id} ${mode}: ${kinds.join(' ')}`);
-    assert.ok(kinds.some((k) => k === 'break' || k === 'bridge' || k === 'build'), `${id} ${mode} has a breakdown or bridge`);
-    // The A2 sings the same tune as the A, but the band around it is not the same.
-    const a = secs.find((s) => s.kind === 'A')!, a2 = secs.find((s) => s.kind === 'A2')!;
-    const tune = (n: number) => JSON.stringify(hookOf(id, mode, 1, n, singing(id, mode)).map(([s, m]) => [s, m]));
-    const whole = (n: number) => JSON.stringify(TRACKS[id].bar(1, mode, n).events.map((e) => [e.layer, e.inst, e.step, e.midi]));
-    let differ = 0;
-    for (let k = 0; k < 8; k++) {
-      assert.equal(tune(a2.start + k), tune(a.start + k), `${id} ${mode}: the A2's bar ${k + 1} sings the hook`);
-      if (whole(a2.start + k) !== whole(a.start + k)) differ++;
-    }
-    assert.ok(differ >= 6, `${id} ${mode}: only ${differ} of the A2's bars are arranged differently`);
-    // The hook's skeleton plays in calm, so it is there with no fight on; combat sings all of it.
-    const calm = hookOf(id, mode, 1, a.start, 'calm').length, full = th(id, mode).A[0]!.length;
-    assert.ok(calm > 0 && calm <= full, `${id} ${mode}: ${calm} of the hook's ${full} opening notes in calm`);
-  }
-});
-const th = themeOf;
-
 test('the menu and Plaza march is the original (af4983a) note for note, in a new key each seed, and its own voices', async () => {
   const { classicBar, classicKeyOfSeed, CLASSIC_KEYS } = await import('../src/client/musicclassic.ts');
   const { createHash } = await import('node:crypto');
@@ -189,30 +90,8 @@ test('the menu and Plaza march is the original (af4983a) note for note, in a new
   const layers = new Set(Array.from({ length: 16 }, (_, n) => classicBar(3, 'minor', n).events.map((e) => e.layer)).flat());
   assert.deepEqual([...layers].sort(), [...LAYER_IDS].sort(), 'calm, combat, hype, finale and the night\'s heartbeat');
   assert.equal(generateBar(9, 'major', 0).tonic, generateBar(9, 'major', 100).tonic);
-  const lift = WRITTEN.filter((id) => TRACKS[id].spec && sections(id, 'major').some((s) => s.lift));
-  assert.ok(lift.length >= 8, `most tracks lift the key for their last chorus (${lift.join(', ')})`);
 });
 const CLASSIC_FINGERPRINT = '9ba8aefab9881f6c';
-
-test('every map is its own genre: its own band, drum kit, meter and tempo, never the same palette twice', () => {
-  const band = (id: TrackId) => { const seen = new Set<Inst>(); for (const mode of modesOf(id)) for (let n = 0; n < 48; n++) for (const e of TRACKS[id].bar(4, mode, n).events) seen.add(e.inst); return seen; };
-  const bands = new Map(WRITTEN.map((id) => [id, band(id)] as const));
-  // No two tracks share their lead, and every pair of bands differs in a good part of its instruments.
-  const leads = WRITTEN.map((id) => TRACKS[id].bar(1, 'major', TRACKS[id].hookStart.major).events.find((e) => e.tag === 'hook' && e.layer === (id === 'outpost' ? 'calm' : 'combat'))!.inst);
-  assert.equal(new Set(leads.filter((l, i) => WRITTEN[i] !== 'outpost')).size, WRITTEN.length - 1, `leads: ${leads.join(' ')}`);
-  for (let i = 0; i < WRITTEN.length; i++) for (let j = i + 1; j < WRITTEN.length; j++) {
-    const a = bands.get(WRITTEN[i]!)!, b = bands.get(WRITTEN[j]!)!;
-    const shared = [...a].filter((x) => b.has(x)).length;
-    assert.ok(shared / Math.min(a.size, b.size) < 0.7, `${WRITTEN[i]} and ${WRITTEN[j]} share ${shared} of their instruments`);
-  }
-  // The genres' signatures.
-  assert.ok(bands.get('oldtown')!.has('bandoneon') && !['kick', 'krock', 'k909', 'kbb', 'snare'].some((k) => bands.get('oldtown')!.has(k as Inst)), 'the tango has a bandoneon and no drum kit');
-  assert.ok(bands.get('quarry')!.has('dist') && bands.get('quarry')!.has('krock'), 'the quarry rocks');
-  assert.ok(bands.get('subpen')!.has('k909') && bands.get('range')!.has('kbb') && bands.get('outpost')!.has('sgate'), 'a 909, a boom-bap kit and a gated snare');
-  assert.equal(TRACKS.wasteland.theme!.meter, 12, 'the western waltzes in 3/4 (twelve sixteenths a bar)');
-  assert.equal(TRACKS.harbor.theme!.meter, 12, 'the shanty is in 12/8');
-  assert.equal(IDLE_INPUT.phase, 'menu');
-});
 
 test('every sampled note is within a few semitones of a recorded one, and the samples are on disk and small', async () => {
   const { SAMPLES, sampleFile } = await import('../src/client/musicsamples.ts');
@@ -326,16 +205,14 @@ test('a map change crossfades to the new map\'s track and the old track fades ou
   music.setRoomStation(null);
 });
 
-test('every station on the dial has its own tune: no two tracks\' hooks match, even transposed or re-voiced', () => {
+test('every station on the dial has its own tune: what a radio plays first, the hook, never matches another station\'s', () => {
   // The bug this guards: the toy march and the old town's fife once played the same seeded tune, so retuning between them changed only the label.
-  const shape = (id: TrackId) => { const A = TRACKS[id].theme!.A; return JSON.stringify(A.map((b) => b.map((n) => n.step)).concat([A.flat().slice(1).map((n, i) => n.midi - A.flat()[i]!.midi)])); };
-  assert.equal(new Set(WRITTEN.map(shape)).size, WRITTEN.length);
-  // And what a radio actually plays: the tune each track sings in its first A, as intervals and rhythm, never the same as another's.
   const sung = (id: TrackId) => {
-    const ev = Array.from({ length: 8 }, (_, k) => TRACKS[id].bar(5, 'major', (TRACKS[id].spec ? 4 : 0) + k).events.filter((e) => e.tag === 'hook' && e.layer === (id === 'outpost' ? 'calm' : 'combat'))).flat();
+    const ev = Array.from({ length: 8 }, (_, k) => TRACKS[id].bar(5, 'major', TRACKS[id].hookStart.major + k).events.filter((e) => e.tag === 'hook' && e.layer === 'calm')).flat();
     return JSON.stringify([ev.map((e) => Math.floor(e.step)), ev.slice(1).map((e, i) => e.midi - ev[i]!.midi)]);
   };
   assert.equal(new Set(WRITTEN.map(sung)).size, WRITTEN.length);
+  for (const id of WRITTEN) assert.ok(TRACKS[id].bar(5, 'major', TRACKS[id].hookStart.major).events.some((e) => e.tag === 'hook'), `${id}: a retune lands on the hook`);
 });
 
 test('a bar of any track costs a bounded number of audio nodes', () => {

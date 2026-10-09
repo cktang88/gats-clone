@@ -1,16 +1,13 @@
 /**
- * The synthesized library: one composition per map, all in the adaptive framework (calm, combat, hype, finale and, for the Zombies night, heart).
- * The menu's and Plaza's march is the original (musicclassic.ts, restored from commit af4983a); the rest are `TrackSpec`s from musictracksa/b/c.ts
- * written by musicgen.ts. Every map but the Plaza now plays a licensed recording (musicstream.ts); these stand in while it loads or if it fails.
+ * The synthesized library: one theme per map, all in the adaptive framework (calm, combat, hype, finale and, for the Zombies night, heart).
+ * The menu's and Plaza's march is the original (musicclassic.ts, restored from commit af4983a); every other map plays its pop theme from
+ * musicthemes.ts, arranged by musicpop.ts to the rules in docs/music/CRAFT.md. Night Market alone plays a recording (Eric Skiff's, musicstream.ts);
+ * its theme stands in while that loads.
  */
-import { generateTrackBar, formBars, formOf } from './musicgen.ts';
-import { AIRBASE, EMBASSY, RAILYARD, RANGE, SUMMIT, WASTELAND, OUTPOST } from './musictracksb.ts';
-import { HARBOR, MARKET, MUSEUM, PARK, SUBPEN } from './musictracksa.ts';
-import { OLDTOWN, QUARRY } from './musictracksc.ts';
-import type { TrackSpec } from './musicgen.ts';
+import { FORM_BARS, INTRO_BARS, popBar, type PopSpec } from './musicpop.ts';
+import { AIRBASE, EMBASSY, HARBOR, MARKET, MUSEUM, OLDTOWN, OUTPOST_DAY, OUTPOST_NIGHT, PARK, QUARRY, RAILYARD, RANGE, SUBPEN, SUMMIT, WASTELAND } from './musicthemes.ts';
 import { tempoFor, type Bar, type Inst, type Mode, type MusicInput } from './musictheory.ts';
 import { CLASSIC_INSTS, classicBar, classicKeyOfSeed } from './musicclassic.ts';
-import type { Theme } from './musichook.ts';
 
 import { TRACK_IDS, type SongId, type StationId, type TrackId } from '../shared/radio.ts';
 export { TRACK_IDS, type SongId, type TrackId };
@@ -28,12 +25,10 @@ export type TrackDef = {
   /** The bell or pluck a kill rings on. */
   sting: Inst;
   bar(seed: number, mode: Mode, barNo: number): Bar;
-  /** Bars before the form repeats, in each mode. */
+  /** Every bar the track can write, in each mode: a theme's intro and one time round its loop. */
   formBars: Record<Mode, number>;
-  /** The track's spec, for the written tracks (the march is generated in musictheory.ts). */
-  spec?: TrackSpec;
-  /** The signature tune: the same notes every time the track plays (musichook.ts). The original march has none: its tunes are seeded. */
-  theme?: Theme;
+  /** The theme in each mode (the Outpost's night has its own); the original march has none: its tunes are seeded. */
+  pop?: Record<Mode, PopSpec>;
   /** 'classic': voiced by musicclassic.ts's own synth (the original march), not the shared rig. */
   voice?: 'classic';
   /** The bar its hook first sounds (after the intro): a radio retune starts the station there, so the tune is heard at once. */
@@ -53,13 +48,11 @@ export function instsOf(id: TrackId): Set<Inst> {
   }
   return seen;
 }
-const firstA = (spec: TrackSpec, mode: Mode) => { let at = 0; for (const s of formOf(spec, mode)) { if (s.kind === 'A') return at; at += s.bars; } return 0; };
-
-const fromSpec = (spec: TrackSpec, label: string, bpm: number | ((i: Pick<MusicInput, 'night' | 'day'>) => number), trim: number, sting: Inst): TrackDef => ({
-  id: spec.id as TrackId, label, tonic: () => spec.tonic, bpm: typeof bpm === 'number' ? () => bpm : bpm, trim, sting,
-  bar: (seed, mode, barNo) => generateTrackBar(spec, seed, mode, barNo),
-  formBars: { major: formBars(formOf(spec, 'major')), minor: formBars(formOf(spec, 'minor')) }, spec, theme: spec.theme,
-  hookStart: { major: firstA(spec, 'major'), minor: firstA(spec, 'minor') },
+/** A map's theme, with its own night (the Outpost) or the same one day and night. Loudness trims are measured in Chrome (scripts/render-music.ts). */
+const fromPop = (spec: PopSpec, trim: number, sting: Inst, night: PopSpec = spec): TrackDef => ({
+  id: spec.id as TrackId, label: spec.label, tonic: () => spec.tonic, bpm: (i) => (i.night ? night.bpm : spec.bpm), trim, sting,
+  bar: (seed, mode, barNo) => popBar(mode === 'minor' ? night : spec, seed, mode, barNo),
+  formBars: { major: FORM_BARS, minor: FORM_BARS }, pop: { major: spec, minor: night }, hookStart: { major: INTRO_BARS, minor: INTRO_BARS },
 });
 
 /** The original march (af4983a): seeded, so each round writes a new one in a new key; its phrases are eight bars and never form a fixed loop. */
@@ -70,20 +63,20 @@ const march = (label: string, trim: number, sting: Inst): TrackDef => ({
 
 export const TRACKS: Record<TrackId, TrackDef> = {
   march: march('Toy March (original)', 1.0, 'glock'),
-  oldtown: fromSpec(OLDTOWN, 'Cobblestone Tango', 118, 1.24, 'piano'),
-  quarry: fromSpec(QUARRY, 'Quarry Rockfall', 144, 0.98, 'od'),
-  harbor: fromSpec(HARBOR, 'Harbour Shanty', 108, 1.07, 'accordion'),
-  market: fromSpec(MARKET, 'Lantern Night', 118, 1.09, 'epiano'),
-  museum: fromSpec(MUSEUM, 'After Hours', 112, 1.11, 'vibes'),
-  subpen: fromSpec(SUBPEN, 'Deep Sonar', 128, 1.64, 'sonar'),
-  park: fromSpec(PARK, 'Picnic Parade', 124, 1.16, 'glock'),
-  railyard: fromSpec(RAILYARD, 'Night Freight', 120, 1.08, 'rbell'),
-  summit: fromSpec(SUMMIT, 'Alpine Bells', 140, 0.97, 'glock'),
-  embassy: fromSpec(EMBASSY, 'Diplomatic Cover', 126, 1.13, 'twang'),
-  airbase: fromSpec(AIRBASE, 'Runway Anthem', 116, 1.06, 'glock'),
-  wasteland: fromSpec(WASTELAND, 'Dust and Wire', 107, 1.21, 'bell'),
-  range: fromSpec(RANGE, 'Practice Lane', 86, 1.53, 'vibes'),
-  outpost: fromSpec(OUTPOST, 'Bastion', (i) => (i.night ? 108 : 112), 1.23, 'marimba'),
+  oldtown: fromPop(OLDTOWN, 1.18, 'bandoneon'),
+  quarry: fromPop(QUARRY, 1.02, 'cowbell'),
+  harbor: fromPop(HARBOR, 1.17, 'accordion'),
+  market: fromPop(MARKET, 1.17, 'chime'),
+  museum: fromPop(MUSEUM, 1.18, 'vibes'),
+  subpen: fromPop(SUBPEN, 1.14, 'sonar'),
+  park: fromPop(PARK, 1.17, 'glock'),
+  railyard: fromPop(RAILYARD, 1.06, 'twang'),
+  summit: fromPop(SUMMIT, 1.04, 'chime'),
+  embassy: fromPop(EMBASSY, 1.2, 'piano'),
+  airbase: fromPop(AIRBASE, 1.2, 'tpt'),
+  wasteland: fromPop(WASTELAND, 0.99, 'steel'),
+  range: fromPop(RANGE, 1.1, 'epiano'),
+  outpost: fromPop(OUTPOST_DAY, 1.1, 'marimba', OUTPOST_NIGHT),
 };
 
 /** Which track plays on which map. Unknown maps (the geometry test room) get the march. */

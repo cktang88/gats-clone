@@ -9,14 +9,15 @@
  * A bass riff is the same shape but its notes name chord degrees, so it follows whatever chord is under it: `1` root, `3` the chord's
  * third, `5` its fifth, `7` its seventh (a minor seventh on a triad), `8` the octave, `2` `4` `6` the major second, fourth and sixth,
  * `@n` n semitones above the root, `^` a semitone under the next bar's root (a walk into the change); a `'` or `,` after one moves it
- * an octave up or down.
+ * an octave up or down, and a `~` after that slides into the note from the one before it (the 808's glide).
  */
 import type { Chord } from './musictheory.ts';
 
-export type HookNote = { step: number; dur: number; midi: number };
+/** `from`: the pitch the note slides in from (an 808 glide), when it has one. */
+export type HookNote = { step: number; dur: number; midi: number; from?: number };
 /** One bar of notes, steps in sixteenths of the bar. */
 export type HookBar = readonly HookNote[];
-export type BassNote = { step: number; dur: number; deg: string; oct: number };
+export type BassNote = { step: number; dur: number; deg: string; oct: number; slide?: boolean };
 export type ThemeSrc = {
   /** Units in a bar: 16 (sixteenths of 4/4) or 12 (eighths of 12/8). */
   meter?: 12 | 16;
@@ -61,10 +62,10 @@ const parseMelody = (src: string, meter: 12 | 16): HookBar[] => tokens(src, mete
 
 function parseBass(src: string, meter: 12 | 16): BassNote[][] {
   return tokens(src, meter, (p) => {
-    const m = /^(@\d+|[1-8^])([',]*)$/.exec(p);
+    const m = /^(@\d+|[1-8^])([',]*)(~?)$/.exec(p);
     if (!m) throw new Error(`not a bass degree: ${p}`);
     const oct = [...m[2]!].reduce((o, c) => o + (c === "'" ? 1 : -1), 0);
-    return { deg: m[1]!, oct };
+    return m[3] ? { deg: m[1]!, oct, slide: true } : { deg: m[1]!, oct };
   }).map((bar) => bar.map(({ step, dur, v }) => ({ step, dur, ...v })));
 }
 
@@ -94,10 +95,13 @@ function degOffset(deg: string, chord: Chord): number {
 export function bassBar(th: Theme, bar: number, chord: Chord, next: Chord, lo: number): HookNote[] {
   const root = lo + mod(chord.rootPc - lo, 12);
   const nextRoot = lo + mod(next.rootPc - lo, 12);
-  return th.bass[bar % th.bass.length]!.map((n) => {
+  const out: HookNote[] = [];
+  for (const n of th.bass[bar % th.bass.length]!) {
     const base = n.deg === '^' ? (Math.abs(nextRoot - 1 - root) <= 6 ? nextRoot - 1 : nextRoot - 1 + (nextRoot > root ? -12 : 12)) : root + degOffset(n.deg, chord);
-    return { step: n.step, dur: n.dur, midi: base + 12 * n.oct };
-  });
+    const prev = out.at(-1);
+    out.push(n.slide && prev ? { step: n.step, dur: n.dur, midi: base + 12 * n.oct, from: prev.midi } : { step: n.step, dur: n.dur, midi: base + 12 * n.oct });
+  }
+  return out;
 }
 
 /** True when `midi` is one of the chord's tones. */

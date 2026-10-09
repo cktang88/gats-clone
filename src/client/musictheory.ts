@@ -17,14 +17,20 @@ export type Inst =
   | 'piano' | 'honky' | 'tpt' | 'horn' | 'bone' | 'timp' | 'bell' | 'pbass' | 'slap' | 'steel' | 'dist' | 'od' | 'organ' | 'bandoneon' | 'violin' | 'fiddle'
   | 'flute' | 'sax' | 'synbrass' | 'choir'
   // Synth leads and basses, and the genre drum kits: a 909, a boom-bap, a rock kit, a gated-reverb snare, cymbals, 8-bit noise, a tambourine.
-  | 'square' | 'saw' | 'synbass' | 'k909' | 'kbb' | 'krock' | 'sbb' | 'srock' | 'sgate' | 'crash' | 'ride' | 'chip' | 'tamb';
+  | 'square' | 'saw' | 'synbass' | 'k909' | 'kbb' | 'krock' | 'sbb' | 'srock' | 'sgate' | 'crash' | 'ride' | 'chip' | 'tamb'
+  // The pop themes' additions (musicpop.ts): an 808 (clean and gritty) that glides, the phonk cowbell, a synth pluck, an eight-bit triangle bass,
+  // a finger snap, and the drop's riser and impact.
+  | 'b808' | 'b808d' | 'cowbell' | 'pluck' | 'tri' | 'snap' | 'riser' | 'impact';
 
 export const STEPS_PER_BAR = 16;
 export const BARS_PER_PHRASE = 8;
 export const MID_C = 60;
 
-/** One note or hit. `step` is in 16ths from the bar's start, `dur` in 16ths, `midi` is ignored by the drums, `tier` thins the heartbeat. */
-export type MusicEvent = { layer: LayerId; inst: Inst; step: number; dur: number; midi: number; vel: number; tier?: 0 | 1 | 2; tag?: 'hook' };
+/**
+ * One note or hit. `step` is in 16ths from the bar's start, `dur` in 16ths, `midi` is ignored by the drums, `tier` thins the heartbeat,
+ * `from` is the pitch an 808 glides in from, and `tag` marks the hook's notes (and a theme's counter-melody) for tests and tools.
+ */
+export type MusicEvent = { layer: LayerId; inst: Inst; step: number; dur: number; midi: number; vel: number; tier?: 0 | 1 | 2; tag?: 'hook' | 'counter'; from?: number };
 export type Chord = { rootPc: number; tones: readonly number[] };
 export type Bar = { barNo: number; mode: Mode; tonic: number; chord: Chord; degree: number; events: MusicEvent[] };
 
