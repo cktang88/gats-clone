@@ -1,13 +1,19 @@
 import type { MapId } from './maps.ts';
 import { RADIO_POOL } from './radiopool.ts';
 
-/** The soundtrack library, one track per map (see src/client/musictracks.ts); a radio tunes between them. */
+/** The soundtrack library, one track per map (see src/client/musictracks.ts and musicstream.ts); a radio tunes between them and the extras. */
 export const TRACK_IDS = ['march', 'oldtown', 'quarry', 'harbor', 'market', 'museum', 'subpen', 'park', 'railyard', 'summit', 'embassy', 'airbase', 'wasteland', 'range', 'outpost'] as const;
 export type TrackId = (typeof TRACK_IDS)[number];
 
+/** Radio-only stations: recorded tracks no map plays (see src/client/musicstream.ts for what and whose they are). */
+export const EXTRA_IDS = ['groove', 'dizzy', 'chibi', 'dekalb', 'wraghstep'] as const;
+export type ExtraId = (typeof EXTRA_IDS)[number];
+/** Anything the director can play: a map's track or a radio-only one. */
+export type SongId = TrackId | ExtraId;
+
 /** What a radio can be tuned to: a track, or off. */
-export type StationId = TrackId | 'off';
-export const STATION_IDS: readonly StationId[] = [...TRACK_IDS, 'off'];
+export type StationId = SongId | 'off';
+export const STATION_IDS: readonly StationId[] = [...TRACK_IDS, ...EXTRA_IDS, 'off'];
 export const isStationId = (v: unknown): v is StationId => typeof v === 'string' && (STATION_IDS as readonly string[]).includes(v);
 
 /** The rooms with a shared radio: the Zombies squad's, and the range (a room of one). The server drops the message anywhere else. */

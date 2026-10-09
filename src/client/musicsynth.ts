@@ -11,17 +11,25 @@ export type Deck = { layers: Record<LayerId, GainNode>; trim: GainNode; fade: Ga
 
 export type Rig = {
   ctx: BaseAudioContext;
-  /** A fresh deck for a track, with the track's loudness `trim`. Dispose it once it has faded out. */
-  newDeck(trim: number): Deck;
+  /**
+   * A fresh deck for a track, with the track's loudness `trim`. Dispose it once it has faded out. A `raw` deck (a finished recording) skips the
+   * synth's compressor and hall, which would squash and blur a mastered mix, but keeps the duck, the dead muffle and the volume.
+   */
+  newDeck(trim: number, raw?: boolean): Deck;
   disposeDeck(deck: Deck): void;
   /** Ducks the layers (not stings or cadences) for big sound effects. */
   duck: GainNode;
   /** The muffle used when you are dead: a lowpass whose cutoff the engine moves. */
   tone: BiquadFilterNode;
+  /** The raw decks' own duck and muffle, moved with `duck` and `tone`. */
+  rawDuck: GainNode;
+  rawTone: BiquadFilterNode;
   /** Music volume and mute; the only node that meets the outside world. */
   volume: GainNode;
   /** Radio sounds (tune-in static, dial clicks): they skip the music's own gate so turning the radio Off still clicks. */
   fx: GainNode;
+  /** Stings and cadences: after the duck, into the tone filter, so a big effect never ducks them. */
+  direct: GainNode;
   /** The sampled instruments, if any: a note whose instrument has loaded plays the sample, any other the synth voice. */
   samples: SampleBank | null;
   playTuneIn(t: number): void;
@@ -77,13 +85,19 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode, samples: Sample
   const fx = ctx.createGain();
   fx.gain.value = 1;
   fx.connect(out);
+  // The recordings' path: their own duck and muffle, straight to the volume (no compressor, no hall).
+  const rawSum = ctx.createGain();
+  const rawDuck = ctx.createGain();
+  const rawTone = ctx.createBiquadFilter();
+  rawTone.type = 'lowpass'; rawTone.frequency.value = 18000; rawTone.Q.value = 0.4;
+  rawSum.connect(rawDuck).connect(rawTone).connect(volume);
 
-  function newDeck(trimGain: number): Deck {
+  function newDeck(trimGain: number, raw = false): Deck {
     const layers = {} as Record<LayerId, GainNode>;
     const trim = ctx.createGain();
     trim.gain.value = trimGain;
     const fade = ctx.createGain();
-    trim.connect(fade).connect(sum);
+    trim.connect(fade).connect(raw ? rawSum : sum);
     for (const id of LAYER_IDS) { layers[id] = ctx.createGain(); layers[id].gain.value = 0; layers[id].connect(trim); }
     return { layers, trim, fade };
   }
@@ -328,5 +342,5 @@ export function createRig(ctx: BaseAudioContext, out: AudioNode, samples: Sample
     click(t + 0.25, 1100);
   }
 
-  return { ctx, newDeck, disposeDeck, duck, tone, volume, fx, samples, playTuneIn, playBar, playSting, playCadence };
+  return { ctx, newDeck, disposeDeck, duck, tone, rawDuck, rawTone, volume, fx, direct, samples, playTuneIn, playBar, playSting, playCadence };
 }

@@ -1,23 +1,25 @@
 /**
- * The soundtrack library: one composition per map, all in the adaptive framework (calm, combat, hype, finale and, for the Zombies night, heart).
- * The plaza's toy march is generated in musictheory.ts; the rest are `TrackSpec`s from musictracksa/b/c.ts written by musicgen.ts, each its own genre.
+ * The synthesized library: one composition per map, all in the adaptive framework (calm, combat, hype, finale and, for the Zombies night, heart).
+ * The menu's and Plaza's march is the original (musicclassic.ts, restored from commit af4983a); the rest are `TrackSpec`s from musictracksa/b/c.ts
+ * written by musicgen.ts. Every map but the Plaza now plays a licensed recording (musicstream.ts); these stand in while it loads or if it fails.
  */
 import { generateTrackBar, formBars, formOf } from './musicgen.ts';
 import { AIRBASE, EMBASSY, RAILYARD, RANGE, SUMMIT, WASTELAND, OUTPOST } from './musictracksb.ts';
 import { HARBOR, MARKET, MUSEUM, PARK, SUBPEN } from './musictracksa.ts';
 import { OLDTOWN, QUARRY } from './musictracksc.ts';
 import type { TrackSpec } from './musicgen.ts';
-import { generateBar, MARCH, MARCH_TONIC, tempoFor, type Bar, type Inst, type Mode, type MusicInput } from './musictheory.ts';
+import { tempoFor, type Bar, type Inst, type Mode, type MusicInput } from './musictheory.ts';
+import { CLASSIC_INSTS, classicBar, classicKeyOfSeed } from './musicclassic.ts';
 import type { Theme } from './musichook.ts';
 
-import { TRACK_IDS, type StationId, type TrackId } from '../shared/radio.ts';
-export { TRACK_IDS, type TrackId };
+import { TRACK_IDS, type SongId, type StationId, type TrackId } from '../shared/radio.ts';
+export { TRACK_IDS, type SongId, type TrackId };
 
 export type TrackDef = {
   id: TrackId;
   /** Shown on the radio. */
   label: string;
-  /** The key the track plays in (every track keeps its own; the seed is accepted for the radio's API but changes nothing). */
+  /** The key the track plays in (every written track keeps its own; the original march takes a new key with each seed). */
   tonic(seed: number): number;
   /** Beats per minute for the moment. */
   bpm(input: Pick<MusicInput, 'mode' | 'night' | 'day'>): number;
@@ -30,8 +32,10 @@ export type TrackDef = {
   formBars: Record<Mode, number>;
   /** The track's spec, for the written tracks (the march is generated in musictheory.ts). */
   spec?: TrackSpec;
-  /** The signature tune: the same notes every time the track plays (musichook.ts). */
-  theme: Theme;
+  /** The signature tune: the same notes every time the track plays (musichook.ts). The original march has none: its tunes are seeded. */
+  theme?: Theme;
+  /** 'classic': voiced by musicclassic.ts's own synth (the original march), not the shared rig. */
+  voice?: 'classic';
   /** The bar its hook first sounds (after the intro): a radio retune starts the station there, so the tune is heard at once. */
   hookStart: Record<Mode, number>;
 };
@@ -40,6 +44,7 @@ const instsSeen = new Map<TrackId, Set<Inst>>();
 /** Every instrument a track plays, in either mode: what to load before it starts (its sampled ones). */
 export function instsOf(id: TrackId): Set<Inst> {
   let seen = instsSeen.get(id);
+  if (!seen && id === 'march') { seen = new Set(CLASSIC_INSTS); instsSeen.set(id, seen); }
   if (!seen) {
     seen = new Set();
     const t = TRACKS[id];
@@ -57,13 +62,14 @@ const fromSpec = (spec: TrackSpec, label: string, bpm: number | ((i: Pick<MusicI
   hookStart: { major: firstA(spec, 'major'), minor: firstA(spec, 'minor') },
 });
 
+/** The original march (af4983a): seeded, so each round writes a new one in a new key; its phrases are eight bars and never form a fixed loop. */
 const march = (label: string, trim: number, sting: Inst): TrackDef => ({
-  id: 'march', label, tonic: () => MARCH_TONIC, bpm: (i) => tempoFor(i), trim, sting,
-  bar: (seed, mode, barNo) => generateBar(seed, mode, barNo), formBars: { major: 32, minor: 32 }, theme: MARCH.theme, hookStart: { major: 0, minor: 0 },
+  id: 'march', label, tonic: (seed) => classicKeyOfSeed(seed), bpm: (i) => tempoFor(i), trim, sting, voice: 'classic',
+  bar: (seed, mode, barNo) => classicBar(seed, mode, barNo), formBars: { major: 32, minor: 32 }, hookStart: { major: 0, minor: 0 },
 });
 
 export const TRACKS: Record<TrackId, TrackDef> = {
-  march: march('Toy March', 1.0, 'glock'),
+  march: march('Toy March (original)', 1.0, 'glock'),
   oldtown: fromSpec(OLDTOWN, 'Cobblestone Tango', 118, 1.24, 'piano'),
   quarry: fromSpec(QUARRY, 'Quarry Rockfall', 144, 0.98, 'od'),
   harbor: fromSpec(HARBOR, 'Harbour Shanty', 108, 1.07, 'accordion'),
@@ -99,7 +105,7 @@ export function formSeconds(t: TrackDef, mode: Mode): number {
  * The track to play: the radio's station if one is tuned, else the map's own. A Zombies night keeps the Bastion's night score (its heartbeat and
  * menace are the night's alarm) whatever the radio says, and the station comes back at dawn; Off stays off, which is silence.
  */
-export function pickTrack(mapTrack: TrackId, station: StationId | null, night: boolean): TrackId {
+export function pickTrack(mapTrack: TrackId, station: StationId | null, night: boolean): SongId {
   if (night && mapTrack === 'outpost' && station !== 'off') return 'outpost';
   return station && station !== 'off' ? station : mapTrack;
 }

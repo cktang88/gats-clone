@@ -5,9 +5,10 @@
  */
 import type { ClientMsg } from '../shared/protocol.ts';
 import { newestSnap } from './interp.ts';
-import { FIXED_RADIO, cycleStation, hiddenRadios, isStationId, RADIO_INTERVAL_MS, RADIO_MODES, RADIO_REACH, roundKeyOf, STATION_IDS, type StationId, type TrackId } from '../shared/radio.ts';
+import { FIXED_RADIO, cycleStation, hiddenRadios, isStationId, RADIO_INTERVAL_MS, RADIO_MODES, RADIO_REACH, roundKeyOf, STATION_IDS, type SongId, type StationId, type TrackId } from '../shared/radio.ts';
 import { beatPulse } from './music.ts';
-import { getMapTrack, getPersonalStation, getRoomStation, getStation, playTuneIn, setPersonalStation, setRoomStation } from './music.ts';
+import { getMapTrack, getPersonalStation, getRoomStation, getStation, musicPrefetch, playTuneIn, setPersonalStation, setRoomStation } from './music.ts';
+import { songLabel, synthFor } from './musicstream.ts';
 import { drawRadio, drawRadioPrompt, drawRadioToast, drawTuneRings } from './radioart.ts';
 import { TRACKS } from './musictracks.ts';
 import type { ClientState, Session } from './state.ts';
@@ -45,8 +46,16 @@ const store = {
 /** How many hidden radios this session has found, counted for a possible future challenge (no XP or medal rides on it yet). */
 export const radioFinds = () => finds;
 
+/** A song's name on the dial: the recording's title and artist, or the synthesized track's name (the original march). */
+export const songName = (song: SongId): string => songLabel(song) ?? TRACKS[synthFor(song)].label;
 /** The station's display name. */
-export const stationLabel = (id: StationId | null, mapTrack: TrackId = getMapTrack()): string => (id === null ? `${TRACKS[mapTrack].label} (map default)` : id === 'off' ? 'Off' : TRACKS[id].label);
+export const stationLabel = (id: StationId | null, mapTrack: TrackId = getMapTrack()): string => (id === null ? `${songName(mapTrack)} (map default)` : id === 'off' ? 'Off' : songName(id));
+
+/** Warms the file of the station one press further round the dial, so the next retune is instant. */
+function prefetchNext(from: StationId | null, withDefault: boolean) {
+  const next = cycleStation(from, withDefault);
+  if (next && next !== 'off') musicPrefetch(next);
+}
 
 /** Where on the dial a station sits, 0..1, for the needle. */
 const dialOf = (id: StationId | null): number => {
@@ -61,6 +70,7 @@ function say(text: string, at: Placed | null, now: number, tone: Toast['tone'] =
 /** A tune-in on a radio: the sound, the rings and the toast. */
 function tuned(r: Placed | null, id: StationId | null, now: number) {
   playTuneIn();
+  prefetchNext(id, !!r?.hidden);
   if (r) r.tunedAt = now;
   say(`Radio: ${stationLabel(id)}`, r, now);
 }
@@ -101,6 +111,7 @@ export function radioUpdate(state: ClientState, now: number, send: (msg: ClientM
     if (isStationId(saved) && saved !== getRoomStation()) send({ t: 'radio', station: saved });
   }
   const me = snap.players.find((p) => p.id === snap.self.id);
+  const wasNear = near;
   near = null;
   if (me && me.alive) {
     let best = RADIO_REACH * RADIO_REACH;
@@ -109,6 +120,8 @@ export function radioUpdate(state: ClientState, now: number, send: (msg: ClientM
       if (d < best) { best = d; near = r; }
     }
   }
+  // Walking up to a radio warms the station its first press would tune to.
+  if (near && near !== wasNear) prefetchNext(near.hidden ? getPersonalStation() : getStation(), near.hidden);
   // A round through a radio makes it sputter.
   for (const r of placed) {
     for (const b of snap.bullets) if ((b.x - r.x) ** 2 + (b.y - r.y) ** 2 < HIT_R * HIT_R) { if (r.sputterUntil < now) playTuneIn(); r.sputterUntil = now + SPUTTER_MS; }

@@ -1,6 +1,7 @@
 import type { createAudio } from './audio.ts';
 import { CONTROLS, TOUCH_NOTES } from './input.ts';
 import { getMusicVolume, isMusicMuted, musicGainNow, setMusicVolume, setSoundMuted, toggleMusicMuted } from './music.ts';
+import { allCredits, MARCH_CREDIT } from './musicstream.ts';
 import { chatterOn, setChatterOn } from './chatter.ts';
 import { copyText } from './menu.ts';
 import { padIntent, type PadSample } from './pausegate.ts';
@@ -60,6 +61,19 @@ const plate = (cls: string, ...kids: (Node | string)[]): HTMLButtonElement => {
 };
 
 let uid = 0;
+
+const link = (href: string, text: string) => { const a = h('a', '', text); a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; };
+
+/** The soundtrack's credits, as each recording's licence asks: title, artist, source, licence and what was changed. */
+function musicCredits(): HTMLElement {
+  const items = allCredits().map((c) => h('li', 'pz-credit',
+    h('strong', '', `"${c.title}"`), ` by ${c.artist}. `, link(c.source, 'Source'), ' · ', link(c.licenceUrl, `Licensed under ${c.licence}`), `. ${c.changes}.`));
+  const box = h('details', 'pz-credits', h('summary', 'pz-h', 'Music credits'),
+    h('p', '', `${MARCH_CREDIT}. Recordings:`), h('ul', '', ...items),
+    h('p', '', 'Full list: ', link('music/tracks/CREDITS.md', 'music/tracks/CREDITS.md')));
+  box.id = 'music-credits';
+  return box;
+}
 
 export function createPauseMenu(hud: HTMLElement, deps: PauseDeps) {
   const { audio } = deps;
@@ -362,6 +376,7 @@ export function createPauseMenu(hud: HTMLElement, deps: PauseDeps) {
   controlsPanel.append(
     h('dl', 'pz-keys', ...CONTROLS.flatMap(([key, what]) => [h('dt', '', h('kbd', '', key)), h('dd', '', what)])),
     h('section', 'pz-touch', h('h3', 'pz-h', 'Touch'), h('ul', '', ...TOUCH_NOTES.map((t) => h('li', '', t)))),
+    musicCredits(),
   );
 
   document.body.append(root);
