@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for gats-clone on 2026-10-09T02:18:24Z
+# fly.toml app configuration file generated for tinwar on 2026-10-09T02:39:41Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
@@ -40,5 +40,5 @@ kill_timeout = '10s'
     path = '/healthz'
 
 [[vm]]
-  size = 'performance-1x'
+  size = 'shared-cpu-4x'
   memory = '1024mb'
