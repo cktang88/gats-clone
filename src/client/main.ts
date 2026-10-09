@@ -8,8 +8,8 @@ import { boundLean, cursorPush, followLook, lookAhead, makeCamera, NO_LOOKCAM, s
 import { LOOK_AHEAD, lookReach } from '../shared/lookahead.ts';
 import { createAudio } from './audio.ts';
 import { musicDuck, musicProbe, musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } from './music.ts';
-import { mountRadioButton, onRoomRadio, radioDebug, radioPress, radioUpdate } from './radio.ts';
-import { mountPickupButton, noteGains, pickupUpdate } from './pickups.ts';
+import { mountRadioButton, onRoomRadio, radioPress, radioUpdate } from './radio.ts';
+import { noteGains } from './pickups.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { walks } from '../shared/sim/movement.ts';
 import { isDeployed, rangeFor } from '../shared/sim/stats.ts';
@@ -721,8 +721,6 @@ function drawFrame(realNow: number) {
   const me = snap.players.find((p) => p.id === s.myId);
   const eye = me?.alive || me?.downed ? me : snap.players.find((p) => p.id === snap.royale?.watch);
   if (eye) s.lastSelf = { x: eye.x, y: eye.y };
-  // A cabinet in reach shows its E prompt, unless E belongs to a radio there or to build mode.
-  pickupUpdate(latest, me?.alive ? me : null, state.phase === 'playing' && s === sessionOf(state), s.building || radioDebug().near !== null);
   // The camera leans toward your aim; the aim, the crosshair and the HUD all map through this same camera, so the gun still points at the cursor.
   const lean = stepLean(s, snap, me, eye, realNow);
   const look = delight.look({ x: s.lastSelf.x + lean.x, y: s.lastSelf.y + lean.y }, snap.self.viewRadius || WORLD.viewRadius, realNow);
@@ -1133,8 +1131,6 @@ emoteButton.addEventListener('pointerdown', (e) => { e.preventDefault(); wheel.t
 hudEl.append(emoteButton);
 /** A phone's way to tap a radio's prompt. */
 mountRadioButton(hudEl, () => radioPress(state, performance.now(), sendRadio));
-/** A phone's E for a cabinet in reach: held while the button is. */
-mountPickupButton(hudEl, () => held.add('use'), () => held.delete('use'));
 /** On the account's join anniversary your soldier wears a party hat (and `?party` shows it for a look). */
 async function checkAnniversary(account: string | null) {
   if (params.has('party')) { setParty(true); return; }

@@ -3,15 +3,14 @@
  * - the gain popups: whatever you just took (a health pack's +hp, an ammo pack's +rounds, the ability back, a golden gun) pops up over
  *   your own soldier as small toy chips, an icon and a number on a gunmetal plate, and rises and fades. What lands at once shares a row
  *   (and a second pack of the same kind adds to its chip); a later pickup starts a new row under it and lifts the older ones. Only you see
- *   your own: nobody else's gains are on your wire (sim/snapshot.ts);
- * - the E prompt over a standing medical cabinet or ammo crate in reach ("E · Open medical cabinet"), the radio's keycap prompt, and on a
- *   phone an OPEN button where the radio's sits. E (the `use` key) opens it; walking over the pack it leaves takes it, with no key at all.
+ *   your own: nobody else's gains are on your wire (sim/snapshot.ts).
+ * There is no key for supplies: a standing medical cabinet or ammo crate opens by itself as you come up to it needing what it holds, and a
+ * pack on the floor is taken by walking over it (sim/props.ts).
  */
-import { PROP_FX, PROP_KINDS, PROPS, WORLD } from '../shared/defs.ts';
-import type { GameEvent, PropView, Snapshot } from '../shared/protocol.ts';
+import { WORLD } from '../shared/defs.ts';
+import type { GameEvent, Snapshot } from '../shared/protocol.ts';
 import { celPart, polygon, roundBox } from './cel.ts';
 import { INK, shade } from './palette.ts';
-import { drawKeyPrompt } from './radioart.ts';
 
 // ---------------------------------------------------------------------------------------------------------------- gain popups
 
@@ -195,76 +194,7 @@ export function drawGains(ctx: CanvasRenderingContext2D, now: number, self: { x:
   drawGainRows(ctx, rows, now, self.x, self.y - WORLD.playerRadius - 30, reduced);
 }
 
-// ---------------------------------------------------------------------------------------------------------------- the E prompt
+/** The popups showing; for tests and the dev probe. */
+export const pickupDebug = () => ({ rows: rows.map((r) => r.chips.map((c) => chipLabel(c))) });
 
-export type Cabinet = { id: number; kind: 'medic' | 'ammo'; x: number; y: number };
-
-const CABINET_LABEL = { medic: 'Open medical cabinet', ammo: 'Open ammo crate' } as const;
-
-/** The standing cabinet nearest `me` within its E reach (`PROP_FX[kind].openR`, a few px short so the prompt never promises what the server refuses), or null. */
-export function nearCabinet(props: readonly PropView[] | undefined, me: { x: number; y: number }): Cabinet | null {
-  let best: Cabinet | null = null, bestD = Infinity;
-  for (const [id, k, x, y, state] of props ?? []) {
-    const kind = PROP_KINDS[k];
-    if ((kind !== 'medic' && kind !== 'ammo') || state < 1 || state > 10) continue;
-    const reach = PROP_FX[kind].openR - 4;
-    const d = (x - me.x) ** 2 + (y - me.y) ** 2;
-    if (d <= reach * reach && d < bestD) { best = { id, kind, x, y }; bestD = d; }
-  }
-  return best;
-}
-
-/** Whether opening `c` would give you anything now: a health pack while hurt, an ammo pack with rounds spent or the ability cooling. */
-export function cabinetUseful(c: Pick<Cabinet, 'kind'>, self: { hp: number; maxHp: number; ammo: number; mag: number; abilityCooling: boolean }): boolean {
-  return c.kind === 'medic' ? self.hp < self.maxHp - 1 : self.ammo < self.mag || self.abilityCooling;
-}
-
-let near: Cabinet | null = null;
-let useful = true;
-let touchBtn: HTMLButtonElement | null = null;
-const touchScreen = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-
-/**
- * Works out the cabinet in reach for the prompt, once a frame. `me` is your drawn place; `blocked` when E belongs to something else
- * (a radio in reach, build mode), so the prompt never claims a key that will not open it.
- */
-export function pickupUpdate(snap: Snapshot | null, me: { x: number; y: number } | null, playing: boolean, blocked: boolean) {
-  const self = snap?.players.find((p) => p.id === snap.self.id);
-  near = snap && me && playing && !blocked && self?.alive ? nearCabinet(snap.props, me) : null;
-  if (near && snap && self) useful = cabinetUseful(near, { hp: self.hp, maxHp: self.maxHp, ammo: snap.self.ammo, mag: snap.self.mag, abilityCooling: !!snap.self.ability && snap.self.abilityReadyIn > 0 });
-  syncTouch();
-}
-
-/** The prompt over the cabinet in reach, over the night shade. A cabinet that would give you nothing now still opens, its prompt quieter. */
-export function drawPickupOverlay(ctx: CanvasRenderingContext2D, now: number, reduced: boolean) {
-  if (!near) return;
-  ctx.save();
-  ctx.globalAlpha = useful ? 1 : 0.62;
-  drawKeyPrompt(ctx, near.x, near.y - PROPS[near.kind].size / 2 - 38, now, CABINET_LABEL[near.kind], touchScreen ? 'TAP' : 'E', reduced, 1.45);
-  ctx.restore();
-}
-
-/** A phone's E: an OPEN button where the radio's sits, shown only while a cabinet is in reach. `hold` and `release` press and let go of `use`. */
-export function mountPickupButton(parent: HTMLElement, hold: () => void, release: () => void) {
-  if (!touchScreen || touchBtn) return;
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'touch-use';
-  b.textContent = 'OPEN';
-  b.style.cssText = 'display:none;position:fixed;right:176px;bottom:204px;min-width:64px;height:42px;padding:0 12px;z-index:12;border-radius:22px;border:2px solid rgba(255,90,31,.85);background:rgba(19,21,25,.72);color:#ffe6a6;font:800 14px var(--display);touch-action:none;box-shadow:0 0 0 3px rgba(255,90,31,.22)';
-  b.addEventListener('pointerdown', (e) => { e.preventDefault(); hold(); });
-  for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) b.addEventListener(type, release);
-  parent.append(b);
-  touchBtn = b;
-}
-
-function syncTouch() {
-  if (!touchBtn) return;
-  touchBtn.style.display = near ? 'block' : 'none';
-  if (near) touchBtn.setAttribute('aria-label', CABINET_LABEL[near.kind]);
-}
-
-/** What the prompt shows; for tests and the dev probe. */
-export const pickupDebug = () => ({ near: near && { ...near, label: CABINET_LABEL[near.kind], useful }, rows: rows.map((r) => r.chips.map((c) => chipLabel(c))) });
-
-export const __test = { reset() { rows = []; rowsFor = -1; near = null; useful = true; } };
+export const __test = { reset() { rows = []; rowsFor = -1; } };

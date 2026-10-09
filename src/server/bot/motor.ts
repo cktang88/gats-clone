@@ -12,7 +12,6 @@ import { hazardState, hazardsOf, propToShoot, seenProps, shotWouldHurtMe } from 
 import { BLIND_AT, focus, type Perception, type Threat } from './awareness.ts';
 import { sightBlocked } from '../../shared/sim/vision.ts';
 import { justLost, lane, type Intent, type IntentCtx } from './intent.ts';
-import { inOpenReach } from './supplies.ts';
 import { hiddenFromSeen } from './tactics.ts';
 import { between, clearShot, dist, findPath, isOpen, walkable, type Point } from './nav.ts';
 import { boltCue, DODGE_AT, dangerTo, dodgeLeg, dodgeStyle, nextDodge, weave, type Dodge, type DodgeStyle } from './evade.ts';
@@ -924,8 +923,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     nav: c.arena.nav.serial, door: doorOnWay(me, way.at, c.arena, snap.doors), ...(watch && faceAt === watch && { watching: true }),
   };
   return {
-    // E on the cabinet it walked up to (supplies.ts): the same `use` a person's key sends.
-    input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: intent.k === 'resupply' && !t && inOpenReach(me, intent, snap.props), sprint },
+    input: { ...keys, angle, fire, shots, reload, ability, aimDist, use: false, sprint },
     motor: {
       ...walked(m, me, way.at, drive, way.route, v.tick, way.replanned, crawling),
       stance, detour, siegeStep: null, tending: null, engaged, engagedSeen: t ? v.tick : m.engagedSeen, aim, shots, ...(tap && { tap }),

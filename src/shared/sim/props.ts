@@ -119,22 +119,28 @@ function pulse(w: World, q: Prop) {
 }
 
 /**
- * Gives pack `q` to `p` if they need it, and says what they got (a `gain` event, only the rounds and health that landed). A health pack
- * is not taken at full health, and an ammo pack not with a full magazine and the ability ready: it stays for whoever does need it.
+ * Whether `p` would get anything from pack `q` now: a health pack is not wanted at full health, an ammo pack not with a full magazine and the
+ * ability ready. A pack nobody needs stays for whoever does.
  */
-function takePack(w: World, q: Prop, p: Player): boolean {
+function needsPack(w: World, q: Prop, p: Player): boolean {
   const life = p.life;
   if (life.k !== 'alive') return false;
   const stats = effectiveStats(p);
+  return q.kind === 'medic' ? life.hp < stats.maxHp - 1 : life.ammo < stats.mag || w.now < p.abilityReadyAt;
+}
+
+/** Gives pack `q` to `p` if they need it (`needsPack`), and says what they got (a `gain` event, only the rounds and health that landed). */
+function takePack(w: World, q: Prop, p: Player): boolean {
+  const life = p.life;
+  if (life.k !== 'alive' || !needsPack(w, q, p)) return false;
+  const stats = effectiveStats(p);
   if (q.kind === 'medic') {
-    if (life.hp >= stats.maxHp - 1) return false;
     const was = life.hp;
     // In the player's own scale: a person's health counts `HP_MULTIPLIER` times a bot's, so their pack does too (the same share of either).
     life.hp = Math.min(stats.maxHp, life.hp + PROP_FX.medic.heal * HP_MULTIPLIER[p.kind]);
     w.events.push({ e: 'gain', id: p.id, from: 'medic', hp: Math.round(life.hp - was) });
   } else {
     const cooling = w.now < p.abilityReadyAt;
-    if (life.ammo >= stats.mag && !cooling) return false;
     const rounds = Math.max(0, stats.mag - life.ammo);
     life.ammo = stats.mag;
     life.reloadUntil = null;
@@ -156,13 +162,14 @@ function tryPickup(w: World, q: Prop, order: readonly Player[]) {
 }
 
 /**
- * E at a standing cabinet: the first player within `openR` pressing use opens it, as a shot would (it is theirs), and takes the pack at once
- * if they need it; if not, the pack lies for whoever does. Space, the ability, opens nothing.
+ * A standing cabinet opens by itself for the first living player in the tick's turn order who comes within `openR` of its centre and needs
+ * what it holds (`needsPack`): it breaks open as a shot would (it is theirs) and they take the pack at once. `openR` reaches a body pressed to
+ * any side of it, corners too, with some room to spare, so brushing past is enough. Anyone who would get nothing walks by and it stays shut.
  */
 function tryOpen(w: World, q: Prop, order: readonly Player[]) {
   const R = PROP_FX[q.kind as 'medic' | 'ammo'].openR;
   for (const p of order) {
-    if (p.life.k !== 'alive' || !p.input.use || dist2(p.x, p.y, q.x, q.y) > R * R) continue;
+    if (p.life.k !== 'alive' || dist2(p.x, p.y, q.x, q.y) > R * R || !needsPack(w, q, p)) continue;
     q.hp = 0;
     q.by = { attacker: p.id, team: p.team };
     setOff(w, q, { attacker: p, team: p.team }, { x: q.x - p.x, y: q.y - p.y });

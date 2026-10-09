@@ -1,8 +1,8 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HP_MULTIPLIER, PROP_FX, PROP_KINDS, PROPS, WORLD, type PropKind } from '../src/shared/defs.ts';
-import type { GameEvent, PropView } from '../src/shared/protocol.ts';
+import { HP_MULTIPLIER, PROP_FX, PROPS, WORLD, type PropKind } from '../src/shared/defs.ts';
+import type { GameEvent } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { damageProp } from '../src/shared/sim/props.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
@@ -11,7 +11,7 @@ import type { Player, Prop, World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { actionForKey, CONTROLS } from '../src/client/input.ts';
-import { addGain, chipLabel, drawGainRows, GAIN, GAIN_LIFE_MS, gainsOf, nearCabinet, rowAlpha, rowLift, sweepGains, type GainRow } from '../src/client/pickups.ts';
+import { addGain, chipLabel, drawGainRows, GAIN, GAIN_LIFE_MS, gainsOf, rowAlpha, rowLift, sweepGains, type GainRow } from '../src/client/pickups.ts';
 import { emptyWorld, hpOf, press, spawnAt, TICK_MS } from './helpers.ts';
 
 function propAt(w: World, kind: PropKind, x: number, y: number): Prop {
@@ -124,56 +124,121 @@ test('a person\'s health pack heals in their own scale: twice a bot\'s, as their
   assert.deepEqual(g.map((x) => x.hp), [PROP_FX.medic.heal * HP_MULTIPLIER.human], 'the popup reads the same number the health counter gains');
 });
 
-// ---- E: a standing cabinet
+// ---- a standing cabinet opens by itself for whoever needs it
 
-test('E beside a standing cabinet opens it and hands over what it holds at once; standing there without E does nothing', () => {
+test('a hurt player walking up to a medical cabinet opens it and is healed at once, with no key', () => {
   const w = emptyWorld();
   const cab = propAt(w, 'medic', 1000, 1000);
-  const me = spawnAt(w, 1000 - PROPS.medic.size / 2 - WORLD.playerRadius - 2, 1000);
+  const me = spawnAt(w, 600, 1000);
   hurt(me, 40); noRegen(me);
-  runEvents(w, 1000);
-  assert.equal(cab.phase, 'stand', 'a cabinet is not opened by walking up to it');
-  press(w, me, { use: true });
-  const events = runEvents(w, TICK_MS * 2);
+  press(w, me, { right: true });
+  const events: GameEvent[] = [];
+  let openedAt: number | null = null;
+  for (let t = 0; t < 3000 && cab.respawnAt === null; t += TICK_MS) {
+    step(w, TICK_MS);
+    events.push(...w.events);
+    if (cab.respawnAt !== null) openedAt = me.x;
+  }
   assert.ok(cab.respawnAt !== null, 'opened and its pack taken');
+  assert.ok(openedAt !== null && 1000 - openedAt <= PROP_FX.medic.openR + 1, 'it opens as the body comes in reach');
+  assert.ok(openedAt !== null && 1000 - openedAt >= PROPS.medic.size / 2 + WORLD.playerRadius - 1, 'before the body is in the cabinet');
   assert.equal(hpOf(me), 40 + PROP_FX.medic.heal);
-  assert.deepEqual(gains(events, me.id).map((g) => g.from), ['medic']);
+  assert.deepEqual(gains(events, me.id).map(({ from, hp }) => ({ from, hp })), [{ from: 'medic', hp: PROP_FX.medic.heal }]);
   assert.ok(events.some((e) => e.e === 'prop' && e.kind === 'medic' && e.k === 'pop'), 'it breaks open as a shot one does');
 });
 
-test('E at a cabinet out of reach, or Space beside one, opens nothing; Space is still the ability and E the use key', () => {
+test('a full-health player walking past, or standing pressed to it, leaves a medical cabinet standing', () => {
+  const w = emptyWorld();
+  const cab = propAt(w, 'medic', 1000, 1000);
+  const me = spawnAt(w, 600, 1000 + PROPS.medic.size / 2 + WORLD.playerRadius + 4);
+  press(w, me, { right: true });
+  const events = runEvents(w, 3000);
+  assert.ok(me.x > 1100, 'walked right past it');
+  assert.equal(cab.phase, 'stand', 'still shut');
+  assert.equal(cab.respawnAt, null);
+  assert.equal(gains(events, me.id).length, 0);
+  spawnAt(w, 1000 - PROPS.medic.size / 2 - WORLD.playerRadius - 2, 1000);
+  runEvents(w, 1000);
+  assert.equal(cab.phase, 'stand', 'nobody who needs it, nothing opens');
+});
+
+test('an ammo crate opens for a player short of rounds or with the ability cooling, and not for one who is full', () => {
+  const w = emptyWorld();
+  const cab = propAt(w, 'ammo', 1000, 1000);
+  const full = spawnAt(w, 1000 - PROPS.ammo.size / 2 - WORLD.playerRadius - 2, 1000);
+  runEvents(w, 600);
+  assert.equal(cab.phase, 'stand', 'a full magazine and the ability ready: it stays shut');
+  const mag = effectiveStats(full).mag;
+  if (full.life.k === 'alive') full.life.ammo = 3;
+  const events = runEvents(w, TICK_MS * 2);
+  assert.ok(cab.respawnAt !== null, 'opened and taken');
+  assert.equal(full.life.k === 'alive' && full.life.ammo, mag);
+  assert.deepEqual(gains(events, full.id).map(({ from, ammo }) => ({ from, ammo })), [{ from: 'ammo', ammo: mag - 3 }]);
+  // Only the ability cooling is enough too.
+  const w2 = emptyWorld();
+  const crate = propAt(w2, 'ammo', 1000, 1000);
+  const you = spawnAt(w2, 1000, 1000 - PROPS.ammo.size / 2 - WORLD.playerRadius - 2);
+  you.perks = { ...you.perks, 3: 'grenade' };
+  you.abilityReadyAt = w2.now + 9000;
+  const g = gains(runEvents(w2, TICK_MS * 2), you.id);
+  assert.ok(crate.respawnAt !== null);
+  assert.deepEqual(g.map(({ ammo, ability }) => ({ ammo, ability })), [{ ammo: undefined, ability: true }]);
+});
+
+test('E is no longer needed, nor does it open anything: E and Space by a full player\'s cabinet leave it shut; out of reach it stays shut', () => {
   const w = emptyWorld();
   const cab = propAt(w, 'ammo', 1000, 1000);
   const far = spawnAt(w, 1000 + PROP_FX.ammo.openR + 8, 1000);
-  press(w, far, { use: true });
+  if (far.life.k === 'alive') far.life.ammo = 0;
   runEvents(w, 500);
   assert.equal(cab.phase, 'stand', 'out of reach');
   const near = spawnAt(w, 1000, 1000 - PROPS.ammo.size / 2 - WORLD.playerRadius - 2);
-  if (near.life.k === 'alive') near.life.ammo = 0;
-  press(w, near, { ability: true });
+  press(w, near, { use: true, ability: true });
   runEvents(w, 500);
-  assert.equal(cab.phase, 'stand', 'Space picks nothing up');
+  assert.equal(cab.phase, 'stand', 'E and Space open nothing for a player who needs nothing');
   assert.equal(actionForKey('Space'), 'ability');
   assert.equal(actionForKey('KeyE'), 'use');
   const help = new Map(CONTROLS);
-  assert.match(help.get('E')!, /pick|open/i, 'the controls page says what E opens');
+  assert.doesNotMatch(help.get('E')!, /cabinet|crate|open/i, 'the controls page no longer says E opens cabinets');
+  assert.match(help.get('E')!, /radio/i, 'E is still the radio key');
   assert.doesNotMatch(help.get('Space')!, /pick/i);
 });
 
-test('a cabinet opened with E by someone who does not need it leaves its pack for whoever does', () => {
+test('a full player beside a cabinet does not open it for a hurt one, and of two hurt players only one gets it', () => {
   const w = emptyWorld();
   const cab = propAt(w, 'medic', 1000, 1000);
   const full = spawnAt(w, 1000 - 50, 1000);
-  press(w, full, { use: true });
-  const events = runEvents(w, 200);
+  const hurtOne = spawnAt(w, 1000 + 50, 1000);
+  hurt(hurtOne, 30); noRegen(hurtOne);
+  const events = runEvents(w, TICK_MS * 2);
+  assert.ok(cab.respawnAt !== null);
+  assert.equal(gains(events, full.id).length, 0);
+  assert.equal(hpOf(hurtOne), 30 + PROP_FX.medic.heal);
+  assert.equal(hpOf(full), effectiveStats(full).maxHp);
+  // Two in need on the same tick: the first in the tick's turn order takes it, the other is left as they were.
+  const w2 = emptyWorld();
+  const cab2 = propAt(w2, 'medic', 1000, 1000);
+  const a = spawnAt(w2, 1000 - 50, 1000), b = spawnAt(w2, 1000 + 50, 1000);
+  hurt(a, 30); noRegen(a); hurt(b, 30); noRegen(b);
+  const ev = runEvents(w2, TICK_MS);
+  assert.ok(cab2.respawnAt !== null);
+  assert.equal(gains(ev, a.id).length + gains(ev, b.id).length, 1, 'one pack, one taker');
+  assert.deepEqual([hpOf(a), hpOf(b)].sort((x, y) => x - y), [30, 30 + PROP_FX.medic.heal]);
+});
+
+test('a cabinet shot open still leaves its pack on the floor', () => {
+  const w = emptyWorld();
+  const by = spawnAt(w, 3000, 3000);
+  const cab = propAt(w, 'medic', 1000, 1000);
+  damageProp(w, cab, 1000, { attacker: by, team: by.team }, { x: 1, y: 0 });
+  runEvents(w, 200);
   assert.equal(cab.phase, 'spent');
   assert.equal(cab.respawnAt, null, 'the pack lies on the floor');
-  assert.equal(gains(events, full.id).length, 0, 'nothing shown for nothing taken');
 });
 
 // ---- bots, under the same rules
 
-test('a hurt bot with nobody to fight walks to a medical cabinet, opens it with E and is healed', () => {
+test('a hurt bot with nobody to fight walks to a medical cabinet, which opens for it with no E, and is healed', () => {
   const w = emptyWorld();
   const cab = propAt(w, 'medic', 1400, 1500);
   const bot = spawnAt(w, 1000, 1500, { loadout: { weapon: 'assault' }, kind: 'bot' });
@@ -189,7 +254,7 @@ test('a hurt bot with nobody to fight walks to a medical cabinet, opens it with 
     setInput(w, bot.id, Math.round(t / TICK_MS) + 1, d.input);
     step(w, TICK_MS);
   }
-  assert.ok(used, 'it pressed E');
+  assert.ok(!used, 'it never pressed E');
   assert.notEqual(cab.phase, 'stand', 'the cabinet is open');
   assert.equal(hpOf(bot), 40 + PROP_FX.medic.heal, 'and the health is the bot\'s');
 });
@@ -210,7 +275,7 @@ test('a healthy bot leaves cabinets alone', () => {
   assert.equal(cab.phase, 'stand');
 });
 
-// ---- the client: popups and the prompt
+// ---- the client: popups
 
 test('your gains become popups: one row per pickup, a same-kind gain in the same moment sums, a later one lifts the older rows', () => {
   const events: GameEvent[] = [
@@ -260,12 +325,4 @@ test('a popup draws each chip on a plate with its icon colour and its number, ov
   assert.ok(texts.some((t) => t.s === '+30' && t.fill === '#8ff0c4'), 'health in heal mint');
   assert.ok(texts.some((t) => t.s === '+12' && t.fill === '#ffb347'), 'rounds in lamp amber');
   assert.ok(fills.includes('#3d4450'), 'on a gunmetal plate');
-});
-
-test('the E prompt finds the standing cabinet in reach, never a pack or one too far', () => {
-  const medic = PROP_KINDS.indexOf('medic'), ammo = PROP_KINDS.indexOf('ammo'), lamp = PROP_KINDS.indexOf('lamp');
-  const props: PropView[] = [[1, medic, 1000, 1000, 10], [2, ammo, 1200, 1000, 11], [3, lamp, 1040, 1000, 10]];
-  assert.deepEqual(nearCabinet(props, { x: 1050, y: 1000 }), { id: 1, kind: 'medic', x: 1000, y: 1000 });
-  assert.equal(nearCabinet(props, { x: 1000 + PROP_FX.medic.openR, y: 1000 }), null, 'past its reach');
-  assert.equal(nearCabinet(props, { x: 1200, y: 1040 }), null, 'a pack is walked over, not opened');
 });

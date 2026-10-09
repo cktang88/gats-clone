@@ -1,11 +1,12 @@
-import { PROP_FX, PROP_KINDS, PROPS, WORLD } from '../../shared/defs.ts';
+import { PROP_KINDS, PROPS, WORLD } from '../../shared/defs.ts';
 import type { Snapshot } from '../../shared/protocol.ts';
 import { dist, type Point } from './nav.ts';
 
 /**
  * Supplies as a bot sees them: a pack on the floor it needs (it walks over it, as a person does, and the sim hands it over), or a standing
- * cabinet of the kind it needs (it walks up to its near face and presses E, the same `use` a person's key sends). Only with nobody to fight:
- * a bot never breaks off a fight for a pack. A hurt bot wants a health pack, a bot with half a magazine or its ability cooling an ammo pack.
+ * cabinet of the kind it needs (it walks up to its near face; the cabinet opens by itself for anyone who needs it, as for a person, see
+ * sim/props.ts). Only with nobody to fight: a bot never breaks off a fight for a pack. A hurt bot wants a health pack, a bot with half a
+ * magazine or its ability cooling an ammo pack.
  */
 export type Supply = { id: number; at: Point; open: boolean };
 
@@ -15,7 +16,7 @@ export const SUPPLY_PX = 650;
 const HURT = 0.75;
 /** An ability cooling at least this much longer (ms) is worth a walk to an ammo crate. */
 const ABILITY_WAIT_MS = 6000;
-/** A bot stands this far off a cabinet's centre to open it: its body against the face, well inside the E reach. */
+/** A bot heads for this far off a cabinet's centre: its body against the face, well inside the reach (`PROP_FX.openR`) where it opens. */
 const STAND_OFF = (side: 'medic' | 'ammo') => PROPS[side].size / 2 + WORLD.playerRadius + 12;
 
 /** The supply `me` should fetch now, or null. `open` says whether a spot is walkable ground (the bot's nav grid). */
@@ -46,11 +47,3 @@ export function supplyFor(snap: Snapshot, me: Point & { hp: number; maxHp: numbe
   return best;
 }
 
-/** Whether a bot heading for `s` is close enough to press E on it this tick. */
-export function inOpenReach(me: Point, s: Supply | null, props: Snapshot['props']): boolean {
-  if (!s?.open) return false;
-  const q = props?.find((v) => v[0] === s.id);
-  if (!q || q[4] < 1 || q[4] > 10) return false;
-  const kind = PROP_KINDS[q[1]] as 'medic' | 'ammo';
-  return dist(me, { x: q[2], y: q[3] }) <= PROP_FX[kind].openR - 6;
-}

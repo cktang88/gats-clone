@@ -42,7 +42,7 @@ export const CONTROLS: readonly [string, string][] = [
   ['1-9, 0', 'Pick perk or evolution'],
   ['B', 'Zombies: build by day; 1-9 pick (1 again, Q or the wheel steps wall tiers), right click takes down'],
   ['U', 'Zombies: upgrade the wall, turret or utility under the cursor (or nearest, outside build mode)'],
-  ['E', 'Open a medical cabinet or ammo crate beside you; beside a radio, change its station; Zombies: hold to revive, repair or reload'],
+  ['E', 'Beside a radio, change its station; Zombies: hold to revive, repair or reload'],
   ['Walk over', 'Pick up a health or ammo pack (automatic, and only when you need it)'],
   ['L', 'Shooting range: open the loadout panel (any gun, evolution, armor and perk)'],
   ['Tab', 'Hold for the whole leaderboard'],
@@ -60,7 +60,7 @@ export const TOUCH_NOTES: readonly string[] = [
   'Left thumb moves; push the stick out to its outer ring to sprint.',
   'Right thumb aims and fires while it is held.',
   'Reload and the ability have their own buttons; GG opens the emote wheel, then tap a plate.',
-  'Walk over a health or ammo pack to take it; beside a cabinet, tap OPEN (where the radio button shows).',
+  'Walk up to a medical cabinet or ammo crate when you need it and it opens by itself; walk over a pack to take it.',
   'The cog in the top corner opens this menu.',
 ];
 

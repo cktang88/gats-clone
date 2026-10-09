@@ -92,7 +92,7 @@ export type Plan =
   | { k: 'search'; at: Point; giveUpAt: number; committed?: boolean }
   /** Flashed: blind until it wears off. `spray` fires at where the enemy last was, `fallBack` backs away from it, `hold` stands its ground. */
   | { k: 'blinded'; mode: 'spray' | 'fallBack' | 'hold'; at: Point }
-  /** Off to a pack on the floor (walking over it takes it) or a cabinet (`open`: it stands at `at` and presses E), with nobody to fight. */
+  /** Off to a pack on the floor (walking over it takes it) or a cabinet (`open`: it walks to `at`, against a face, and it opens as the bot comes in reach), with nobody to fight. */
   | { k: 'resupply'; at: Point; id: number; open: boolean };
 
 export type Intent = Plan & { since: number; holdUntil: number };
