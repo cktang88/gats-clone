@@ -18,7 +18,7 @@
  * - `swingMs`: the cosmetic swing from the sprint carry up to the aim.
  * - walk speed and sprint speed, from the whole load carried: the gun (its weight, plus a little for its length) and the armor.
  *
- * A pinpoint (scoped) gun's kick, cap, decay, sway and standing share are scaled by `SCOPE` (the sight picture is lost and found again, not
+ * A pinpoint (scoped) gun's kick, cap, decay (against its own recovery formula, `scopeRecover`), sway and standing share are scaled by `SCOPE` (the sight picture is lost and found again, not
  * just the muzzle moved; planted behind the glass it settles back on the target better than a hip gun), and a bolt-action's further by
  * `BOLT` (working the bolt breaks the cheek weld). Those are the only factors that are not physics;
  * everything a gun's role needs beyond them lives in its rules (bursts, bipods, rev-up, falloff, the pellet pattern) and in the handful of
@@ -75,8 +75,12 @@ export const HANDLING = {
   shape: { at: 2, weight: 0.45, min: 1.3, max: 3.4 },
   /** cap = cap0 x energy^e / weight^w: the most bloom a spray can stack (radians: a held trigger at range is a bad idea) */
   cap: { at: 0.125, energy: 0.3, weight: 0.3 },
-  /** decay = cap / recover, recover = recover0 x weight^w x length^l ms (a heavy gun takes longer to bring back on) */
-  recover: { at: 190, weight: 0.5, length: 0.3 },
+  /**
+   * decay = cap / recover, recover = recover0 x weight^w x length^l ms: a heavy, long gun takes longer to bring back on (its moment of inertia,
+   * so length counts for more than weight). An SMG comes back in half the time it took under the old 190 x weight^0.5 x length^0.3, an
+   * assault rifle in 0.65 of it, an LMG or the Minigun in about 0.77: a small gun stabilises far quicker than a big one.
+   */
+  recover: { at: 123, weight: 0.6, length: 0.7 },
   /** still = still0 / weight^w, clamped: standing grows most of the moving bloom (a rifle 0.85 of it, the heaviest MG 0.6) */
   still: { at: 0.85, weight: 0.25, min: 0.6, max: 0.95 },
   /** The post-sprint bloom opens spread to this many times the gun's moving spread (every gun alike; how long it lasts is `settle`). */
@@ -93,6 +97,12 @@ export const HANDLING = {
    * they are tuned to: `kick` x `kick.at` and `cap` x `cap.at` are a sniper's own, and `still` x `still.at` its planted share.
    */
   SCOPE: { kick: (8.2 * 0.0049) / 0.0068, cap: (1.4 * 0.056) / 0.125, recover: 6.7, sway: 1.85, still: 0.5 / 0.85 },
+  /**
+   * A scoped gun's recovery is the sight picture found again, not the muzzle brought back, so it keeps a formula of its own: `SCOPE.recover`
+   * times the hip guns' old one (190 x weight^0.5 x length^0.3 ms), then `BOLT.recover` for a bolt-action. A sniper's slow per-shot settle
+   * (2.4 s for the Bolt-action) does not move when the hip guns' recovery is tuned.
+   */
+  scopeRecover: { at: 190, weight: 0.5, length: 0.3 },
   BOLT: { kick: 3.8, cap: 1, recover: 1.6, sway: 1, still: 1 },
   /**
    * Load (kg) = gun kg + gun cm x `perCm` + armor kg. Walk speed (share of base) = `top` - `perKg` x load, never under `floor`. The share
@@ -128,7 +138,8 @@ export function handlingOf(b: Build): Handling {
   const cadence = Math.max(1, b.rps / H.REF.rps) ** H.kick.rate;
   const kick = round(H.kick.at * e ** H.kick.energy / (m ** H.kick.weight * l ** H.kick.length) * cadence * scope.kick * bolt.kick, 5);
   const cap = round(H.cap.at * e ** H.cap.energy / m ** H.cap.weight * scope.cap * bolt.cap, 4);
-  const recoverMs = Math.round(H.recover.at * m ** H.recover.weight * l ** H.recover.length * scope.recover * bolt.recover);
+  const rec = b.pinpoint ? H.scopeRecover : H.recover;
+  const recoverMs = Math.round(rec.at * m ** rec.weight * l ** rec.length * scope.recover * bolt.recover);
   const shape = round(Math.min(H.shape.max, Math.max(H.shape.min, H.shape.at / m ** H.shape.weight)), 2);
   const hill = inertia ** H.settle.n / (inertia ** H.settle.n + H.settle.mid ** H.settle.n);
   return {

@@ -4,12 +4,12 @@
 // own bloom are the sim's, and the Machine Pistol carries a real stage-1 punch.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { EVOLUTIONS, GUN_IDS, GUNS, roundsPerSec, rulesOf, WORLD, type GunId } from '../src/shared/defs.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS, handlingOfGun, roundsPerSec, rulesOf, WORLD, type GunId } from '../src/shared/defs.ts';
 import { IDLE_INPUT } from '../src/shared/sim/world.ts';
 import type { InputState } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
-import { easedSpread, spreadFor } from '../src/shared/sim/stats.ts';
-import { bloomShare, sprayCap } from '../src/shared/sim/trigger.ts';
+import { easedSpread, easeSpread, spreadFor } from '../src/shared/sim/stats.ts';
+import { bloomShare, pullTrigger, sprayCap } from '../src/shared/sim/trigger.ts';
 import { NO_FIRING, settle, stepTrigger, type TriggerInput } from '../src/client/fire.ts';
 import { fireRhythm, ownBloom } from '../src/server/bot/motor.ts';
 import { emptyWorld, equip, press, run, spawnAt, TICK_MS } from './helpers.ts';
@@ -114,7 +114,10 @@ test('tapping stays tight: single taps never bloom past the first round, and eac
     const tap = rulesOf(GUNS[gun]).bloom!.tap;
     const bursts = held(gun, { tap: { rounds: tap, gapMs: 500 }, rounds: 4 * tap });
     for (let i = 0; i < bursts.length; i += tap) assert.ok(bursts[i]! <= first * 1.001, `${gun}: tap ${i / tap + 1} of ${tap} starts at ${bursts[i]!.toFixed(4)}, not ${first.toFixed(4)}`);
-    assert.ok(Math.max(...bursts) <= held(gun, { rounds: tap })[tap - 1]! * 1.001, `${gun}: and no tap blooms past a fresh one`);
+    // A rev-up gun's fresh spray fires its first rounds slower than the bloom's settle and cools a hair between them, so its later taps (the
+    // gun still part spun) may land a whisker past it.
+    const slack = rulesOf(GUNS[gun]).spinUp ? 1.01 : 1.001;
+    assert.ok(Math.max(...bursts) <= held(gun, { rounds: tap })[tap - 1]! * slack, `${gun}: and no tap blooms past a fresh one`);
   }
   // A burst flies on its first round's cone, and the burst guns recover between bursts: a held Battle Rifle or Carbine never blooms.
   for (const gun of ['battleRifle', 'carbine', 'machinePistol'] as const) {
@@ -178,4 +181,48 @@ test('the Machine Pistol sits in its class band: more damage a magazine and a se
   assert.ok(dps('machinePistol') >= 0.9 * dps('handCannon'), 'it trades with its sibling, the Hand Cannon');
   const hits = (id: GunId) => Math.ceil(WORLD.baseHp / GUNS[id].damage - 1e-9);
   assert.ok(hits('machinePistol') <= hits('pistol') && hits('machinePistol') <= GUNS.machinePistol.burst!.count + 1, 'a burst and a round drop the unarmored');
+});
+
+/**
+ * The expected hits a second over the first two seconds of fire on a standing body `d` px away, the shooter standing and aiming dead on: each
+ * round's odds are the body's half-width over the cone it flew with (rounds spread evenly across the cone), through the sim's own trigger,
+ * spread and easing. `burst` fires that many rounds and lets go for `pauseMs` between them; without it the trigger is held.
+ */
+function hitsPerSec(gun: GunId, d: number, burst?: { rounds: number; pauseMs: number }): number {
+  const g = GUNS[gun], half = Math.atan(WORLD.playerRadius / d);
+  const s = { ammo: g.mag, reloadUntil: null as number | null, nextFireAt: 0, burstLeft: 0, pressUntil: -Infinity, spray: 0, firedAt: -Infinity, spin: 0 };
+  let hist: number[] = [], spreadShot = 0, inBurst = 0, restUntil = -Infinity, was = false, hits = 0;
+  for (let now = 0; now < 2000; now += TICK_MS) {
+    const fire = now >= restUntil, pressed = fire && !was;
+    was = fire;
+    const fired = pullTrigger(s, { def: g, mag: g.mag, reloadMs: g.reloadMs, armed: true }, { fire, reload: false, pressed }, now, TICK_MS);
+    const shot = fired ? s.spray : s.spray + 1, at = (k: number) => spreadFor(gun, {}, true, k);
+    hist = easeSpread(hist, at(shot), shot > spreadShot && hist.length > 0 ? at(shot) - at(spreadShot) : 0);
+    spreadShot = shot;
+    if (!fired) continue;
+    hits += Math.min(1, half / easedSpread(hist));
+    if (burst && ++inBurst >= burst.rounds) { inBurst = 0; restUntil = now + TICK_MS + burst.pauseMs; }
+  }
+  return hits / 2;
+}
+
+test('bursting beats spraying at range, spraying wins up close, and the bloom comes down fast on a small gun and slower on a big one', () => {
+  // At 450 px four rounds and a 150 ms let-go land more a second than a held trigger: the bloom is back down by the next burst.
+  for (const gun of ['assault', 'lmg'] as const) {
+    for (const d of [450, 750]) {
+      const held = hitsPerSec(gun, d), burst = hitsPerSec(gun, d, { rounds: 4, pauseMs: 150 });
+      assert.ok(burst > held, `${gun} at ${d} px: bursts land ${burst.toFixed(2)} a second, a held trigger ${held.toFixed(2)}`);
+    }
+  }
+  assert.ok(hitsPerSec('assault', 450, { rounds: 4, pauseMs: 150 }) > 1.2 * hitsPerSec('assault', 450), 'an assault rifle bursts clearly better');
+  // Up close the cone swallows the bloom and the held trigger's rate wins.
+  for (const gun of ['assault', 'smg', 'lmg'] as const) {
+    assert.ok(hitsPerSec(gun, 150) > hitsPerSec(gun, 150, { rounds: 4, pauseMs: 150 }), `${gun}: spraying wins at 150 px`);
+  }
+  // A full spray's heat clears in half the time on an SMG it takes on an LMG (from its build: a light, short gun is brought back fastest).
+  const recover = (id: GunId) => rulesOf(GUNS[id]).bloom!.recoverMs;
+  assert.ok(recover('smg') < 0.5 * recover('lmg') && recover('skirmisher') < 0.5 * recover('minigun'), `SMG ${recover('smg')} ms, LMG ${recover('lmg')} ms`);
+  // The scoped guns keep their slow per-shot settle: a sniper's bloom takes its seconds to come back down whatever the hip guns are tuned to.
+  const scoped: Partial<Record<GunId, number>> = { sniper: 2984, longshot: 3884, piercer: 3834, artillery: 3834, semiAuto: 1593, ghost: 1594, repeater: 1257 };
+  for (const [id, ms] of Object.entries(scoped)) assert.equal(handlingOfGun(GUNS[id as GunId]).recoverMs, ms, `${id} recovers as it did`);
 });

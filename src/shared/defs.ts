@@ -111,18 +111,23 @@ type BloomSpec = { free: number; tap: number; settleMs: number };
 export type RuleSpec = Omit<GunRules, Derived | 'bloom'> & { bloom: BloomSpec | null };
 
 const STEADY: RuleSpec = { steadyMs: 0, plant: 'never', bloom: null, spinUp: null, viewMul: 1, pinpoint: false, suppress: 0, muzzleBoost: 4, falloff: null, deploy: null, shoveMul: 1, breach: false };
+/**
+ * A full-auto class's bloom `settleMs` sits just past the longest gap between held rounds of any gun in it (the Heavy SMG's and Ripper's 100 ms,
+ * the Juggernaut's 133 ms at full spin, the assault rifle's 133 ms, each on the 30 Hz tick), so a held trigger never cools between rounds but a
+ * let-go one starts cooling at once: a short pause between bursts is not spent waiting for the bloom to start coming down.
+ */
 export const GUN_RULES: Record<WeaponId, RuleSpec> = {
   // Sidearm: settles fast off a sprint and no worse on the run than standing.
   pistol: { ...STEADY, suppress: 0.04, bloom: { free: 5, tap: 5, settleMs: 160 } },
   // Rusher: no penalty for moving, the post-sprint bloom settles fast, bloom comes quickly and the rounds fade hard past ~350 px.
-  smg: { ...STEADY, suppress: 0.05, bloom: { free: 1, tap: 4, settleMs: 120 }, falloff: { startPx: 180, endPx: 380, minMul: 0.3 } },
+  smg: { ...STEADY, suppress: 0.05, bloom: { free: 1, tap: 4, settleMs: 105 }, falloff: { startPx: 180, endPx: 380, minMul: 0.3 } },
   // Door-breaker: the blast fades past 130 px, shoves, and a pellet that strikes a swing door blows it open.
   shotgun: { ...STEADY, suppress: 0.02, falloff: { startPx: 170, endPx: 400, minMul: 0.3 }, shoveMul: 1.5, breach: true, bloom: { free: 2, tap: 5, settleMs: 300 } },
   // Anchor: laser-straight standing and tapping, drifting if sprayed or run with, slow to settle off a sprint.
-  assault: { ...STEADY, steadyMs: 120, suppress: 0.08, bloom: { free: 1, tap: 3, settleMs: 150 } },
+  assault: { ...STEADY, steadyMs: 120, suppress: 0.08, bloom: { free: 1, tap: 3, settleMs: 140 } },
   sniper: { ...STEADY, steadyMs: 450, plant: 'always', viewMul: 1.28, pinpoint: true, suppress: 0.3, muzzleBoost: 0.4, bloom: { free: 1, tap: 1, settleMs: 400 } },
   // Suppression: revs up, plants down for a tight lane, pins whoever it fires near, and is slow to run with or settle off a sprint.
-  lmg: { ...STEADY, steadyMs: 200, plant: 'atRange', suppress: 0.16, bloom: { free: 1, tap: 4, settleMs: 200 }, spinUp: { startMul: 1.5, upMs: 350, downMs: 600 } },
+  lmg: { ...STEADY, steadyMs: 200, plant: 'atRange', suppress: 0.16, bloom: { free: 1, tap: 4, settleMs: 140 }, spinUp: { startMul: 1.5, upMs: 350, downMs: 600 } },
 };
 
 

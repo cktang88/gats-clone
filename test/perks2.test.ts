@@ -114,7 +114,7 @@ test('Steady Hands: bloom builds 40% slower, recovers 60% faster, and the settle
   assert.ok(bloomAt(steady, 6) < bloomAt(plain, 6) && bloomAt(steady, 6) > spreadFor('assault', plain, true, 1), 'it builds slower, but builds');
   assert.equal(bloomRecoverMul(steady), 1.6);
   const sprayAfter = (recover: number) => {
-    const s: TriggerState = { ammo: 30, reloadUntil: null, nextFireAt: 0, burstLeft: 0, pressUntil: -Infinity, spray: 8, firedAt: -10_000, spin: 0 };
+    const s: TriggerState = { ammo: 30, reloadUntil: null, nextFireAt: 0, burstLeft: 0, pressUntil: -Infinity, spray: 18, firedAt: -10_000, spin: 0 };
     for (let i = 0; i < 2; i++) pullTrigger(s, { def: GUNS.assault, mag: 30, reloadMs: 2000, armed: true, bloomRecover: recover }, { pressed: false, fire: false, reload: false }, i * TICK_MS, TICK_MS);
     return s.spray;
   };

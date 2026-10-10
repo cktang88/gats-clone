@@ -31,6 +31,8 @@ function watch(w: World, bots: Map<number, BotMemory>, ms: number, window: numbe
 }
 
 const reversals = (h: readonly Sample[]) => h.slice(1).filter((s, i) => s.kx * h[i]!.kx + s.ky * h[i]!.ky < 0).length;
+/** The farthest it got from where the window began. */
+const reach = (h: readonly Sample[]) => Math.max(...h.map((s) => Math.hypot(s.x - h[0]!.x, s.y - h[0]!.y)));
 const net = (h: readonly Sample[]) => Math.hypot(h[h.length - 1]!.x - h[0]!.x, h[h.length - 1]!.y - h[0]!.y);
 
 test('squad bots never flip their keys back and forth in place around the Bastion', () => {
@@ -51,7 +53,9 @@ test('bots never shuffle along a wall for seconds without getting anywhere', () 
   const stuck: string[] = [];
   watch(w, bots, 70_000, 90, (name, h) => {
     const pressing = h.filter((s) => s.kx || s.ky).length / h.length, walled = h.filter((s) => s.wall).length / h.length;
-    if (pressing > 0.8 && walled > 0.8 && net(h) < 40) stuck.push(`${name} at ${h[0]!.x.toFixed(0)},${h[0]!.y.toFixed(0)}`);
+    // Stuck is going nowhere the whole time: a bot strafing a duel to and fro along a wall it brushes (200 px each way) ends near where it
+    // began but has been somewhere.
+    if (pressing > 0.8 && walled > 0.8 && reach(h) < 40) stuck.push(`${name} at ${h[0]!.x.toFixed(0)},${h[0]!.y.toFixed(0)}`);
   });
   assert.deepEqual([...new Set(stuck)].slice(0, 3), []);
 });
