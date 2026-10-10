@@ -572,6 +572,8 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       case 'flashburst': cues.push({ id: 'flashbang', x: ev.x, y: ev.y, self: false, gain: 1, r: 0 }); break;
       case 'airdrop': cues.push(...airdropCues(ev, next, me?.name)); break;
       case 'prop': cues.push(propCue(ev, me)); break;
+      // An armor pack taken chimes like a cabinet's pack, at your ear when it was yours.
+      case 'pack': cues.push({ id: 'prop:pickup', x: ev.x, y: ev.y, self: me !== undefined && Math.hypot(me.x - ev.x, me.y - ev.y) < 60, gain: 1 }); break;
       // A target clatters down and pings back up on its spring.
       case 'target': cues.push(ev.k === 'down' ? { id: 'impact:crate', x: ev.x, y: ev.y, self: false, gain: 1 } : { id: 'tink', x: ev.x, y: ev.y, self: false, gain: 0.6 }); break;
       case 'slash': cues.push({ id: 'slash', x: ev.x, y: ev.y, self: ev.owner === next.self.id, gain: 1 }); break;

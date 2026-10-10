@@ -1,4 +1,4 @@
-import { hordeCount, isBoss, NIGHTS, nightOf, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type ZombieKind } from '../defs.ts';
+import { ARMORS, hordeCount, isBoss, NIGHTS, nightOf, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
@@ -243,13 +243,16 @@ function placeAtCore(w: World, p: Player) {
   p.y = at.y;
 }
 
-/** The night is held: the run goes on, past the Tide too (the room pays Held the Line for that one), and every squad player down or out stands up free. */
+/**
+ * The night is held: the run goes on, past the Tide too (the room pays Held the Line for that one), and every squad player down or out stands up free.
+ * Bites wear armor as bullets do, and the outpost has no armor packs, so the squad re-kits at dawn: whoever is standing gets a full pool again.
+ */
 function dawn(w: World, run: Run) {
   run.scrap += run.survivors * ZOM.scrapPerSurvivor;
   run.night++;
   run.phase = { k: 'day', endsAt: w.now + ZOM.dayMs };
   for (const p of w.players.values()) {
-    if (p.life.k === 'alive') continue;
+    if (p.life.k === 'alive') { p.life.armor = ARMORS[p.loadout.armor].points; continue; }
     placeAtCore(w, p);
     p.life = freshLife(p, w.now);
   }

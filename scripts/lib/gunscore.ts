@@ -1,4 +1,4 @@
-import { ARMORS, EVOLUTIONS, GUN_IDS, GUNS, WEAPON_IDS, WORLD, type ArmorId, type GunId } from '../../src/shared/defs.ts';
+import { armorShare, EVOLUTIONS, GUN_IDS, GUNS, WEAPON_IDS, WORLD, type ArmorId, type GunId } from '../../src/shared/defs.ts';
 import { addPlayer } from '../../src/shared/sim.ts';
 import { effectiveStats, falloffMul, spreadFor } from '../../src/shared/sim/stats.ts';
 import { pullTrigger } from '../../src/shared/sim/trigger.ts';
@@ -62,7 +62,7 @@ export function ttkMs(id: GunId, d: number, armor: ArmorId, still: boolean): num
   let dealt = 0;
   const first = heldLong.get(id)![0]?.at ?? 0;
   for (const shot of heldLong.get(id)!) {
-    dealt += g.pellets * hitShare(id, d, still, shot.spray) * roundDamage(id, d) * (1 - ARMORS[armor].blockFrac);
+    dealt += g.pellets * hitShare(id, d, still, shot.spray) * roundDamage(id, d) * (1 - armorShare(armor));
     if (dealt >= WORLD.baseHp - 1e-9) return shot.at - first;
   }
   return null;

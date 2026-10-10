@@ -3,7 +3,7 @@
 import { availableParallelism } from 'node:os';
 import { parseArgs } from 'node:util';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
-import { ARMOR_IDS, ARMORS, GUNS, WORLD, type GunId } from '../src/shared/defs.ts';
+import { ARMOR_IDS, armorShare, GUNS, WORLD, type GunId } from '../src/shared/defs.ts';
 import { duel, DUEL_CAP_MS, type DuelResult, type DuelSpec } from './lib/duel.ts';
 import { median } from './lib/stats.ts';
 import { gunsOfStage, TREE_ORDER } from './lib/gunscore.ts';
@@ -83,7 +83,7 @@ if (!isMainThread) {
   console.log(`  ${'gun'.padEnd(16)}${ARMOR_IDS.map((x) => x.padStart(8)).join('')}`);
   for (const id of TREE_ORDER) {
     const g = GUNS[id];
-    const cells = ARMOR_IDS.map((x) => String(kill((g.damage + (g.blast?.damage ?? 0)) * (1 - ARMORS[x].blockFrac))).padStart(8)).join('');
+    const cells = ARMOR_IDS.map((x) => String(kill((g.damage + (g.blast?.damage ?? 0)) * (1 - armorShare(x)))).padStart(8)).join('');
     console.log(`  ${`${'  '.repeat(g.stage)}${g.name}`.padEnd(16)}${cells}${g.pellets > 1 ? `  [${g.pellets}]` : ''}`);
   }
 }

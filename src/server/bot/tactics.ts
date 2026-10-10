@@ -4,13 +4,13 @@
  * the cover he went behind, which a person pre-aims), whether a fight is one to take (`fightOdds`), whom to shoot first (`rankThreats`), and
  * whether a corner it means to come round is held (`holdsAngle`). Everything here comes from what the bot's own view showed it: no wallhacks.
  */
-import { ARMORS, GUNS, WORLD, type GunId } from '../../shared/defs.ts';
+import { armorShare, GUNS, WORLD, type GunId } from '../../shared/defs.ts';
 import type { Rect } from '../../shared/sim/movement.ts';
 import { falloffMul } from '../../shared/sim/stats.ts';
 import { TICK_MS, wrapAngle } from './aim.ts';
 import type { Awareness, Perception, Threat } from './awareness.ts';
 import { clearShot, dist, type Point } from './nav.ts';
-import { BOT_VIEW_ASPECT } from '../../shared/protocol.ts';
+import { BOT_VIEW_ASPECT, type PlayerView } from '../../shared/protocol.ts';
 import { screenDist } from '../../shared/lookahead.ts';
 
 /** An enemy as the bot last saw him: where, facing which way, whether he stood (or crept) still, and the tick his reload ends (if he was reloading). */
@@ -112,6 +112,9 @@ function dps(gun: GunId, d: number, blockFrac: number): number {
   return perMs * 1000 * (cycle / (cycle + def.reloadMs));
 }
 
+/** The share of a hit `p`'s armor stops as their view shows it: none once its pool reads empty (`ap` 0), the tier's share otherwise. */
+const shareOf = (p: Pick<PlayerView, 'armorTier' | 'ap'>): number => armorShare(p.armorTier, p.ap ?? 255);
+
 /** How long a turn from facing `angle` round to `at` takes a person (or a bot) before his first aimed round: a reaction plus the turn. */
 const OFF_ANGLE_MS = 320;
 
@@ -122,7 +125,7 @@ const OFF_ANGLE_MS = 320;
  */
 export function fightOdds(v: Perception, t: Threat, seen: readonly Sighting[]): number {
   const me = v.me, him = t.p, d = Math.max(30, t.d);
-  const mine = dps(me.gun, d, ARMORS[him.armorTier].blockFrac), his = dps(him.gun, d, ARMORS[me.armorTier].blockFrac);
+  const mine = dps(me.gun, d, shareOf(him)), his = dps(him.gun, d, shareOf(me));
   // Health by share of a full bar.
   let toKillHim = ((WORLD.baseHp * him.hp) / Math.max(1, him.maxHp) / Math.max(1e-3, mine)) * 1000;
   let toKillMe = ((WORLD.baseHp * me.hp) / Math.max(1, me.maxHp) / Math.max(1e-3, his)) * 1000;

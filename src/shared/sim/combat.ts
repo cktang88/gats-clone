@@ -1,4 +1,4 @@
-import { ARMORS, BOT_DAMAGE_TO_HUMAN, GUNS, KNOCK, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
+import { armorBlock, BOT_DAMAGE_TO_HUMAN, GUNS, KNOCK, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
 import { blastDoors } from './doors.ts';
 import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
 import { flightSec, flownAfter } from './ballistics.ts';
@@ -65,8 +65,9 @@ export function damagePlayer(w: World, victim: Player, amount: number, src: Dama
   if (src.via === 'blast' && hasPerk(victim, 'demolitions')) amount *= PERK_RULES.demolitions.takenMul;
   if (w.now < life.windUntil) amount *= PERK_RULES.secondWind.damageMul;
   const felt = amount;
+  // Armor wears by the hit as fired, whoever fired it, so the bot/person rule scales only the health that gets through.
+  if (!src.piercing) ({ amount, points: life.armor } = armorBlock(victim.loadout.armor, life.armor, amount));
   amount *= kindMul;
-  if (!src.piercing) amount *= 1 - ARMORS[victim.loadout.armor].blockFrac;
   const fromFull = before >= stats.maxHp;
   const pinned = life.suppression;
   life.hp -= amount;

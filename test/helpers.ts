@@ -21,6 +21,7 @@ export function emptyWorld(mode: ModeId = 'FFA'): World {
   w.crates = [];
   w.barrels = [];
   w.props = [];
+  w.packs = [];
   w.airdrops = { due: [], flight: null };
   return w;
 }

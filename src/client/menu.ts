@@ -77,7 +77,7 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
     const cost = a.blockFrac
       ? [el('small', {}, `+${Math.round(a.blockFrac * 100)}% ${opts.gear ? 'block' : 'dmg blocked'}`), el('small', {}, `−${speed}% speed`)]
       : [el('small', {}, 'Full speed')];
-    const b = el('button', { type: 'button', className: 'tile armor', title: a.blockFrac ? `${a.name}: blocks ${Math.round(a.blockFrac * 100)}% of damage, ${speed}% slower` : `${a.name}: no armor, full speed` }, el('b', {}, a.name), meter, ...cost);
+    const b = el('button', { type: 'button', className: 'tile armor', title: a.blockFrac ? `${a.name}: blocks ${Math.round(a.blockFrac * 100)}% of each hit until it has stopped ${a.points} damage (armor packs refill it), ${speed}% slower` : `${a.name}: no armor, full speed` }, el('b', {}, a.name), meter, ...cost);
     b.onclick = () => set({ ...get(), armor: id });
     return [id, b] as const;
   });

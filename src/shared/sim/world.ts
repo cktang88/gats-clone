@@ -9,6 +9,7 @@ import { circleBlocked, dist2, type Knock, type Rect } from './movement.ts';
 import type { ZAi } from './boids.ts';
 import { newRoyale } from './royale.ts';
 import { newRange, type RangeSim } from './targets.ts';
+import { loadPacks } from './packs.ts';
 
 /** `door` names the door a leaf belongs to; such leaves never go on the wire (see `sim/doors.ts`). */
 export type Wall = WallView & { expiresAt: number; door?: string };
@@ -17,6 +18,8 @@ export type Life =
   | {
     k: 'alive';
     hp: number;
+    /** Points left in this life's armor pool (`ARMORS`); full at every fresh life and refilled by an armor pack. */
+    armor: number;
     ammo: number;
     reloadUntil: number | null;
     nextFireAt: number;
@@ -54,7 +57,7 @@ export type Life =
     tracks: Record<number, number>;
   }
   /** Out of the fight until a squadmate holds use beside them for `ZOM.reviveMs`, or dead at `bleedOutAt`. */
-  | { k: 'downed'; bleedOutAt: number; reviveProgress: number; hp: number }
+  | { k: 'downed'; bleedOutAt: number; reviveProgress: number; hp: number; /** The armor pool as it stood when they went down, which a revive gives back (full if unset). */ armor?: number }
   /** `respawnAt` is Infinity when the mode, not a timer, brings the player back: a zombies dawn or a Last Squad redeploy. */
   | { k: 'dead'; respawnAt: number };
 
@@ -138,6 +141,9 @@ export type Bullet = {
 
 /** What fires at the horde for the squad besides its players. */
 export type Shooter = TurretKind | 'bastion';
+
+/** An armor pack lying at (`x`, `y`) (see sim/packs.ts), `id` its place in the map's list; `respawnAt` is set while it is taken. */
+export type ArmorPack = { id: number; x: number; y: number; respawnAt: number | null };
 
 export type Crate = { id: number; x: number; y: number; size: number; hp: number; respawnAt: number | null; drop?: true };
 
@@ -278,6 +284,8 @@ export type World = {
   crates: Crate[];
   barrels: Barrel[];
   props: Prop[];
+  /** Armor packs (sim/packs.ts). */
+  packs: ArmorPack[];
   /** Players an EMP has slowed, until when, and the player whose generator did it. */
   emps: Map<number, { until: number; by: number | null }>;
   chains: Map<number, Chain>;
@@ -361,7 +369,7 @@ export const friendsOf = (w: World, id: number): number[] => [...(w.friends.get(
 export function createWorld(mode: ModeId, seed: number, map: MapId): World {
   const w: World = {
     mode, map, mapChangeAt: Infinity, rotationSeed: seed | 0, rotationAt: 0, now: 0, tick: 0, rng: seed | 0, nextId: 1,
-    players: new Map(), friends: new Map(), bullets: [], crates: [], barrels: [], props: [], emps: new Map(), chains: new Map(), airdrops: { due: [], flight: null }, walls: [], wallsVersion: 0, doors: [], doorsVersion: 0, thrown: [],
+    players: new Map(), friends: new Map(), bullets: [], crates: [], barrels: [], props: [], packs: [], emps: new Map(), chains: new Map(), airdrops: { due: [], flight: null }, walls: [], wallsVersion: 0, doors: [], doorsVersion: 0, thrown: [],
     zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], firstBlood: false, history: [],
     zombies: [], buildings: [], floor: [], buildingsVersion: 0, run: null, royale: null,
   };
@@ -390,6 +398,7 @@ export function loadMap(w: World, map: MapId) {
   w.crates = def.crates.map((c) => ({ id: newId(w), x: c.x - CRATE_SIZE / 2, y: c.y - CRATE_SIZE / 2, size: CRATE_SIZE, hp: WORLD.crateHp, respawnAt: null }));
   w.barrels = hasArenaSurprises(w.mode) || w.mode === 'RNG' ? def.barrels.map((b) => ({ id: newId(w), x: b.x, y: b.y, hp: BARREL.hp, fuseAt: null, respawnAt: null, by: null })) : [];
   w.props = hasArenaSurprises(w.mode) || w.mode === 'RNG' ? def.props.map((q) => ({ id: newId(w), kind: q.kind, x: q.x, y: q.y, hp: PROPS[q.kind].hp, phase: 'stand' as const, at: 0, respawnAt: null, vx: 0, vy: 0, by: null, home: { x: q.x, y: q.y } })) : [];
+  w.packs = loadPacks(w);
   w.emps = new Map();
   w.chains = new Map();
   w.airdrops = { due: hasArenaSurprises(w.mode) ? planAirdrops(w) : [], flight: null };

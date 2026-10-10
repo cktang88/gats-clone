@@ -299,13 +299,34 @@ export const EVOLUTIONS: Record<GunId, readonly GunId[]> = byGun((id) => GUN_IDS
 
 export const ARMOR_IDS = ['none', 'light', 'medium', 'heavy'] as const;
 export type ArmorId = (typeof ARMOR_IDS)[number];
-/** `kg`: what the armor weighs; it adds to the load you carry (see handling.ts `loadOf`), slowing your walk and your sprint. */
-export const ARMORS: Record<ArmorId, { name: string; blockFrac: number; kg: number }> = {
-  none: { name: 'No armor', blockFrac: 0, kg: 0 },
-  light: { name: 'Light', blockFrac: 0.08, kg: 3 },
-  medium: { name: 'Medium', blockFrac: 0.16, kg: 6 },
-  heavy: { name: 'Heavy', blockFrac: 0.24, kg: 9 },
+/**
+ * `kg`: what the armor weighs; it adds to the load you carry (see handling.ts `loadOf`), slowing your walk and your sprint, full or empty.
+ * `blockFrac`: the share of each hit it stops while it has `points` left. Every point of health it stops comes off its pool, so it wears
+ * out; empty, it stops nothing. The pool is `blockFrac` times the raw damage the tier soaks before it is spent (200, 250 and 300): heavy
+ * lasts the longest, and every pool is more than the most a tier stops on the way to a death from full health (the gun breakpoints
+ * hold against full armor). A fresh life and an armor pack fill it (`ARMOR_PACK`). `armorBlock` is the one place it is applied.
+ */
+export const ARMORS: Record<ArmorId, { name: string; blockFrac: number; kg: number; points: number }> = {
+  none: { name: 'No armor', blockFrac: 0, kg: 0, points: 0 },
+  light: { name: 'Light', blockFrac: 0.08, kg: 3, points: 16 },
+  medium: { name: 'Medium', blockFrac: 0.16, kg: 6, points: 40 },
+  heavy: { name: 'Heavy', blockFrac: 0.24, kg: 9, points: 72 },
 };
+/** The share of a hit `armor` stops with `points` left in its pool (full by default): its `blockFrac`, or nothing once the pool is empty. */
+export const armorShare = (armor: ArmorId, points: number = ARMORS[armor].points): number => (points > 0 ? ARMORS[armor].blockFrac : 0);
+/**
+ * A hit of `amount` on `armor` with `points` in its pool: the share it stops (`armorShare`, never more than the pool holds) comes off the
+ * pool. Returns the damage that lands and the points left.
+ */
+export function armorBlock(armor: ArmorId, points: number, amount: number): { amount: number; points: number } {
+  const blocked = Math.min(Math.max(0, points), amount * armorShare(armor, points));
+  return { amount: amount - blocked, points: points - blocked };
+}
+/**
+ * Armor packs lie on the versus maps (`armorSpots` in maps.ts): walking over one (a body within `pickR` of it) fills your armor's pool, but
+ * only if it is short (a full pool, or no armor, leaves it lying). A taken pack comes back `respawnMs` later.
+ */
+export const ARMOR_PACK = { pickR: 40, respawnMs: 35_000 } as const;
 
 /** The least share of base speed any load can leave you, so the heaviest loadout is slow but still moves (about 148 px/s). */
 export const LOAD_SPEED_FLOOR = HANDLING.load.floor;
@@ -639,7 +660,7 @@ export const BARREL = {
  * Airdrops (versus modes): `perRound` of them at random times between `from` and `to` of the round's clock, at least `gapMs` apart.
  * A plane crosses the map at `planeSpeed` px/s, drops a crate where it passes the target, and the crate falls `fallMs` under its
  * chute, landing as a crate of `hp` that stands `lifeMs` unless broken. Whoever breaks it gets a golden gun (`goldMul` damage for the life) or, `supplyChance` of the time
- * or if they already hold one, a full heal, a full magazine and `supplyScore`.
+ * or if they already hold one, a full heal, full armor, a full magazine and `supplyScore`.
  */
 export const AIRDROP = {
   perRound: [1, 2] as const, from: 0.15, to: 0.8, gapMs: 120_000, planeSpeed: 1000, fallMs: 5000, hp: 300, size: 64, lifeMs: 75_000,
