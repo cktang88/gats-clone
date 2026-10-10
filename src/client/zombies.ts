@@ -1,16 +1,19 @@
-import { BUILDING_KINDS, BUILDINGS, hordeCount, MAX_LEVEL, nightOf, SIDES, TURRET_KINDS, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, hordeCount, isEndless, MAX_LEVEL, NIGHTS, nightOf, SIDES, TURRET_KINDS, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
 import { buildRefusal, cellOf, coreRectAt, costOf, levelOf, lineCells, maxLevelOf, nameOf as nameAt, planLine, refundFor, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 
 type Pose = { x: number; y: number };
 
+/** Past the Tide the nights never end, and the HUD says so: `Night 12 · Endless`. */
+const endlessTag = (night: number) => (isEndless(night) ? ' · Endless' : '');
+
 export function phaseLine(run: Pick<RunView, 'phase' | 'night' | 'phaseEndsAt' | 'waveLeft' | 'report'>, serverNow: number | null): string {
   const left = run.phaseEndsAt === null || serverNow === null ? null : run.phaseEndsAt - serverNow;
   switch (run.phase) {
-    case 'day': return `Day ${run.night}${left === null ? '' : ` · night in ${clock(left)}`}`;
-    case 'night': return `Night ${run.night} · ${run.waveLeft} left${left === null ? '' : ` · first light in ${clock(left)}`}`;
-    case 'over': return `The Bastion ${run.report?.won ? 'held' : 'fell'}${left === null ? '' : ` · next run in ${clock(left)}`}`;
+    case 'day': return `Day ${run.night}${endlessTag(run.night)}${left === null ? '' : ` · night in ${clock(left)}`}`;
+    case 'night': return `Night ${run.night}${endlessTag(run.night)} · ${run.waveLeft} left${left === null ? '' : ` · first light in ${clock(left)}`}`;
+    case 'over': return `The Bastion fell${run.report?.won ? ' · the Tide held' : ''}${left === null ? '' : ` · next run in ${clock(left)}`}`;
   }
 }
 
@@ -30,7 +33,7 @@ export function forecast(night: number, share: number): string {
   const present = ZOMBIE_KINDS.filter((k) => def.horde[k]).sort((a, b) => ZOMBIES[b].score - ZOMBIES[a].score);
   const kinds = listOf(present.map((k) => ZOMBIES[k].many));
   const size = present.reduce((n, k) => n + hordeCount(k, def.horde[k]!, share), 0);
-  return `${kinds[0]!.toUpperCase()}${kinds.slice(1)} from ${sidesOf(night)} · ${size} strong`;
+  return `${isEndless(night) ? 'Endless · ' : ''}${kinds[0]!.toUpperCase()}${kinds.slice(1)} from ${sidesOf(night)} · ${size} strong`;
 }
 
 /** The day's hint for N: how many of the squad's humans are ready for night, and whether you are. */
@@ -85,11 +88,13 @@ export function runCallouts(prev: RunView | undefined, next: RunView | undefined
     out.push({ title: `Night falls in ${NIGHT_WARNING_MS / 1000}`, line: forecast(next.night, share), tone: 'warn' });
   }
   if (prev.phase === 'day' && next.phase === 'night') {
-    out.push({ title: nightOf(next.night).name ?? `Night ${next.night}`, line: `${next.waveLeft} zombies from ${sidesOf(next.night)} · hold the Bastion`, tone: 'night' });
+    out.push({ title: nightOf(next.night).name ?? `Night ${next.night}${endlessTag(next.night)}`, line: `${next.waveLeft} zombies from ${sidesOf(next.night)} · hold the Bastion`, tone: 'night' });
   }
   if (prev.phase === 'night' && next.phase === 'day') {
     const lost = next.lost ? `${next.lost} lost · ` : '';
-    out.push({ title: 'Dawn', line: `Night ${prev.night} held · ${lost}${next.survivors} survivors · +${next.scrap - prev.scrap} scrap`, tone: 'dawn' });
+    // Holding through the Tide is the run's great moment, but not its end: the nights go on until the core falls.
+    if (prev.night === NIGHTS.length) out.push({ title: 'THE TIDE HELD', line: `${next.survivors} survivors saw the morning · the nights go on`, tone: 'dawn' });
+    else out.push({ title: 'Dawn', line: `Night ${prev.night} held · ${lost}${next.survivors} survivors · +${next.scrap - prev.scrap} scrap`, tone: 'dawn' });
     out.push({ title: 'Tonight', line: forecast(next.night, share), tone: 'warn' });
   }
   return out;
@@ -101,8 +106,9 @@ type ReportRow = { name: string; kills: number; revives: number; built: number; 
 export const reportRows = (report: RunReport, selfName: string | undefined): ReportRow[] =>
   [...report.players].sort((a, b) => b.kills - a.kills || b.revives - a.revives || b.built - a.built).map((p) => ({ ...p, you: p.name === selfName }));
 
+/** Only the core's fall ends a run; one that held through the Tide on the way says how far past it the squad got. */
 export const reportTitle = (report: RunReport) =>
-  report.won ? `The Bastion held. ${report.survivors} survivors saw the morning.` : `The Bastion fell on night ${report.night}`;
+  report.won ? `The Tide held. The Bastion fell on night ${report.night}, ${report.night - NIGHTS.length} past the Tide.` : `The Bastion fell on night ${report.night}`;
 
 /** The kills of the squad's turrets and the Bastion's survivors, or null when they killed none. */
 export function turretLine(report: RunReport): string | null {
@@ -114,7 +120,7 @@ export function turretLine(report: RunReport): string | null {
 /** The card for a squad player out of the fight: bled out, back from the Bastion after `respawnIn` ms at the cost of survivors, or joined mid-night and back at dawn. */
 export function outTillDawnText(run: Pick<RunView, 'phase' | 'night' | 'waveLeft' | 'survivors'>, bledOut: boolean, respawnIn: number): { title: string; sub: string } {
   const cost = ZOM.reinforce.survivors(run.night);
-  const sent = bledOut && run.phase === 'night' && run.survivors > cost;
+  const sent = bledOut && run.phase === 'night' && run.survivors >= cost;
   return {
     title: bledOut ? 'You bled out' : 'The night is under way',
     sub: sent ? `The Bastion sends you back in ${Math.ceil(respawnIn / 1000)}s · ${cost} survivors lost`

@@ -212,18 +212,30 @@ test('in a squad room, nights, the furthest night, a flawless night, kills, Colo
   assert.equal(zom(profiles, 'Ann').wins, undefined);
 });
 
-test('in a squad room, holding the Bastion through the Tide wins the run for everyone who sat it', async (t) => {
+test('in a squad room, holding the Bastion through the Tide pays Held the Line at its dawn, and the run goes on past night 10', async (t) => {
   const { profiles, room, w, bo } = await squad(t, 10);
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   w.zombies.push(holder(w));
   room.tick();
   w.zombies = [];
   room.tick();
-  assert.equal(w.run!.phase.k, 'over');
+  assert.deepEqual([w.run!.phase.k, w.run!.night], ['day', 11], 'the Tide held is a milestone, not the end');
   const z = zom(profiles, 'Bo');
   assert.deepEqual([z.wins, z.nights, z.bestNight, z.flawless], [1, 1, 10, 1]);
   assert.ok(badges(bo.ws.sent).some((b) => b.track === 'zWins' && b.tier === 0), 'Held the Line I');
   assert.ok(badges(bo.ws.sent).some((b) => b.track === 'zBestNight' && b.tier === 3), 'Last Light IV');
+
+  // Night 11 falls: the best night climbs past the table's last rung.
+  w.run!.phase = { k: 'day', endsAt: w.now };
+  room.tick();
+  const phase = () => w.run!.phase.k as string;
+  assert.equal(phase(), 'night');
+  assert.equal(zom(profiles, 'Bo').bestNight, 11);
+  // The core's fall ends the run, and pays no second win.
+  w.run!.core.hp = 0;
+  room.tick();
+  assert.equal(phase(), 'over');
+  assert.equal(zom(profiles, 'Bo').wins, 1);
 });
 
 test('bots, the range and versus rooms count for nothing on the Zombies tracks', async (t) => {

@@ -54,7 +54,8 @@ function service(w: World, run: Run, p: Player, dtMs: number) {
 function reinforce(w: World, run: Run) {
   for (const p of w.players.values()) {
     const cost = ZOM.reinforce.survivors(run.night);
-    if (p.life.k !== 'dead' || w.now < p.life.respawnAt || run.survivors <= cost) continue;
+    // Sending the last of them is allowed now that their loss no longer ends the run; with too few left the dead wait for dawn.
+    if (p.life.k !== 'dead' || w.now < p.life.respawnAt || run.survivors < cost) continue;
     run.survivors -= cost;
     run.lost += cost;
     placeAtCore(w, p);
@@ -242,8 +243,8 @@ function placeAtCore(w: World, p: Player) {
   p.y = at.y;
 }
 
+/** The night is held: the run goes on, past the Tide too (the room pays Held the Line for that one), and every squad player down or out stands up free. */
 function dawn(w: World, run: Run) {
-  if (run.night === NIGHTS.length) { endRun(w, run, true); return; }
   run.scrap += run.survivors * ZOM.scrapPerSurvivor;
   run.night++;
   run.phase = { k: 'day', endsAt: w.now + ZOM.dayMs };
@@ -254,10 +255,12 @@ function dawn(w: World, run: Run) {
   }
 }
 
-function endRun(w: World, run: Run, won: boolean) {
+/** Only the core's fall ends a run. The report counts it `won` when the squad held through the Tide on the way. */
+function endRun(w: World, run: Run) {
   for (const p of w.players.values()) statsFor(run, p);
-  if (!won) { run.lost += run.survivors; run.survivors = 0; }
-  run.phase = { k: 'over', night: run.night, won, restartAt: w.now + ZOM.restartMs };
+  run.lost += run.survivors;
+  run.survivors = 0;
+  run.phase = { k: 'over', night: run.night, won: run.night > NIGHTS.length, restartAt: w.now + ZOM.restartMs };
   w.zombies = [];
 }
 
@@ -289,6 +292,13 @@ function restartRun(w: World) {
   }
 }
 
+/** How many of the next packs walk in together: up to `packs`, and only as many as fit under the live cap's `room`, so the endless nights stay bounded. */
+function waveSize(toSpawn: readonly HordeUnit[], packs: number, room: number): number {
+  let n = 0;
+  while (n < Math.min(packs, toSpawn.length) && toSpawn[n]!.n <= room) room -= toSpawn[n++]!.n;
+  return n;
+}
+
 export function tickRun(w: World, dtMs: number) {
   const run = w.run;
   if (!run) return;
@@ -304,7 +314,7 @@ export function tickRun(w: World, dtMs: number) {
       break;
     case 'night':
       if (phase.toSpawn.length > 0 && w.now >= phase.nextSpawnAt && w.zombies.length < ZOM.maxAlive) {
-        const wave = phase.toSpawn.splice(0, ZOM.packsPerWave(run.night));
+        const wave = phase.toSpawn.splice(0, waveSize(phase.toSpawn, ZOM.packsPerWave(run.night), ZOM.maxAlive - w.zombies.length));
         for (const unit of wave) spawnUnit(w, run, unit);
         phase.nextSpawnAt = w.now + wave.length * ZOM.packGapMs(run.night);
         if (phase.toSpawn.length === 0) phase.dawnAt = w.now + ZOM.stragglersMs;
@@ -323,5 +333,5 @@ export function tickRun(w: World, dtMs: number) {
   tickUtilities(w, run, dtMs);
   tickTurrets(w, run, MAPS[w.map].siege!.core, dtMs);
   tickSquad(w, run, dtMs);
-  if (run.core.hp <= 0 || run.survivors <= 0) endRun(w, run, false);
+  if (run.core.hp <= 0) endRun(w, run);
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, hordeCount, LEVELS, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, ZOMBIES, type Side, type ZombieKind } from '../src/shared/defs.ts';
+import { BUILDINGS, ENDLESS, hordeCount, LEVELS, nightOf, NIGHTS, SIDES, ZOM, ZOMBIE_KINDS, ZOMBIES, type Side, type ZombieKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { toggleReady } from '../src/shared/sim/run.ts';
 import { hurtCore } from '../src/shared/sim/horde.ts';
@@ -11,6 +11,8 @@ import { step } from '../src/shared/sim.ts';
 
 const zomWorld = (): World => createWorld('ZOM', 1, 'outpost');
 const phaseOf = (w: World) => w.run!.phase.k;
+/** The phase read afresh, so a test that just set it is not held to the type it set. */
+const phaseNow = (w: World) => w.run!.phase;
 
 const SPAWN_EDGE_SLACK_PX = 40;
 const onSide = (side: Side, x: number, y: number) => {
@@ -135,7 +137,7 @@ test('a lone human\'s night brings at least one of every kind on its row', () =>
   assert.deepEqual(new Set([...night.toSpawn, ...w.zombies].map((u) => u.kind)), new Set(Object.keys(NIGHTS[4]!.horde)));
 });
 
-test('every bit of harm the core takes costs survivors, however well it is mended between, and losing the last loses the run', () => {
+test('every bit of harm the core takes costs survivors, however well it is mended between, and losing the last does not end the run', () => {
   const w = zomWorld();
   const r = w.run!;
   hurtCore(r, ZOM.survivorHp * 2.5);
@@ -149,7 +151,46 @@ test('every bit of harm the core takes costs survivors, however well it is mende
   hurtCore(r, ZOM.survivorHp * ZOM.survivors);
   run(w, TICK_MS);
   assert.ok(r.core.hp > 0, 'the core still stands');
-  assert.deepEqual({ survivors: r.survivors, phase: phaseOf(w) }, { survivors: 0, phase: 'over' });
+  assert.deepEqual({ survivors: r.survivors, phase: phaseOf(w) }, { survivors: 0, phase: 'day' });
+  run(w, ZOM.dayMs + TICK_MS);
+  assert.equal(phaseOf(w), 'night', 'the run goes on with nobody sheltering');
+  hurtCore(r, ZOM.survivorHp * 3);
+  run(w, TICK_MS);
+  assert.deepEqual({ survivors: r.survivors, phase: phaseOf(w) }, { survivors: 0, phase: 'night' });
+});
+
+test('only the core\'s fall ends a run: no survivors, the whole squad dead and the Tide held all leave it going', () => {
+  const w = zomWorld();
+  const p = spawnAt(w, 1300, 1500, { kind: 'human' }), q = spawnAt(w, 1300, 1560);
+  w.run!.night = 12;
+  w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity };
+  w.run!.survivors = 0;
+  for (const o of [p, q]) o.life = { k: 'dead', respawnAt: w.now };
+  run(w, 5000);
+  assert.deepEqual({ phase: phaseOf(w), p: p.life.k, q: q.life.k }, { phase: 'night', p: 'dead', q: 'dead' }, 'with no survivors to send them, the dead wait and the core fights on');
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
+  w.zombies = [];
+  run(w, TICK_MS);
+  assert.deepEqual({ phase: phaseOf(w), night: w.run!.night, p: p.life.k, q: q.life.k }, { phase: 'day', night: 13, p: 'alive', q: 'alive' }, 'dawn stands everyone up free');
+  w.run!.core.hp = 0.5;
+  run(w, TICK_MS);
+  assert.equal(phaseOf(w), 'day');
+  w.run!.core.hp = 0;
+  run(w, TICK_MS);
+  const over = phaseNow(w);
+  assert.ok(over.k === 'over');
+  assert.deepEqual([over.night, over.won], [13, true], 'the report keeps the night reached, and that the Tide was held on the way');
+});
+
+test('a dead player is sent back with the very last survivors, now that losing them ends nothing', () => {
+  const w = zomWorld();
+  const p = spawnAt(w, 1300, 1500, { kind: 'human' });
+  w.run!.core.hp = 1e9;
+  w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity };
+  w.run!.survivors = ZOM.reinforce.survivors(1);
+  p.life = { k: 'dead', respawnAt: w.now };
+  run(w, TICK_MS);
+  assert.deepEqual({ alive: p.life.k, survivors: w.run!.survivors, phase: phaseOf(w) }, { alive: 'alive', survivors: 0, phase: 'night' });
 });
 
 test('dawn pays the bank for every survivor left', () => {
@@ -163,21 +204,68 @@ test('dawn pays the bank for every survivor left', () => {
   assert.deepEqual({ phase: phaseOf(w), paid: w.run!.scrap - scrap }, { phase: 'day', paid: 37 * ZOM.scrapPerSurvivor });
 });
 
-test('holding through the Tide ends the run won with the survivors counted, and only the Tide does', () => {
+test('holding through the Tide is a milestone, not the end: the run goes on to night 11 and past it', () => {
   const w = zomWorld();
   const p = spawnAt(w, 1300, 1500, { kind: 'human' });
-  w.run!.night = NIGHTS.length - 1;
-  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
-  run(w, TICK_MS);
-  assert.deepEqual({ phase: phaseOf(w), night: w.run!.night }, { phase: 'day', night: NIGHTS.length }, 'the night before the Tide dawns as any other');
+  w.run!.night = NIGHTS.length;
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   hurtCore(w.run!, ZOM.survivorHp * 20);
+  const scrap = w.run!.scrap;
+  run(w, TICK_MS);
+  assert.deepEqual({ phase: phaseOf(w), night: w.run!.night, paid: w.run!.scrap - scrap }, { phase: 'day', night: NIGHTS.length + 1, paid: (ZOM.survivors - 20) * ZOM.scrapPerSurvivor });
+  run(w, ZOM.dayMs + TICK_MS);
+  const night = w.run!.phase;
+  assert.ok(night.k === 'night', 'night 11 falls');
+  assert.ok(night.toSpawn.length > 0);
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
+  w.zombies = [];
+  run(w, TICK_MS);
+  assert.deepEqual({ phase: phaseOf(w), night: w.run!.night }, { phase: 'day', night: NIGHTS.length + 2 });
+  w.run!.core.hp = 0;
   run(w, TICK_MS);
   const over = snapshotFor(w, p.id).run!;
-  assert.deepEqual([over.phase, over.report?.night, over.report?.won, over.report?.survivors], ['over', NIGHTS.length, true, ZOM.survivors - 20]);
+  assert.deepEqual([over.phase, over.report?.night, over.report?.won, over.report?.survivors], ['over', NIGHTS.length + 2, true, 0]);
   assert.ok(w.run!.stats.has(p.id), 'the squad gets its report rows');
   run(w, ZOM.restartMs + TICK_MS);
-  assert.deepEqual({ phase: phaseOf(w), night: w.run!.night }, { phase: 'day', night: 1 }, 'a fresh run follows the victory');
+  assert.deepEqual({ phase: phaseOf(w), night: w.run!.night }, { phase: 'day', night: 1 }, 'a fresh run follows the fall');
+});
+
+test('the nights past the table are the same every time, every kind from every side, harder each night and capped in number', () => {
+  const size = (night: number) => Object.values(nightOf(night).horde).reduce((n, c) => n + c!, 0);
+  const tide = NIGHTS.at(-1)!;
+  assert.equal(nightOf(NIGHTS.length), tide);
+  for (let night = NIGHTS.length + 1; night <= NIGHTS.length + 30; night++) {
+    const def = nightOf(night);
+    assert.deepEqual(def, structuredClone(nightOf(night)), `night ${night} is deterministic`);
+    assert.deepEqual(def.from, SIDES, `night ${night} comes from every side`);
+    for (const k of ZOMBIE_KINDS) assert.ok(def.horde[k]! >= (tide.horde[k] ?? 1), `night ${night} brings at least the Tide's ${k}`);
+    const prev = night - 1;
+    assert.ok(size(night) >= size(prev), `night ${night} is no smaller than night ${prev}`);
+    for (const k of ZOMBIE_KINDS) assert.ok(def.horde[k]! >= nightOf(prev).horde[k]!, `night ${night}: ${k}`);
+    assert.ok(ZOM.nightMul(night).hp > ZOM.nightMul(prev).hp && ZOM.nightMul(night).damage > ZOM.nightMul(prev).damage, `night ${night} hits harder`);
+  }
+  assert.ok(size(NIGHTS.length + 1) > size(NIGHTS.length), 'night 11 outnumbers the Tide');
+  assert.ok(nightOf(NIGHTS.length + 4).horde.colossus! > tide.horde.colossus!, 'more Colossi');
+  const capped = NIGHTS.length + ENDLESS.growNights;
+  assert.deepEqual(nightOf(capped + 20).horde, nightOf(capped).horde, 'past a point the numbers hold and only health and bite grow');
+  assert.ok(nightOf(capped + 20).horde.colossus! <= ENDLESS.colossusMax);
+});
+
+test('an endless night never has more than the live cap walking at once, and still ends', () => {
+  const w = eveOf(NIGHTS.length + 15);
+  w.run!.survivors = 1e9;
+  for (const p of w.players.values()) p.life = { k: 'dead', respawnAt: Infinity };
+  run(w, ZOM.dayMs + TICK_MS);
+  assert.equal(phaseOf(w), 'night');
+  let most = 0;
+  for (let t = 0; t < 60_000; t += TICK_MS) {
+    step(w, TICK_MS);
+    most = Math.max(most, w.zombies.length);
+  }
+  assert.ok(most <= ZOM.maxAlive, `${most} alive at once`);
+  assert.ok(most >= ZOM.maxAlive - 6, `the cap is reached (${most})`);
+  runUntil(w, () => { w.zombies = []; return phaseOf(w) === 'day'; }, 600_000);
+  assert.equal(w.run!.night, NIGHTS.length + 16);
 });
 
 test('the night falls early once every living human is ready, and not before', () => {

@@ -228,10 +228,11 @@ test('a player who bleeds out at night is sent back from the Bastion after a wai
   assert.equal(w.run!.lost, cost);
   assert.ok(ZOM.reinforce.survivors(10) > ZOM.reinforce.survivors(1), 'and sending one back costs more the later the night');
 
-  w.run!.survivors = cost;
+  w.run!.survivors = cost - 1;
   downByBite(w, p);
   w.zombies = w.zombies.filter((z) => z.attackAt === Infinity);
   run(w, ZOM.bleedOutMs + ZOM.reinforce.ms + 1000);
-  assert.equal(lifeOf(p).k, 'dead', 'nobody left to send');
-  assert.equal(w.run!.survivors, cost);
+  assert.equal(lifeOf(p).k, 'dead', 'too few left to send');
+  assert.equal(w.run!.survivors, cost - 1);
+  assert.equal(w.run!.phase.k, 'night', 'and the run goes on');
 });

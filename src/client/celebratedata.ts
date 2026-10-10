@@ -1,4 +1,4 @@
-import { COLOR_IDS, COLORS, type ColorId } from '../shared/defs.ts';
+import { COLOR_IDS, COLORS, NIGHTS, type ColorId } from '../shared/defs.ts';
 import { rankRows, type LeaderRow, type Snapshot } from '../shared/protocol.ts';
 import { roundPodium } from './derive.ts';
 
@@ -78,7 +78,7 @@ export function celebrationFor(snap: Snapshot, t: Tracker): Celebration | null {
       { label: 'TURRET KILLS', value: String(turrets), who: 'the squad', color: null }];
     const mineIdx = ranked.findIndex((p) => p.name === snap.players.find((q) => q.id === me)?.name);
     return report.won
-      ? { kind: 'zomWin', confetti: ['#ffb347', '#b4a07a', '#ece6d6', '#ffd34d'], title: 'DAWN BREAKS', sub: `The Bastion held through night ${report.night}`, podium, stamp: { text: 'HELD', top3: true, sub: mineIdx >= 0 ? `${ordinal(mineIdx + 1)} in kills` : `${report.survivors} survived` }, cards }
+      ? { kind: 'zomWin', confetti: ['#ffb347', '#b4a07a', '#ece6d6', '#ffd34d'], title: 'THE TIDE HELD', sub: `The core fell on night ${report.night}, ${report.night - NIGHTS.length} past the Tide`, podium, stamp: { text: 'HELD', top3: true, sub: mineIdx >= 0 ? `${ordinal(mineIdx + 1)} in kills` : `night ${report.night}` }, cards }
       : { kind: 'zomLoss', confetti: null, title: 'OVERRUN', sub: `The horde took the core on night ${report.night}`, podium, stamp: { text: 'FALLEN', top3: false, sub: mineIdx >= 0 ? `${ordinal(mineIdx + 1)} in kills` : '' }, cards };
   }
   const { winner } = snap.match;

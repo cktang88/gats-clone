@@ -211,15 +211,18 @@ test('the phase line counts the day down to night, the night\'s wave down to daw
   assert.equal(phaseLine(runView({ phase: 'night', night: 3, phaseEndsAt: null, waveLeft: 12 }), 19_000), 'Night 3 · 12 left');
   assert.equal(phaseLine(runView({ phase: 'night', night: 3, phaseEndsAt: 109_000, waveLeft: 4 }), 19_000), 'Night 3 · 4 left · first light in 1:30', 'once the last pack is in, first light counts down');
   assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000 }), 16_000), 'The Bastion fell · next run in 0:14');
-  const held = { night: 10, won: true, survivors: 31, durationMs: 0, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0 }, bastionKills: 0 };
-  assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000, report: held }), 16_000), 'The Bastion held · next run in 0:14');
+  const held = { night: 13, won: true, survivors: 0, durationMs: 0, players: [], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0 }, bastionKills: 0 };
+  assert.equal(phaseLine(runView({ phase: 'over', phaseEndsAt: 30_000, report: held }), 16_000), 'The Bastion fell · the Tide held · next run in 0:14');
+  assert.equal(phaseLine(runView({ phase: 'night', night: 12, phaseEndsAt: null, waveLeft: 80 }), 19_000), 'Night 12 · Endless · 80 left', 'past the Tide the nights go on');
+  assert.equal(phaseLine(runView({ night: 11 }), null), 'Day 11 · Endless');
+  assert.equal(phaseLine(runView({ night: NIGHTS.length }), null), `Day ${NIGHTS.length}`);
 });
 
 test('a downed player is told how long they have, or that help is on the way', () => {
   assert.equal(downedLine({ revive: 0, bleedOutAt: 40_000 }, 22_000), 'Crawl to a squadmate · 0:18');
   assert.equal(downedLine({ revive: 0.45, bleedOutAt: 40_000 }, 22_000), 'Being revived · 45%');
   assert.equal(outTillDawnText(runView({ phase: 'night', waveLeft: 9 }), true, 11_200).sub, `The Bastion sends you back in 12s · ${ZOM.reinforce.survivors(2)} survivors lost`);
-  assert.equal(outTillDawnText(runView({ phase: 'night', waveLeft: 9, survivors: ZOM.reinforce.survivors(2) }), true, 0).sub, 'Back at dawn · 9 zombies left tonight', 'too few left to send anyone');
+  assert.equal(outTillDawnText(runView({ phase: 'night', waveLeft: 9, survivors: ZOM.reinforce.survivors(2) - 1 }), true, 0).sub, 'Back at dawn · 9 zombies left tonight', 'too few left to send anyone');
   assert.equal(outTillDawnText(runView({ phase: 'night' }), true, 0).title, 'You bled out');
   assert.equal(outTillDawnText(runView({ phase: 'night', waveLeft: 4 }), false, 0).sub, 'Back at dawn · 4 zombies left tonight', 'a night joiner waits for dawn');
 });
@@ -259,6 +262,9 @@ test('the run forecasts tonight ten seconds ahead and at dawn, announces nightfa
   assert.equal(runCallouts(runView({ night: 4 }), runView({ phase: 'night', night: 5, phaseEndsAt: null }), 0, 1, 1)[0]!.title, 'The Colossus', 'a boss night goes by its name');
   assert.deepEqual(titles(night, runView({ phase: 'over', phaseEndsAt: 110_000 }), 90_000, 91_000), [], 'the report announces the fall');
   assert.deepEqual(runCallouts(undefined, night, 0, 1, 1), [], 'nothing on the first snapshot of a session');
+  const tide = runCallouts(runView({ phase: 'night', night: NIGHTS.length, phaseEndsAt: null }), runView({ night: NIGHTS.length + 1, survivors: 22 }), 0, 1, 1);
+  assert.deepEqual(tide.map((c) => [c.title, c.line]), [['THE TIDE HELD', '22 survivors saw the morning · the nights go on'], ['Tonight', forecast(NIGHTS.length + 1, 1)]], 'the Tide held is the big moment, and the run goes on');
+  assert.equal(runCallouts(runView({ night: 11 }), runView({ phase: 'night', night: 11, phaseEndsAt: null }), 0, 1, 1)[0]!.title, 'Night 11 · Endless');
 });
 
 test('the fall clears every callout, so none shows through behind the report', () => {
@@ -278,7 +284,7 @@ test('the run report ranks the squad by kills, then revives, and marks you', () 
   ], turretKills: { sentry: 0, cannon: 0, scatter: 0, mortar: 0, tesla: 0 }, bastionKills: 0 };
   assert.deepEqual(reportRows(report, 'Cy').map((r) => [r.name, r.you]), [['Ann', false], ['Cy', true], ['Bo', false]]);
   assert.equal(reportTitle(report), 'The Bastion fell on night 4');
-  assert.equal(reportTitle({ ...report, night: 10, won: true, survivors: 31 }), 'The Bastion held. 31 survivors saw the morning.');
+  assert.equal(reportTitle({ ...report, night: 14, won: true }), 'The Tide held. The Bastion fell on night 14, 4 past the Tide.');
 });
 
 test('the core alert starts on a bite by night and clears the moment dawn or the report arrives', () => {
@@ -297,6 +303,7 @@ test('the forecast names each night\'s kinds and sides from the night table, and
   });
   assert.equal(forecast(1, 1), `Brutes and walkers from the north · ${NIGHTS[0]!.horde.walker! + NIGHTS[0]!.horde.brute!} strong`);
   assert.ok(forecast(NIGHTS.length, 1).includes('from every side'));
+  assert.match(forecast(NIGHTS.length + 2, 1), /^Endless · A colossus, brutes, .* from every side · \d+ strong$/);
 });
 
 test('the forecast puts the deadliest kinds first and sizes the horde for the squad, so one night reads apart from the next', () => {

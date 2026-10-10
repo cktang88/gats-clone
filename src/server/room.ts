@@ -1,6 +1,6 @@
 import type { WebSocket } from 'ws';
 import type { Player } from '../shared/sim/world.ts';
-import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, GUN_IDS, GUNS, MAX_LEVEL, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
+import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, GUN_IDS, GUNS, MAX_LEVEL, NIGHTS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
 import { MAPS, rotationMap, type MapId } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
@@ -229,8 +229,9 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   }
 
   /**
-   * Zombies pay for each night survived at dawn, and the finish and the Bastion when the run ends. Whoever sat a night from its dusk also
-   * has it counted toward the Zombies lifetime medals: reaching it, seeing it out (without a scratch on the core, if so) and winning the run.
+   * Zombies pay for each night survived at dawn, the Bastion at the dawn after the Tide (a run no longer ends there, it goes on until the core
+   * falls), and the finish when the run ends. Whoever sat a night from its dusk also has it counted toward the Zombies lifetime medals: reaching
+   * it, seeing it out (without a scratch on the core, if so) and, for the Tide, Held the Line.
    */
   let run: object | null = null, runNight = 0, nightAt = 0, runPhase = '', runPaid = false;
   const zomWatch = newZomWatch();
@@ -245,15 +246,13 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     if (dusk) for (const { id } of seated()) profile(id, { zom: { bestNight: r.night } });
     const sawOut = (won: boolean): ZomDelta => ({ nights: 1, ...(!zomWatch.hurt && { flawless: 1 }), ...(won && { wins: 1 }) });
     if (r.night > runNight) {
+      const tide = runNight === NIGHTS.length;
       runNight = r.night;
-      for (const { key, id } of seated()) { profiles.round(key, { won: false, finished: false, nights: 1 }); profile(id, { zom: sawOut(false) }); }
+      for (const { key, id } of seated()) { profiles.round(key, { won: tide, finished: false, nights: 1, ...(tide && { bastion: true }) }); profile(id, { zom: sawOut(tide) }); }
     }
     if (r.phase.k === 'over' && !runPaid) {
       runPaid = true;
-      for (const { key, id } of seated()) {
-        profiles.round(key, { won: r.phase.won, finished: true, nights: r.phase.won ? 1 : 0, bastion: r.phase.won });
-        if (r.phase.won) profile(id, { zom: sawOut(true) });
-      }
+      for (const { key } of seated()) profiles.round(key, { won: false, finished: true, nights: 0 });
     }
   }
 

@@ -768,7 +768,28 @@ export const NIGHTS: readonly NightDef[] = [
   { horde: { walker: 84, runner: 30, plated: 20, bloater: 14, brute: 22 }, from: SIDES },
   { name: 'The Tide', horde: { walker: 90, runner: 32, plated: 20, bloater: 14, brute: 22, colossus: 2 }, from: SIDES },
 ];
-export const nightOf = (night: number): NightDef => NIGHTS[Math.min(night, NIGHTS.length) - 1]!;
+/**
+ * Past the table the nights never end: each is built from the Tide, every kind from every side. Each kind's count grows `growth` a night
+ * for `growNights` nights past the Tide and then holds, so the horde stops growing in numbers (and `ZOM.maxAlive` caps how many walk at
+ * once) while `ZOM.nightMul` keeps raising its health and bite. Another Colossus joins every `colossusEvery` nights, up to `colossusMax`.
+ */
+export const ENDLESS = { growth: 0.08, growNights: 10, colossusEvery: 2, colossusMax: 6 } as const;
+const endlessNights = new Map<number, NightDef>();
+/** Night `night`'s row: the table's, or past the Tide one built from it (`ENDLESS`), the same for the same night every time. */
+export function nightOf(night: number): NightDef {
+  if (night <= NIGHTS.length) return NIGHTS[Math.max(1, night) - 1]!;
+  let def = endlessNights.get(night);
+  if (!def) {
+    const tide = NIGHTS.at(-1)!.horde, past = night - NIGHTS.length, grow = 1 + ENDLESS.growth * Math.min(past, ENDLESS.growNights);
+    const horde = Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, isBoss(k)
+      ? Math.min(ENDLESS.colossusMax, (tide[k] ?? 1) + Math.floor(past / ENDLESS.colossusEvery))
+      : Math.round((tide[k] ?? ZOMBIES[k].pack) * grow)]));
+    endlessNights.set(night, (def = { horde, from: SIDES }));
+  }
+  return def;
+}
+/** True for a night past the table's: the run goes on after the Tide until the core falls. */
+export const isEndless = (night: number) => night > NIGHTS.length;
 /** A boss is a kind that walks alone (`pack: 1`): it comes as listed for any squad, its health scaled by the squad's share instead. */
 export const isBoss = (kind: ZombieKind) => ZOMBIES[kind].pack === 1;
 /** How many of a kind listed `listed` times come for a squad with this share of the horde. */
@@ -868,13 +889,13 @@ export const ZOM = {
   cell: 50,
   coreHp: 4000,
   /**
-   * Who shelters in the core: one is lost for every `survivorHp` of harm the core takes, mended or not, and the run is lost with the last of them.
-   * Each one left pays `scrapPerSurvivor` at dawn, and they man the Bastion's gun.
+   * Who shelters in the core: one is lost for every `survivorHp` of harm the core takes, mended or not. Losing the last of them does not end the
+   * run (only the core's fall does), but each one left pays `scrapPerSurvivor` at dawn, mans the Bastion's gun and pays for reinforcements.
    */
   survivors: 50,
   survivorHp: 100,
   scrapPerSurvivor: 3,
-  /** A squad player who bleeds out at night is back at the Bastion after `ms`, and `survivors(night)` of those sheltering there are lost to send them; with too few left they wait for dawn. */
+  /** A squad player who bleeds out at night is back at the Bastion after `ms`, and `survivors(night)` of those sheltering there are lost to send them; with too few left they wait for dawn, when everyone stands up free. */
   reinforce: { ms: 15_000, survivors: (night: number) => 1 + Math.ceil(night / 2) },
   /** The share of each bite the core shrugs off, so a breach is an emergency the squad can answer rather than the end. */
   coreArmor: 0.4,
@@ -905,7 +926,7 @@ export const ZOM = {
   demolishRefund: 0.5,
   startScrap: 140,
   squadSize: 4,
-  /** Spawning waits while this many zombies are alive. */
+  /** The most zombies alive at once: a wave brings only the packs that fit under it, and spawning waits while none does. */
   maxAlive: 200,
   /** How far past touching a zombie's bite reaches. */
   biteReach: 10,
