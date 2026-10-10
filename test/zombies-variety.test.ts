@@ -40,7 +40,7 @@ const zombieAt = (w: World, x: number, y: number, kind: 'walker' | 'brute' | 'pl
 const cellCenter = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
 
 test('the three walls cost, hold and pay back by tier, and only the first is the plain wall', () => {
-  assert.deepEqual(WALL_TIERS.map((t) => [t.name, t.cost, t.hp]), [['Barricade', 10, 800], ['Sandbag wall', 24, 2000], ['Steel wall', 60, 4800]]);
+  assert.deepEqual(WALL_TIERS.map((t) => [t.name, t.cost, t.hp]), [['Barricade', 10, 800], ['Sandbag wall', 25, 2400], ['Steel wall', 60, 4800]]);
   assert.ok(WALL_TIERS[0].cost < WALL_TIERS[1].cost && WALL_TIERS[1].cost < WALL_TIERS[2].cost);
   assert.ok(WALL_TIERS[0].hp < WALL_TIERS[1].hp && WALL_TIERS[1].hp < WALL_TIERS[2].hp);
   assert.deepEqual([BUILDINGS.wall.cost, BUILDINGS.wall.hp], [WALL_TIERS[0].cost, WALL_TIERS[0].hp]);
@@ -97,7 +97,9 @@ test('an upgrade is refused at night, out of reach, with nothing there and when 
   assert.deepEqual([w.run!.scrap, levelOf(w.buildings[0]!)], [500, 1]);
 });
 
-test('a turret has three levels: each costs a share of its price, raises damage, rate, range and load, and an upgrade pays back in the refund', () => {
+test('a turret has three levels: each costs its build price again, raises damage, rate, range and load in round steps, and an upgrade pays back in the refund', () => {
+  // Round multiples a player can reason about, against the first level: 1.5× then 2× damage, 1.25× then 1.5× rate, +10% then +20% range, and health in step with the scrap put in.
+  assert.deepEqual([UPGRADE.costShare, UPGRADE.damage, UPGRADE.fireMs.map((f) => Math.round(100 / f) / 100), UPGRADE.range, UPGRADE.ammo, UPGRADE.hp], [[1, 1], [1, 1.5, 2], [1, 1.25, 1.5], [1, 1.1, 1.2], [1, 1.5, 2], [1, 2, 3]]);
   for (const kind of TURRET_KINDS) {
     const base = BUILDINGS[kind].turret;
     const [l1, l2, l3] = [1, 2, 3].map((lv) => turretDef(kind, lv)) as [typeof base, typeof base, typeof base];
@@ -106,8 +108,9 @@ test('a turret has three levels: each costs a share of its price, raises damage,
     assert.deepEqual([l2.fireMs / base.fireMs, l3.fireMs / base.fireMs], [UPGRADE.fireMs[1], UPGRADE.fireMs[2]], `${kind} fire rate`);
     assert.ok(l1.range < l2.range && l2.range < l3.range && l1.ammo < l2.ammo && l2.ammo < l3.ammo, `${kind} range and load grow`);
     if (base.lobbed) assert.equal(l3.lobbed!.damage, base.lobbed.damage * UPGRADE.damage[2], 'a lobbed shell\'s blast scales with it');
-    assert.deepEqual([upgradeCost(kind, 1), upgradeCost(kind, 2), upgradeCost(kind, 3)], [Math.round(BUILDINGS[kind].cost * UPGRADE.costShare[0]), Math.round(BUILDINGS[kind].cost * UPGRADE.costShare[1]), null]);
-    assert.ok(maxHpOf(kind, 3) > maxHpOf(kind, 1));
+    assert.deepEqual([upgradeCost(kind, 1), upgradeCost(kind, 2), upgradeCost(kind, 3)], [BUILDINGS[kind].cost, BUILDINGS[kind].cost, null]);
+    assert.equal(BUILDINGS[kind].cost % 10, 0, `${kind}'s price is a round number`);
+    assert.deepEqual([maxHpOf(kind, 2), maxHpOf(kind, 3)], [2 * BUILDINGS[kind].hp, 3 * BUILDINGS[kind].hp], `${kind}'s health keeps pace with what is put in`);
     const { w, p } = dayWorld();
     build(w, p.id, kind, CELL.cx, CELL.cy);
     const t = w.buildings[0]!;
@@ -200,15 +203,16 @@ test('the tesla coil arcs to its target and on to the nearest zombies, each jump
   w.buildings.push({ id: newId(w), kind: 'tesla', cx: 26, cy: 30, hp: 1e9, owner: p.id, ammo: def.ammo, nextFireAt: 0 });
   w.buildingsVersion++;
   const from = cellCenter(26, 30);
-  const chain = [0, 1, 2, 3, 4].map((i) => zombieAt(w, from.x + 100 + i * 60, from.y, i === 1 ? 'plated' : 'walker', 1000));
-  const far = zombieAt(w, from.x + 100 + 4 * 60 + arc.reach + 20, from.y, 'walker', 1000);
+  const stops = arc.jumps + 1;
+  const chain = Array.from({ length: stops + 1 }, (_, i) => zombieAt(w, from.x + 100 + i * 60, from.y, i === 1 ? 'plated' : 'walker', 1000));
+  const far = zombieAt(w, from.x + 100 + stops * 60 + arc.reach + 20, from.y, 'walker', 1000);
   tickTurrets(w, w.run!, CORE, TICK_MS);
   const dealt = chain.map((z) => 1000 - z.hp);
-  assert.deepEqual(dealt.slice(0, 4).map((d) => Math.round(d * 100) / 100), [0, 1, 2, 3].map((i) => Math.round(def.damage * arc.falloff ** i * 100) / 100), 'target first, then each jump at three quarters of the last');
-  assert.equal(dealt[4], 0, 'it stops after its jumps');
+  for (let i = 0; i < stops; i++) assert.ok(Math.abs(dealt[i]! - def.damage * arc.falloff ** i) < 0.01, `target first, then each jump at ${arc.falloff} of the last: ${dealt.join(', ')}`);
+  assert.equal(dealt[stops], 0, 'it stops after its jumps');
   assert.equal(far.hp, 1000, 'and does not reach what is farther than an arc');
   const coil = w.events.find((e) => e.e === 'coil');
-  assert.ok(coil?.e === 'coil' && coil.p.length === 2 * 5 && coil.p[0] === Math.round(from.x), 'one event with the coil and four stops');
+  assert.ok(coil?.e === 'coil' && coil.p.length === 2 * (stops + 1) && coil.p[0] === Math.round(from.x), 'one event with the coil and each stop');
   assert.equal('ammo' in w.buildings[0]! && w.buildings[0]!.ammo, def.ammo - 1, 'one charge a zap');
   assert.ok(!w.events.some((e) => e.e === 'turret' && e.kind === 'tesla'), 'no round flies');
   // Shoots through map cover: a zombie behind a wall in range is still zapped.
@@ -340,7 +344,7 @@ test('a depot says so once a second in an aid event, and a post mends squad play
   run(w, 2000);
   // Everyone regenerates a little; the post's share is what the one beside it gained over the one far off.
   assert.ok(Math.abs(p.life.hp - out.life.hp - UTILITY.post.playerHp * 2) < 0.3, `mended ${p.life.hp - out.life.hp} hp more in two seconds`);
-  assert.ok(Math.abs(wall.hp - 100 - UTILITY.post.buildingHp * 2) < 0.6, `the wall mended ${wall.hp - 100}`);
+  assert.ok(Math.abs(wall.hp - 100 - UTILITY.post.buildingHp * 2) < UTILITY.post.buildingHp * 0.05, `the wall mended ${wall.hp - 100}`);
   assert.equal(farWall.hp, 100);
   assert.equal(w.run!.scrap, 0, 'free');
   run(w, 200_000);
@@ -359,7 +363,7 @@ test('a depot says so once a second in an aid event, and a post mends squad play
     run(wx, 1000);
   }
   const hp = (wx: World): number => [...wx.players.values()].map((q) => hpOf(q)).find((h) => h > 0)!;
-  assert.ok(Math.abs(hp(run3) - hp(run1) - UTILITY.post.playerHp * (auraOf(3) - auraOf(1))) < 0.3, 'a level 3 post mends 2.4 times as fast as a level 1');
+  assert.ok(Math.abs(hp(run3) - hp(run1) - UTILITY.post.playerHp * (auraOf(3) - auraOf(1))) < 0.3, `a level 3 post mends ${auraOf(3)} times as fast as a level 1`);
 });
 
 test('building messages carry a wall tier, and an upgrade message carries a whole cell', () => {
@@ -374,9 +378,10 @@ test('building messages carry a wall tier, and an upgrade message carries a whol
 test('every kind has a price the economy can carry: a night\'s scrap buys the cheap tiers by the dozen and the dear things by the few', () => {
   for (const kind of BUILDING_KINDS) assert.ok(costOf(kind) > 0 && costOf(kind) <= 300, `${kind} ${costOf(kind)}`);
   assert.ok(MAX_LEVEL === 3);
-  assert.ok(costOf('spikes') < costOf('wall', 2) && costOf('wall', 3) < costOf('sentry'), 'strips and walls are the cheap end');
-  assert.ok(costOf('tesla') > costOf('cannon') && costOf('tesla') <= costOf('cannon') * 1.6, 'the coil is the dearest turret, but not by far');
-  for (const kind of TURRET_KINDS) assert.ok(investedOf(kind, 3) < costOf(kind) * 3.2, `${kind} fully upgraded costs under about three of them`);
+  assert.ok(costOf('spikes') < costOf('wall', 2) && costOf('wall', 3) <= costOf('sentry'), 'strips and walls are the cheap end: steel costs no more than the cheapest turret');
+  assert.ok(costOf('tesla') > costOf('cannon') && costOf('tesla') <= costOf('cannon') * 1.6, 'the coil costs more than the cannon, but not by far');
+  for (const kind of TURRET_KINDS) assert.equal(investedOf(kind, 3), costOf(kind) * 3, `${kind} fully upgraded costs three of them`);
+  for (const kind of BUILDING_KINDS) assert.equal(costOf(kind) % 5, 0, `${kind} has a round price`);
   assert.deepEqual(BUILDING_KINDS, ['wall', 'sentry', 'cannon', 'scatter', 'mortar', 'tesla', 'depot', 'post', 'spikes']);
 });
 

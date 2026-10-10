@@ -8,6 +8,7 @@ export const CHANGELOG: ChangelogDay[] = [
   {
     date: '2026-10-10',
     items: [
+      'Zombies: round building prices, clean upgrade steps (1.5×, 2×) and a job for every turret and wall',
       'Zombies: every gun has a job against the horde, and slower guns earn more scrap per kill',
     ],
   },

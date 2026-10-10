@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  BUILD_CONTROLS, buildKindForKey, buildRows, buildsByNight, canBuildNow, hoverOf, nextTier, stepItem, upgradeLine, upgradeTarget, buildSiteOf, downedLine, forecast, ghostAt, inviteLink, outTillDawnText, phaseLine, readyHint, reportRows, reportTitle, runCallouts, squadFromSearch, turretLine, useHint, withSquad,
+  BUILD_CONTROLS, buildKindForKey, buildRows, buildsByNight, canBuildNow, hoverOf, nextTier, stepItem, upgradeLine, upgradeTarget, buildSiteOf, downedLine, forecast, ghostAt, inviteLink, outTillDawnText, phaseLine, readyHint, reportRows, reportTitle, runCallouts, squadFromSearch, turretLine, upgradeGains, useHint, withSquad,
 } from '../src/client/zombies.ts';
 import { addMoments, NO_MOMENTS } from '../src/client/moments.ts';
 import { aimTurrets, nextCoreHitAt, type TurretAim } from '../src/client/siege.ts';
 import type { RunView } from '../src/shared/protocol.ts';
-import { BUILDING_KINDS, BUILDINGS, hordeCount, NIGHTS, SIDES, UPGRADE, WALL_TIERS, ZOM, ZOMBIE_KINDS, ZOMBIES, type TurretKind, type ZombieKind } from '../src/shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, hordeCount, NIGHTS, SIDES, WALL_TIERS, ZOM, ZOMBIE_KINDS, ZOMBIES, type TurretKind, type ZombieKind } from '../src/shared/defs.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { buildRefusal } from '../src/shared/sim/build.ts';
 import { build } from '../src/shared/sim/run.ts';
@@ -63,9 +63,9 @@ test('the ghost judges each kind as the server would build it, and names what it
   const site = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
   assert.equal(ghostAt(site, 'sentry', at(26, 30), MAPS[w.map].size).label, `Sentry · ${BUILDINGS.sentry.cost} scrap`);
   const worn = ghostAt(site, 'wall', at(26, 31), MAPS[w.map].size);
-  assert.deepEqual([worn.label, worn.hover?.refund], [`Cannon · level 1/3 · health 10%`, BUILDINGS.cannon.cost / 20], 'the refund is the standing building\'s, for the tenth of it left');
-  assert.ok(worn.detail?.split('\n')[0]!.endsWith(`Right click: take down +${BUILDINGS.cannon.cost / 20}`), worn.detail ?? '');
-  assert.equal(worn.detail?.split('\n')[1], 'Next: +40% dmg · +18% rate · +10% range · +50% ammo · +40% hp');
+  assert.deepEqual([worn.label, worn.hover?.refund], [`Cannon · level 1/3 · health 10%`, Math.floor(BUILDINGS.cannon.cost / 20)], 'the refund is the standing building\'s, for the tenth of it left');
+  assert.ok(worn.detail?.split('\n')[0]!.endsWith(`Right click: take down +${Math.floor(BUILDINGS.cannon.cost / 20)}`), worn.detail ?? '');
+  assert.equal(worn.detail?.split('\n')[1], 'Cannon II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp');
   w.buildings[0]!.hp = BUILDINGS.cannon.hp;
   const whole = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
   assert.equal(ghostAt(whole, 'wall', at(26, 31), MAPS[w.map].size).hover?.refund, BUILDINGS.cannon.cost / 2, 'half back for a whole one');
@@ -107,11 +107,11 @@ test('hovering a building in build mode names its level, health and what upgradi
   const at = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
   let g = ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'sentry', at(26, 30), MAPS[w.map].size);
   assert.equal(g.refusal, 'taken');
-  assert.deepEqual(g.hover, { name: 'Sandbag wall', lv: 2, top: 3, hpPct: 100, refund: WALL_TIERS[1].cost / 2, next: { name: 'Steel wall', cost: WALL_TIERS[2].cost - WALL_TIERS[1].cost, gains: '+140% hp · blocks 30% of bites' } });
+  assert.deepEqual(g.hover, { name: 'Sandbag wall', lv: 2, top: 3, hpPct: 100, refund: Math.floor(WALL_TIERS[1].cost / 2), next: { name: 'Steel wall', cost: WALL_TIERS[2].cost - WALL_TIERS[1].cost, gains: 'Steel wall: 6× hp · takes 20% less bite damage' } });
   assert.equal(g.label, 'Sandbag wall · level 2/3 · health 100%');
   assert.equal(g.upgrade, null);
   assert.ok(g.detail?.startsWith(`U or click: upgrade to Steel wall · ${WALL_TIERS[2].cost - WALL_TIERS[1].cost} scrap`), g.detail ?? '');
-  assert.ok(g.detail?.endsWith('\nNext: +140% hp · blocks 30% of bites'), 'what the step up gives sits on its own line');
+  assert.ok(g.detail?.endsWith('\nSteel wall: 6× hp · takes 20% less bite damage'), 'what the step up gives sits on its own line');
   w.run!.scrap = 5;
   g = ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'sentry', at(26, 30), MAPS[w.map].size);
   assert.equal(g.upgrade, 'scrap');
@@ -128,7 +128,7 @@ test('outside build mode U upgrades the nearest building in reach that can step 
   build(w, p.id, 'sentry', 26, 31);
   const near = upgradeTarget(snapshotFor(w, p.id), p);
   assert.deepEqual([near?.b.kind, near?.to], ['sentry', 'Sentry II'], 'the steel wall has nowhere to go, so the sentry beside it is the target');
-  assert.equal(near?.cost, Math.round(BUILDINGS.sentry.cost * UPGRADE.costShare[0]));
+  assert.equal(near?.cost, BUILDINGS.sentry.cost, 'a level costs the build price again');
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
   assert.equal(upgradeTarget(snapshotFor(w, p.id), p)?.b.kind, 'sentry', 'a pistol upgrades by night too');
   p.gun = 'lmg';
@@ -371,4 +371,16 @@ test('by night a pistol holder\'s preview, U target and build gate open, and clo
   w.run!.phase = { k: 'day', endsAt: Infinity };
   snap = snapshotFor(w, p.id);
   assert.ok(canBuildNow(snap) && !buildsByNight(snap), 'by day anyone builds, and nobody needs the pistol hint');
+});
+
+test('the hover names the next level and what it brings in round steps against the first level, and a wall tier in health and bite damage', () => {
+  assert.equal(upgradeGains('sentry', 1), 'Sentry II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp');
+  assert.equal(upgradeGains('tesla', 2), 'Tesla coil III: 2× dmg · 1.5× rate · +20% range · 2× ammo · 3× hp');
+  assert.equal(upgradeGains('depot', 1), 'Ammo depot II: 2× resupply · +25% reach · 2× hp');
+  assert.equal(upgradeGains('post', 2), 'Repair post III: 3× repair · +50% reach · 3× hp');
+  assert.equal(upgradeGains('wall', 1), 'Sandbag wall: 3× hp · takes 10% less bite damage');
+  assert.equal(upgradeGains('wall', 2), 'Steel wall: 6× hp · takes 20% less bite damage');
+  for (const kind of BUILDING_KINDS) assert.equal(upgradeGains(kind, 3), '', `${kind} at the top has nothing next`);
+  assert.equal(upgradeGains('spikes', 1), '', 'a spike strip has no levels');
+  for (const kind of BUILDING_KINDS) for (const lv of [1, 2]) assert.doesNotMatch(upgradeGains(kind, lv), /\d\.\d\d\d|blocks/, `${kind} ${lv}: round numbers only`);
 });

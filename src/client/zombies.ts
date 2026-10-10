@@ -184,22 +184,28 @@ export function hoverOf(b: BuildingView): HoverInfo {
   return { name: nameAt(b.kind, lv), lv, top: maxLevelOf(b.kind), hpPct: b.hp * 10, refund: refundFor(b), next: cost === null ? null : { name: nameAt(b.kind, lv + 1), cost, gains: upgradeGains(b.kind, lv) } };
 }
 
-const pctUp = (from: number, to: number) => `+${Math.round((to / from - 1) * 100)}%`;
+/** A multiplier as a player reads it: 1.5×, 2×, 1.25×. */
+const times = (x: number) => `${Math.round(x * 100) / 100}×`;
+/** A small rise as a share: +10%. */
+const plus = (x: number) => `+${Math.round((x - 1) * 100)}%`;
 /**
- * What the step from `lv` to the next gives, as a player reads it: a turret's damage, fire rate, range, load and health; a depot's or post's
- * output, reach and health; a wall's health and the share of a bite it shrugs off. Empty at the top.
+ * What the next level up from `lv` is, named, with its stats against the first level's (so every level reads in the same round steps):
+ * a turret's damage, fire rate, range, load and health ("Cannon II: 1.5× dmg · 1.25× rate · +10% range · 1.5× ammo · 2× hp"); a depot's or post's
+ * output, reach and health; a wall tier's health against a barricade's and the share of each bite's damage it takes less of. Empty at the top.
  */
 export function upgradeGains(kind: BuildingKind, lv: number): string {
   if (lv >= maxLevelOf(kind)) return '';
-  const i = lv - 1, j = lv;
+  const j = lv, name = nameAt(kind, lv + 1);
   if (kind === 'wall') {
-    const a = WALL_TIERS[i]!, b = WALL_TIERS[j]!;
-    return [`${pctUp(a.hp, b.hp)} hp`, b.armor > a.armor ? `blocks ${Math.round(b.armor * 100)}% of bites` : ''].filter(Boolean).join(' · ');
+    const b = WALL_TIERS[j]!;
+    return `${name}: ${[`${times(b.hp / WALL_TIERS[0].hp)} hp`, b.armor > 0 ? `takes ${Math.round(b.armor * 100)}% less bite damage` : ''].filter(Boolean).join(' · ')}`;
   }
   const U = UPGRADE;
-  const hp = `${pctUp(U.hp[i], U.hp[j])} hp`;
-  if (isTurretKind(kind)) return [`${pctUp(U.damage[i], U.damage[j])} dmg`, `${pctUp(1 / U.fireMs[i], 1 / U.fireMs[j])} rate`, `${pctUp(U.range[i], U.range[j])} range`, `${pctUp(U.ammo[i], U.ammo[j])} ammo`, hp].join(' · ');
-  return [`${pctUp(U.aura[i], U.aura[j])} ${kind === 'depot' ? 'resupply' : 'repair'}`, `${pctUp(U.reach[i], U.reach[j])} reach`, hp].join(' · ');
+  const hp = `${times(U.hp[j])} hp`;
+  const gains = isTurretKind(kind)
+    ? [`${times(U.damage[j])} dmg`, `${times(1 / U.fireMs[j])} rate`, `${plus(U.range[j])} range`, `${times(U.ammo[j])} ammo`, hp]
+    : [`${times(U.aura[j])} ${kind === 'depot' ? 'resupply' : 'repair'}`, `${plus(U.reach[j])} reach`, hp];
+  return `${name}: ${gains.join(' · ')}`;
 }
 
 /** The line under a hovered building's name: what U does, or why it cannot. */
@@ -257,7 +263,7 @@ export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose, worldSize
     return {
       kind, lv: level, cx, cy, refusal, hover, upgrade,
       label: `${hover.name}${hover.top > 1 ? ` · level ${hover.lv}/${hover.top}` : ''} · health ${hover.hpPct}%`,
-      detail: `${upgradeLine(hover, upgrade)} · Right click: take down +${hover.refund}${hover.next?.gains ? `\nNext: ${hover.next.gains}` : ''}`,
+      detail: `${upgradeLine(hover, upgrade)} · Right click: take down +${hover.refund}${hover.next?.gains ? `\n${hover.next.gains}` : ''}`,
     };
   }
   return { kind, lv: level, cx, cy, refusal, hover: null, upgrade: null, detail: null, label: refusal ? refusalText(refusal, kind, level) : `${nameAt(kind, level)} · ${costOf(kind, level)} scrap` };

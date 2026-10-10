@@ -915,23 +915,30 @@ export type TurretDef = {
   arc?: { jumps: number; reach: number; falloff: number };
 };
 /**
- * A wall comes in three tiers, each an upgrade of the one below: `armor` is the share of a zombie's bite it shrugs off and `blast` scales a bloater's burst on it.
- * Walls are the only buildings priced by tier; `BUILDINGS.wall` is the first.
+ * A wall comes in three tiers, each an upgrade of the one below: `armor` is the share of each bite's damage it shrugs off (a wall always stops the zombie;
+ * the hover reads it "takes 10% less bite damage"), `blast` scales a bloater's burst on it and `repairMul` how fast holding use mends it.
+ * Walls are the only buildings priced by tier; `BUILDINGS.wall` is the first. Each tier is the buy somewhere and none is the buy everywhere
+ * (scripts/bench-zombie-builds.ts, test/zombies-buildvalue.test.ts): a barricade is the cheapest cell and the quickest mend, a sandbag wall the most bite
+ * soaked up a scrap (3× a barricade's health for 2.5× its price), a steel wall the most in one cell and the best against bursts (6× the health for 6× the price).
  */
 export type WallTier = { name: string; cost: number; hp: number; armor: number; blast: number; repairMul: number };
 export const WALL_TIERS = [
   { name: 'Barricade', cost: 10, hp: 800, armor: 0, blast: 1, repairMul: 1.5 },
-  { name: 'Sandbag wall', cost: 24, hp: 2000, armor: 0.1, blast: 0.75, repairMul: 1 },
-  { name: 'Steel wall', cost: 60, hp: 4800, armor: 0.3, blast: 0.5, repairMul: 0.8 },
+  { name: 'Sandbag wall', cost: 25, hp: 2400, armor: 0.1, blast: 0.75, repairMul: 1 },
+  { name: 'Steel wall', cost: 60, hp: 4800, armor: 0.2, blast: 0.5, repairMul: 0.8 },
 ] as const satisfies readonly WallTier[];
 /**
  * Upgrades: one level up costs `costShare[lv - 1]` of the building's base price (a wall pays the difference of its tiers' prices instead),
- * and each level scales a turret's `damage`, `fireMs`, `range` and `ammo`, every building's `hp`, and a utility's `aura` (how fast it works) and `reach`.
+ * and each level scales a turret's `damage`, `fireMs`, `range` and `ammo`, every building's `hp`, and a utility's `aura` (how fast it works) and `reach`,
+ * against the first level's, in round steps a player can reason about: each level costs the build price again, so level III stands for three copies,
+ * and brings about that many copies' work (II: 1.5× damage, 1.25× rate; III: 2× damage, 1.5× rate) and health (2×, 3×, so mending costs the same a point
+ * at every level), with a little more range and load besides. A step pays at least what a second copy beside the first would and frees its cell
+ * (scripts/bench-zombie-builds.ts), and a maxed turret's value a scrap stays under twice a fresh one's.
  */
 export const MAX_LEVEL = 3;
 export const UPGRADE = {
-  costShare: [0.65, 1.15],
-  damage: [1, 1.4, 1.9], fireMs: [1, 0.85, 0.7], range: [1, 1.1, 1.2], ammo: [1, 1.5, 2.2], hp: [1, 1.4, 1.9], aura: [1, 1.6, 2.4], reach: [1, 1.15, 1.3],
+  costShare: [1, 1],
+  damage: [1, 1.5, 2], fireMs: [1, 1 / 1.25, 1 / 1.5], range: [1, 1.1, 1.2], ammo: [1, 1.5, 2], hp: [1, 2, 3], aura: [1, 2, 3], reach: [1, 1.25, 1.5],
 } as const;
 /**
  * Utilities: the ammo `depot` tops up every turret within `reach` px, `ammoPerSec` as a share of a turret's load a second, for `scrapShare` of a round's price, and reloads a squad player's gun at once there.
@@ -940,36 +947,42 @@ export const UPGRADE = {
  */
 export const UTILITY = {
   depot: { reach: 175, ammoPerSec: 0.1, scrapShare: 0.6 },
-  post: { reach: 175, playerHp: 4, buildingHp: 14 },
+  post: { reach: 175, playerHp: 4, buildingHp: 20 },
   spikes: { slow: 0.45, dps: 14, wear: 7, heavyWear: 24 },
 } as const;
 type BuildingDef = { name: string; cost: number; hp: number };
+/**
+ * Every buildable is the best buy somewhere and none dominates another (scripts/bench-zombie-builds.ts measures the horde health each takes off a scrap,
+ * its ammo and mending counted; test/zombies-buildvalue.test.ts holds it): the sentry is the cheap turret with the most health a scrap; the scatter
+ * the runner killer; the cannon the heavy killer (brutes, the Colossus); the mortar the plated killer with the longest reach; the tesla coil the best
+ * against the night's own mix, its arc blind to plate and cover, at the shortest range. The depot feeds turrets, the post mends, spikes slow.
+ */
 export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<TurretKind, BuildingDef & { turret: TurretDef }> & Record<UtilityKind, BuildingDef & { turret: null }> = {
   wall: { name: WALL_TIERS[0].name, cost: WALL_TIERS[0].cost, hp: WALL_TIERS[0].hp, turret: null },
-  depot: { name: 'Ammo depot', cost: 90, hp: 900, turret: null },
-  post: { name: 'Repair post', cost: 110, hp: 800, turret: null },
-  spikes: { name: 'Spike strip', cost: 12, hp: 450, turret: null },
+  depot: { name: 'Ammo depot', cost: 80, hp: 900, turret: null },
+  post: { name: 'Repair post', cost: 100, hp: 800, turret: null },
+  spikes: { name: 'Spike strip', cost: 10, hp: 450, turret: null },
   tesla: {
-    name: 'Tesla coil', cost: 260, hp: 1100,
-    turret: { prefers: 'walker', range: 230, fireMs: 1000, damage: 40, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 36, scrapPerRound: 1.5, muzzle: 0, bullet: { r: 2, color: '#8fd3ff' }, lobbed: null, arc: { jumps: 3, reach: 120, falloff: 0.75 } },
+    name: 'Tesla coil', cost: 200, hp: 1100,
+    turret: { prefers: 'walker', range: 230, fireMs: 1000, damage: 50, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 36, scrapPerRound: 1, muzzle: 0, bullet: { r: 2, color: '#8fd3ff' }, lobbed: null, arc: { jumps: 4, reach: 120, falloff: 0.85 } },
   },
   sentry: {
-    name: 'Sentry', cost: 70, hp: 1000,
-    turret: { prefers: 'walker', range: 420, fireMs: 140, damage: 14, pellets: 1, bulletSpeed: 2000, spread: 0.06, ammo: 120, scrapPerRound: 0.25, muzzle: 28, bullet: { r: 1.8, color: '#a88600' }, lobbed: null },
+    name: 'Sentry', cost: 60, hp: 1000,
+    turret: { prefers: 'walker', range: 420, fireMs: 140, damage: 14, pellets: 1, bulletSpeed: 2000, spread: 0.06, ammo: 120, scrapPerRound: 0.15, muzzle: 28, bullet: { r: 1.8, color: '#a88600' }, lobbed: null },
   },
   cannon: {
-    name: 'Cannon', cost: 180, hp: 1500,
-    turret: { prefers: 'brute', range: 560, fireMs: 2200, damage: 260, pellets: 1, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 4, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' }, lobbed: null },
+    name: 'Cannon', cost: 150, hp: 1500,
+    turret: { prefers: 'brute', range: 560, fireMs: 2000, damage: 300, pellets: 1, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 1.5, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' }, lobbed: null },
   },
   scatter: {
     name: 'Scatter', cost: 90, hp: 1200,
-    turret: { prefers: 'runner', range: 260, fireMs: 650, damage: 11, pellets: 7, bulletSpeed: 1600, spread: 0.22, ammo: 40, scrapPerRound: 0.5, muzzle: 24, bullet: { r: 1.6, color: '#2f9e8f' }, lobbed: null },
+    turret: { prefers: 'runner', range: 260, fireMs: 650, damage: 10, pellets: 7, bulletSpeed: 1600, spread: 0.22, ammo: 40, scrapPerRound: 0.5, muzzle: 24, bullet: { r: 1.6, color: '#2f9e8f' }, lobbed: null },
   },
   mortar: {
-    name: 'Mortar', cost: 220, hp: 1000,
+    name: 'Mortar', cost: 250, hp: 1000,
     turret: {
-      prefers: 'plated', range: 750, fireMs: 2600, damage: 0, pellets: 1, bulletSpeed: 700, spread: 0.04, ammo: 8, scrapPerRound: 5, muzzle: 18, bullet: { r: 5, color: '#4a3f35' },
-      lobbed: { radius: 120, damage: 160 },
+      prefers: 'plated', range: 750, fireMs: 2600, damage: 0, pellets: 1, bulletSpeed: 700, spread: 0.04, ammo: 8, scrapPerRound: 4, muzzle: 18, bullet: { r: 5, color: '#4a3f35' },
+      lobbed: { radius: 120, damage: 80 },
     },
   },
 };
