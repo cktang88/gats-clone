@@ -10,7 +10,7 @@ import { clearOfLeaves, doorCentre, leavesCrossed, navAround, takeReplan, type B
 import { doorLeaves, swingArcAt, swingHinges, SWING_MAX } from '../../shared/sim/doors.ts';
 import type { MapDoor } from '../../shared/geom.ts';
 import { barrelToShoot, seenBarrels, shotWouldBurnMe } from './barrels.ts';
-import { hazardState, hazardsOf, propToShoot, seenProps, shotWouldHurtMe } from './props.ts';
+import { aroundTrap, hazardState, hazardsOf, propToShoot, seenProps, shotWouldHurtMe } from './props.ts';
 import { aimsAtLead, botSight, focus, inBotSight, unseenShooter, type Perception, type Threat } from './awareness.ts';
 import { justLost, lane, type Intent, type IntentCtx } from './intent.ts';
 import { hiddenFromSeen } from './tactics.ts';
@@ -880,9 +880,14 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     const away = awayFrom(me, t.p, c.arena, RETREAT_STEP);
     keys = keysToward({ ...m, dir: null, stuckTicks: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity } }, me, away, v.tick).keys;
   }
-  // Fire and gas: out of a slick or cloud it stands in, and held at the edge of one on its way.
-  const hazard = hazardState(hazardsOf(snap.thrown, me.id), me, way.at);
-  if (hazard.k === 'in') keys = keysToward({ ...m, dir: null, stuckTicks: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity } }, me, awayFrom(me, hazard.h, c.arena, RETREAT_STEP), v.tick).keys;
+  // Fire and gas: out of a slick or cloud it stands in, and held at the edge of one on its way. A claymore it has spotted stays, so it
+  // walks round that instead of waiting.
+  const sideOf = new Map(snap.leaderboard.map((r) => [r.id, r.team]));
+  const friendly = (owner: number) => me.team !== null && sideOf.get(owner) === me.team;
+  const hazard = hazardState(hazardsOf(snap.thrown, me.id, friendly), me, way.at);
+  const fresh = { ...m, dir: null, stuckTicks: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity } };
+  if (hazard.k === 'in') keys = keysToward(fresh, me, awayFrom(me, hazard.h, c.arena, RETREAT_STEP), v.tick).keys;
+  else if (hazard.k === 'entering' && hazard.h.trap && way.at) keys = keysToward(fresh, me, aroundTrap(hazard.h, me, way.at), v.tick).keys;
   else if (hazard.k === 'entering') keys = { up: false, down: false, left: false, right: false };
   let turn: Hold['turn'] = null;
   if (wanted === 'radar' && leadAt) {

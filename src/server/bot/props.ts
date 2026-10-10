@@ -1,6 +1,6 @@
 import { PROP_FX, PROP_KINDS, PROPS, WORLD, type PropKind } from '../../shared/defs.ts';
 import type { PropView, ThrownView } from '../../shared/protocol.ts';
-import { GAS_RADIUS } from '../../shared/sim/abilities.ts';
+import { CLAYMORE, GAS_RADIUS } from '../../shared/sim/abilities.ts';
 import { segmentEntersRectAt, type Rect } from '../../shared/sim/movement.ts';
 import { clearShot, dist, type Point } from './nav.ts';
 
@@ -69,10 +69,37 @@ export function propToShoot(
   return best;
 }
 
-/** Fire slicks and gas clouds as circles a bot keeps out of; its own (harmless to it) excepted. */
-export type Hazard = Point & { r: number };
-export const hazardsOf = (thrown: readonly ThrownView[], myId: number): Hazard[] =>
-  thrown.filter((t) => (t.kind === 'gasCloud' || t.kind === 'fireSlick') && t.owner !== myId).map((t) => ({ x: t.x, y: t.y, r: t.r }));
+/**
+ * Fire slicks, gas clouds and enemy claymores it has spotted, as circles a bot keeps out of; its own (harmless to it) excepted. A
+ * claymore's circle covers its trigger cone (centred out along its facing), and is a `trap`: one that stays, so a bot walks round it
+ * rather than wait at its edge. `friendly` says whether a thrower is on the bot's side (their claymores never fire at it).
+ */
+export type Hazard = Point & { r: number; trap?: true };
+export function hazardsOf(thrown: readonly ThrownView[], myId: number, friendly: (owner: number) => boolean = () => false): Hazard[] {
+  const out: Hazard[] = [];
+  for (const t of thrown) {
+    if (t.owner === myId) continue;
+    if (t.kind === 'gasCloud' || t.kind === 'fireSlick') out.push({ x: t.x, y: t.y, r: t.r });
+    else if (t.kind === 'claymore' && !friendly(t.owner)) {
+      out.push({ ...trapCircle(t, t.angle ?? 0), trap: true });
+    }
+  }
+  return out;
+}
+
+/** A circle round a claymore's trigger cone, a body's width wider all round: centred halfway out along its facing, through the cone's far corners. */
+function trapCircle(t: Point, a: number): Hazard {
+  const far = CLAYMORE.reach + WORLD.playerRadius * 2, side = CLAYMORE.cone + 0.15, mid = far / 2;
+  return { x: t.x + Math.cos(a) * mid, y: t.y + Math.sin(a) * mid, r: Math.hypot(far * Math.cos(side) - mid, far * Math.sin(side)) };
+}
+
+/** Where to walk to get round trap `h` on the way from `me` to `to`: abreast of it, on the side the way already leans to, clear of it. */
+export function aroundTrap(h: Hazard, me: Point, to: Point): Point {
+  const dx = h.x - me.x, dy = h.y - me.y, d = Math.hypot(dx, dy) || 1;
+  const side = (to.x - me.x) * dy - (to.y - me.y) * dx > 0 ? -1 : 1;
+  const k = (h.r + WORLD.playerRadius * 3) / d;
+  return { x: h.x - dy * k * side, y: h.y + dx * k * side };
+}
 
 const toSegment = (p: Point, a: Point, b: Point): number => {
   const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;

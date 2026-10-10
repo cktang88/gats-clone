@@ -5,7 +5,7 @@ import type {
 import { rankRows, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { lookReach, lookSides, NO_LOOK, type LookSides } from '../lookahead.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
-import { GAS_RADIUS, HEAL_POLE } from './abilities.ts';
+import { GAS_RADIUS, HEAL_POLE, spotsClaymore } from './abilities.ts';
 import { doorViews } from './doors.ts';
 import { heardShots } from './hearing.ts';
 import { empMul, propState } from './props.ts';
@@ -175,7 +175,9 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     .filter((t) => {
       if (t.kind !== 'claymore' || t.owner === me.id || stats.thermal) return true;
       const owner = w.players.get(t.owner);
-      return !!owner && !isEnemy(me, owner);
+      if (owner && !isEnemy(me, owner)) return true;
+      // An enemy's claymore shows only to a viewer looking right at it from near enough (`spotsClaymore`).
+      return spotsClaymore(eye.x, eye.y, eye.angle, t);
     })
     .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner, ...(t.kind === 'claymore' && { angle: Math.round(t.angle * 100) / 100 }) }));
   const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress, ...(z.crew > 0 && { crew: z.crew }), ...(z.contested && { contested: true as const }) }));
