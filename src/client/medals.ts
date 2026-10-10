@@ -17,7 +17,23 @@ const FAMILY = {
   streak: { enamel: '#b8410f', ribbon: '#ff7a2f' },
   /** The weapon feats: gunmetal enamel on the interface's signal orange. */
   arms: { enamel: '#3d4450', ribbon: '#ff5a1f' },
+  /** Zombies: olive-drab enamel on a sickly lime ribbon, the horde's own colours. */
+  horde: { enamel: '#4b5a22', ribbon: '#a6c63a' },
 } as const;
+
+/** A cog of `n` teeth round 12,12 with a hole in it, as a glyph path (evenodd leaves the hole open). */
+function cogGlyph(n: number, outer: number, inner: number, hole: number): string {
+  const pts: string[] = [];
+  for (let i = 0; i < n * 4; i++) {
+    const a = -Math.PI / 2 + ((i - 0.5) * Math.PI * 2) / (n * 4) + Math.PI / (n * 4);
+    const r = i % 4 < 2 ? outer : inner;
+    pts.push(`${(12 + Math.cos(a) * r).toFixed(2)} ${(12 + Math.sin(a) * r).toFixed(2)}`);
+  }
+  return `M${pts.join('L')}zM${12 + hole} 12a${hole} ${hole} 0 1 0-${hole * 2} 0a${hole} ${hole} 0 1 0 ${hole * 2} 0z`;
+}
+
+/** A round in flight pointing right, its tail at `x`, `y` its top, with a streak behind it. */
+const roundGlyph = (x: number, y: number) => `M${x} ${y}h7c3 0 5.5 1.1 5.5 2.5s-2.5 2.5-5.5 2.5H${x}zM${x - 4} ${y + 1.6}h3v1.8h-3z`;
 
 /** 24-unit glyphs, drawn in bone with an ink edge. */
 export const GLYPHS = {
@@ -47,6 +63,18 @@ export const GLYPHS = {
   plug: 'M8 1.5h2.2v5h3.6v-5H16v5h1.5v4.2a5.5 5.5 0 0 1-4.4 5.4V19h-2.2v-2.9a5.5 5.5 0 0 1-4.4-5.4V6.5H8zM11 20.5h2V23h-2z',
   brush: 'M17.8 1.8l4.4 4.4-8.3 9.6-2.7-2.7zM9.7 14.5c1.8 0 3.2 1.4 3.2 3.2 0 2.5-2.6 4.6-6.4 4.6 1-1.2 1.2-2 1.2-3.2 0-2.5 0-4.6 2-4.6z',
   ghost: 'M12 2.5c-4.7 0-7.5 3.4-7.5 8v10.5l2.5-2 2.5 2 2.5-2 2.5 2 2.5-2 2.5 2V10.5c0-4.6-2.8-8-7.5-8zM9 8.5a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zm6 0a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4z',
+  // The Zombies tracks.
+  moon: 'M13.5 2A10 10 0 1 0 22 16.5 8 8 0 0 1 13.5 2zM19 2.5l.8 1.7 1.8.2-1.3 1.3.3 1.8-1.6-.9-1.6.9.3-1.8-1.3-1.3 1.8-.2z',
+  sunrise: 'M2 17h20v2H2zM5.5 15.5a6.5 6.5 0 0 1 13 0zM11 3h2v4.5h-2zM4.4 7.1l1.4-1.4 3 3-1.4 1.4zM19.6 7.1l-1.4-1.4-3 3 1.4 1.4zM1.5 12.5H5v2H1.5zM19 12.5h3.5v2H19zM6 20.5h12V22H6z',
+  tower: 'M4 3h3.2v2.8h2.2V3h5.2v2.8h2.2V3H20v7.2l-2 1.6V21.5H6v-9.7l-2-1.6zM10 21.5v-5a2 2 0 0 1 4 0v5z',
+  hand: 'M2 19.5h20V22H2zM8 11h8v8.5H8zM8.2 4.6h1.9V11H8.2zM10.6 3h1.9v8h-1.9zM13 3.4h1.9V11H13zM15.3 5.2h1.7V11h-1.7zM8 13.2L5 10.1l1.4-1.4L8 10.3z',
+  bricks: 'M2 3.5h9V8H2zM12 3.5h10V8H12zM2 9.5h4.5V14H2zM7.5 9.5h9V14h-9zM17.5 9.5H22V14h-4.5zM2 15.5h9V20H2zM12 15.5h10V20H12z',
+  cog: cogGlyph(8, 10.5, 7.6, 3.2),
+  wrench: 'M15 2a5.5 5.5 0 0 0-5.2 7.3L2.8 16.3a2 2 0 0 0 0 2.8l2.1 2.1a2 2 0 0 0 2.8 0l7-7A5.5 5.5 0 0 0 21.8 8.4l-3.4 3.4-3.6-.9-.9-3.6 3.4-3.4A5.5 5.5 0 0 0 15 2z',
+  volley: `${roundGlyph(5.5, 2)}${roundGlyph(8, 9.5)}${roundGlyph(5.5, 17)}`,
+  medic: 'M9 2.5h6v6.5h6.5v6H15v6.5H9V15H2.5V9H9z',
+  hammer: 'M1.5 8L10 1.8l4.5 6.4L6 14.4zM12.2 10.6l10.4 10-2 2-10.2-10.2zM16.5 2.5l1.6-1.2 1.2 1.6-1.6 1.2zM19.5 6.2l2.3-.5.3 1.6-2.3.5z',
+  shieldCheck: 'M12 1.8l8.3 3.1v6.6c0 5.3-3.6 9.3-8.3 10.7-4.7-1.4-8.3-5.4-8.3-10.7V4.9zM7.4 11.6l1.7-1.7 2.2 2.2 4.6-4.6 1.7 1.7-6.3 6.3z',
 } as const;
 
 const ART: Record<MedalId, MedalArt> = {
@@ -117,6 +145,17 @@ const CAREER_ART: Record<CareerId, Omit<MedalArt, 'tier'>> = {
   lmgKills: { ...FAMILY.arms, glyph: GLYPHS.belt },
   oneShot: { ...FAMILY.arms, glyph: GLYPHS.skull },
   twoBirds: { ...FAMILY.arms, glyph: GLYPHS.shells },
+  zNights: { ...FAMILY.horde, glyph: GLYPHS.moon },
+  zBestNight: { ...FAMILY.horde, glyph: GLYPHS.sunrise },
+  zWins: { ...FAMILY.horde, glyph: GLYPHS.tower },
+  zKills: { ...FAMILY.horde, glyph: GLYPHS.hand },
+  zBuilt: { ...FAMILY.horde, glyph: GLYPHS.bricks },
+  zMaxed: { ...FAMILY.horde, glyph: GLYPHS.cog },
+  zRepaired: { ...FAMILY.horde, glyph: GLYPHS.wrench },
+  zRounds: { ...FAMILY.horde, glyph: GLYPHS.volley },
+  zRevives: { ...FAMILY.horde, glyph: GLYPHS.medic },
+  zColossus: { ...FAMILY.horde, glyph: GLYPHS.hammer },
+  zFlawless: { ...FAMILY.horde, glyph: GLYPHS.shieldCheck },
 };
 
 export const careerArt = (b: Badge): MedalArt => ({ ...CAREER_ART[b.track], tier: CAREER_TIERS[b.tier]!, stars: b.tier + 1 });
@@ -130,7 +169,8 @@ const TIER_WORD: Record<MedalTier, string> = { bronze: 'Bronze', silver: 'Silver
 export function careerTooltip(track: CareerId, held?: { tier: Badge['tier']; at: number }): string {
   const def = CAREER[track];
   const medal = def.needs in MEDALS ? MEDALS[def.needs as MedalId] : null;
-  const what = medal ? `Earned for ${def.unit}: ${medal.desc.charAt(0).toLowerCase()}${medal.desc.slice(1)}.` : `Earned for ${def.unit}.`;
+  const why = medal?.desc ?? def.desc;
+  const what = why ? `Earned for ${def.unit}: ${why.charAt(0).toLowerCase()}${why.slice(1)}.` : `Earned for ${def.unit}.`;
   const rungs = def.at.map((n, i) => `${TIER_WORD[CAREER_TIERS[i]!]} ${n.toLocaleString('en-US')}`).join(' · ');
   const got = held ? `\nHeld: ${careerName({ track, tier: held.tier })} (${TIER_WORD[CAREER_TIERS[held.tier]!]}), earned ${new Date(held.at).toLocaleDateString()}.` : '';
   return `${def.name}: ${what}\n${rungs}${got}`;

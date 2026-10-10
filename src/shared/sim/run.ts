@@ -40,6 +40,7 @@ function service(w: World, run: Run, p: Player, dtMs: number) {
     const hp = Math.min((ZOM.repairHpPerSec * speed * dtMs) / 1000, max - it.hp, run.scrap / perHp);
     it.hp += hp;
     run.scrap -= hp * perHp;
+    if (hp > 0) (run.mended ??= new Map()).set(p.id, (run.mended.get(p.id) ?? 0) + hp);
   };
   if (target.on === 'core') { mend(run.core, ZOM.coreHp, ZOM.coreRepairScrapPerHp); return; }
   const b = target.on.b;

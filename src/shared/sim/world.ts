@@ -222,6 +222,8 @@ export type Run = {
   startedAt: number;
   flow: Flow | null;
   stats: Map<number, RunStats>;
+  /** Health each player has mended on the squad's buildings and the core this run, by id: the server reads it for their profile, the sim never does. */
+  mended?: Map<number, number>;
   turretKills: Record<TurretKind, Record<ZombieKind, number>>;
   bastionKills: number;
   /** Tonight's horde share for the squad, which scales a boss's health. */

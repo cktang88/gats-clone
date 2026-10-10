@@ -9,7 +9,7 @@ test('every lifetime medal has a hover tooltip saying what it is for and every r
     assert.ok(tip.startsWith(`${def.name}: Earned for ${def.unit}`), tip);
     for (const n of def.at) assert.ok(tip.includes(n.toLocaleString('en-US')), `${track} names the ${n} rung`);
     if (def.needs in MEDALS) assert.ok(tip.toLowerCase().includes(MEDALS[def.needs as MedalId].desc.toLowerCase()), `${track} explains the match medal it counts`);
-    assert.ok(!tip.includes('Held'), 'a locked medal says nothing is held');
+    assert.ok(!tip.includes('Held:'), 'a locked medal says nothing is held');
   }
   const held = careerTooltip('kills', { tier: 2, at: Date.UTC(2026, 9, 1) });
   assert.match(held, /Held: Centurion III \(Gold\), earned /);

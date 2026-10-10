@@ -96,6 +96,7 @@ export const COSMETICS: readonly Cosmetic[] = [
     ['crown', 'Crown', 'Heavy is the head. Gold is the plastic.', 'legendary', lv(90), [GOLD, '#e8433a']],
     ['centurion', 'Centurion Crest', 'A plume for five hundred kills.', 'rare', car('kills', 1), [RUST, GOLD]],
     ['phantom', 'Phantom Hood', 'You never saw it coming. Five times over.', 'epic', car('ghost', 1), [STEEL, INK]],
+    ['hardhat', 'Hard Hat', 'Five thousand buildings put up in Zombies. Mind your head.', 'epic', car('zBuilt', 3), [GOLD, INK]],
     ['party', 'Party Hat', 'Weekly challenge reward. Everyone is invited.', 'rare', CHALLENGE, ['#e8433a', '#3a7be8', GOLD]],
   ]),
   ...make('camo', [
@@ -140,6 +141,7 @@ export const COSMETICS: readonly Cosmetic[] = [
     ['ember', 'Ember', 'Fading from flame to coal.', 'epic', lv(55), ['#ffd27a', '#ff9a3c', '#d9541f']],
     ['aurora', 'Aurora', 'Shimmers across the sky.', 'legendary', lv(95), [MINT, '#7cc4ff', '#c3a6ff'], true],
     ['bounty', 'Bounty Gold', 'Fifteen bounties claimed. Worth its weight.', 'epic', car('bounty', 1), [GOLD, RUST]],
+    ['firstlight', 'First Light', 'Thirty Zombies runs held through the Tide. Dawn, every time.', 'legendary', car('zWins', 3), [AMBER, '#ff8fa3', '#7cc4ff'], true],
     ['neon', 'Neon Lime', 'Weekly challenge reward. Glows in the dark.', 'rare', CHALLENGE, ['#c8ff3d']],
   ]),
   ...make('title', [
@@ -176,6 +178,8 @@ export const COSMETICS: readonly Cosmetic[] = [
     ['spraymaster', 'Spray Master', 'Two hundred and fifty SMG kills.', 'rare', car('smgKills', 1), []],
     ['brawler', 'Brawler', 'A hundred and fifty Point Blank kills.', 'epic', car('pointBlank', 2), []],
     ['seasoned', 'Seasoned', 'Fifty matches played.', 'rare', car('games', 1), []],
+    ['nightowl', 'Night Owl', 'Four hundred zombie nights survived.', 'epic', car('zNights', 3), []],
+    ['titan', 'Titan Toppler', 'Sixty Colossi felled.', 'legendary', car('zColossus', 3), []],
     ['grinder', 'Daily Grinder', 'Weekly challenge reward. Never misses a day.', 'rare', CHALLENGE, []],
     ['overachiever', 'Overachiever', 'Weekly challenge reward. Asked for more.', 'epic', CHALLENGE, []],
     ['regular', 'Regular', 'Weekly challenge reward. Usual table, usual order.', 'rare', CHALLENGE, []],

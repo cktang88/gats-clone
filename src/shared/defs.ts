@@ -558,13 +558,25 @@ export const CAREER_IDS = [
   'kills', 'games', 'streak', 'longShot', 'pointBlank', 'multiKill', 'tripleKill', 'massacre', 'clutch', 'closeCall',
   'revenge', 'shutdown', 'bounty', 'firstBlood', 'distance', 'ghost',
   'pistolKills', 'smgKills', 'shotgunKills', 'assaultKills', 'sniperKills', 'lmgKills', 'oneShot', 'twoBirds',
+  // Zombies (`ZOM_CAREER_IDS`): each counts one of the `ZOM_STATS` a human's runs add to their profile.
+  'zNights', 'zBestNight', 'zWins', 'zKills', 'zBuilt', 'zMaxed', 'zRepaired', 'zRounds', 'zRevives', 'zColossus', 'zFlawless',
 ] as const;
 export type CareerId = (typeof CAREER_IDS)[number];
+/**
+ * What a human's Zombies runs keep on their profile, for the Zombies lifetime medals. Each counts only a seated human's own play in a squad
+ * room (never a bot's, never the range's): `nights` survived, the furthest night reached in one run (`bestNight`, a best, not a sum), runs
+ * won (`wins`), zombies killed with their own gun, blade or blast (`kills`), buildings put up (`built`), upgrades to the top level (`maxed`),
+ * health mended on the squad's buildings and the core (`repaired`), rounds fired (`rounds`), squadmates revived (`revives`), Colossi felled
+ * with a hit of their own in them (`colossi`), and nights the core came through without a scratch (`flawless`).
+ */
+export const ZOM_STATS = ['nights', 'bestNight', 'wins', 'kills', 'built', 'maxed', 'repaired', 'rounds', 'revives', 'colossi', 'flawless'] as const;
+export type ZomStat = (typeof ZOM_STATS)[number];
 /** `km` is career distance walked, at `KM_PX` px to the km: a body is about a metre across, so a km is some 3 minutes on foot. */
-export type CareerStat = 'kills' | 'games' | 'bestStreak' | 'km' | `kills:${WeaponId}`;
+export type CareerStat = 'kills' | 'games' | 'bestStreak' | 'km' | `kills:${WeaponId}` | `zom:${ZomStat}`;
 export const KM_PX = 48_000;
 export const CAREER_TIERS: readonly MedalTier[] = ['bronze', 'silver', 'gold', 'platinum'];
-export const CAREER: Record<CareerId, { name: string; unit: string; needs: CareerStat | MedalId; at: readonly [number, number, number, number] }> = {
+/** `desc`, when given, says what counts toward a track beyond its `unit`, for its tooltip. */
+export const CAREER: Record<CareerId, { name: string; unit: string; needs: CareerStat | MedalId; at: readonly [number, number, number, number]; desc?: string }> = {
   kills: { name: 'Centurion', unit: 'career kills', needs: 'kills', at: [100, 500, 1500, 5000] },
   games: { name: 'Veteran', unit: 'matches played', needs: 'games', at: [10, 50, 150, 500] },
   streak: { name: 'Iron Will', unit: 'kills in one life', needs: 'bestStreak', at: [5, 10, 15, 25] },
@@ -589,7 +601,21 @@ export const CAREER: Record<CareerId, { name: string; unit: string; needs: Caree
   lmgKills: { name: 'Gunner', unit: 'machine gun kills', needs: 'kills:lmg', at: [50, 250, 750, 2500] },
   oneShot: { name: 'Silencer', unit: 'One Shots', needs: 'oneShot', at: [10, 50, 150, 400] },
   twoBirds: { name: 'Scattergun', unit: 'Two Birds', needs: 'twoBirds', at: [10, 50, 150, 400] },
+  // Zombies. A first run or two brings a bronze or three; platinum is months of nights.
+  zNights: { name: 'Night Owl', unit: 'zombie nights survived', needs: 'zom:nights', at: [5, 25, 100, 400], desc: 'each night of a Zombies run you were seated for from dusk and saw end' },
+  zBestNight: { name: 'Last Light', unit: 'best night reached', needs: 'zom:bestNight', at: [3, 5, 8, 10], desc: 'the deepest night of one Zombies run you were seated for from its dusk; night 10 is the Tide' },
+  zWins: { name: 'Held the Line', unit: 'runs won', needs: 'zom:wins', at: [1, 3, 10, 30], desc: 'Zombies runs where the Bastion held through the Tide, night 10' },
+  zKills: { name: 'Pest Control', unit: 'zombies killed', needs: 'zom:kills', at: [100, 1000, 5000, 20000], desc: 'zombies felled by your own gun, blade or blast (a turret\'s kills are the turret\'s)' },
+  zBuilt: { name: 'Bricklayer', unit: 'buildings put up', needs: 'zom:built', at: [25, 250, 1000, 5000], desc: 'every wall, turret, utility and spike strip you build, each cell of a dragged line counting one' },
+  zMaxed: { name: 'Chief Engineer', unit: 'upgrades to level 3', needs: 'zom:maxed', at: [3, 25, 100, 400], desc: 'buildings you step up to their top level: a steel wall, or a level 3 turret or utility' },
+  zRepaired: { name: 'Handyman', unit: 'health mended', needs: 'zom:repaired', at: [2000, 25000, 100000, 500000], desc: 'health you put back into the squad\'s buildings and the Bastion by holding use' },
+  zRounds: { name: 'Trigger Happy', unit: 'rounds fired', needs: 'zom:rounds', at: [1000, 10000, 50000, 250000], desc: 'every pull of the trigger in a Zombies run, a shotgun\'s blast counting one' },
+  zRevives: { name: 'Field Medic', unit: 'squadmates revived', needs: 'zom:revives', at: [3, 25, 100, 400], desc: 'downed squadmates you held use over until they stood again' },
+  zColossus: { name: 'Titan Toppler', unit: 'Colossi felled', needs: 'zom:colossi', at: [1, 5, 20, 60], desc: 'every Colossus that dies with one of your own hits in it, the killing blow or not' },
+  zFlawless: { name: 'Not a Scratch', unit: 'nights without a scratch', needs: 'zom:flawless', at: [1, 5, 20, 60], desc: 'nights you saw out whole in which the horde never laid a finger on the Bastion' },
 };
+/** The Zombies lifetime tracks, which the profile page shows in a section of their own. */
+export const ZOM_CAREER_IDS: readonly CareerId[] = CAREER_IDS.filter((t) => CAREER[t].needs.startsWith('zom:'));
 /** Score a lifetime medal pays the moment it is earned, by tier. */
 export const CAREER_PAY: Record<MedalTier, number> = { bronze: 100, silver: 200, gold: 400, platinum: 800 };
 /** One rung of a career track: which track, and which tier of it (0 bronze to 3 platinum). */

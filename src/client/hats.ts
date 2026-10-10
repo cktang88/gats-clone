@@ -460,6 +460,40 @@ export const HELMETS: Record<string, HelmetDef> = {
     },
   },
 
+  // A builder's yellow hard hat: a peak out front along the aim, a raised ridge from front to back, a lamp on the brow and a hazard band.
+  h_hardhat: {
+    reach: 1.45,
+    paint(k) {
+      const { u } = k;
+      const rise = k.T - k.lip;
+      const g = k.g;
+      const [bx, by] = k.xy(0.38, 0);
+      k.part(ell(bx, by, 1.32 * u, 1.12 * u, k.a), shadeHex(GOLD, 0.82), k.lip * 0.3, rise);
+      k.part(circle(0, 0, 0.98 * u), GOLD, k.lip * 1.1, rise + k.lip * 0.3);
+      const top = rise + k.lip * 1.4;
+      const [r0x, r0y] = k.xy(-0.86, 0), [r1x, r1y] = k.xy(0.86, 0);
+      stroke(k, [[r0x, r0y], [r1x, r1y]], u * 0.3, shadeHex(GOLD, 0.7), top);
+      stroke(k, [[r0x, r0y], [r1x, r1y]], u * 0.12, '#fff1a8', top + u * 0.04);
+      // The hazard band round the crown: short ink dashes.
+      g.save();
+      g.translate(0, -(rise + k.lip * 0.7));
+      g.strokeStyle = INK;
+      g.lineWidth = u * 0.16;
+      g.setLineDash([u * 0.32, u * 0.32]);
+      g.beginPath();
+      g.arc(0, 0, 1.0 * u, 0, TAU);
+      g.stroke();
+      g.restore();
+      const [lx, ly] = k.xy(0.82, 0);
+      k.part(circle(lx, ly, 0.26 * u), '#3d4450', 0, top - u * 0.1);
+      g.fillStyle = '#fff6c8';
+      g.beginPath();
+      g.arc(lx, ly - top + u * 0.1, 0.15 * u, 0, TAU);
+      g.fill();
+      spec(k, -0.4 * u, -0.38 * u, 0.1 * u, top - k.T);
+    },
+  },
+
   // A striped paper cone leaning back, with a gold pompom at the tip and the elastic under the chin.
   h_party: {
     reach: 3.0,

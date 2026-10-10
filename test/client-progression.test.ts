@@ -135,7 +135,7 @@ test('the next reward is the lowest level above yours, the rarer of a tie', () =
 test('collection counts per slot count defaults and unlocked items', () => {
   const none = collectionCounts(new Set());
   assert.equal(none.helmet.have, 1);
-  assert.equal(none.helmet.total, 15);
+  assert.equal(none.helmet.total, 16);
   const some = collectionCounts(new Set(['h_beret', 'h_crown', 'c_woodland']));
   assert.equal(some.helmet.have, 3);
   assert.equal(some.camo.have, 2);

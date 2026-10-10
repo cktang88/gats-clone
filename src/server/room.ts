@@ -1,6 +1,6 @@
 import type { WebSocket } from 'ws';
 import type { Player } from '../shared/sim/world.ts';
-import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, GUN_IDS, GUNS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
+import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, GUN_IDS, GUNS, MAX_LEVEL, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
 import { MAPS, rotationMap, type MapId } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
@@ -19,6 +19,7 @@ import { NO_PROFILES, type Profiles } from './profiles.ts';
 import { applyRangeMsg, isPractice } from './range.ts';
 import { botName, botSeats, newBotMemory, randomLoadout, type BotMemory } from './bots.ts';
 import { thinkBots } from './bot/tick.ts';
+import { newZomWatch, settleLeaver, watchZombies, type ZomDelta } from './zomcareer.ts';
 import { enqueueInput, newInputQueue, takeInput, type InputQueue } from './inputs.ts';
 import { makeModerator, type Moderator } from './moderation.ts';
 import { LIMITS, makeFaultLog, makeTokenBucket, type Limits, type WindowGate } from './limits.ts';
@@ -227,19 +228,32 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     }
   }
 
-  /** Zombies pay for each night survived at dawn, and the finish and the Bastion when the run ends. */
+  /**
+   * Zombies pay for each night survived at dawn, and the finish and the Bastion when the run ends. Whoever sat a night from its dusk also
+   * has it counted toward the Zombies lifetime medals: reaching it, seeing it out (without a scratch on the core, if so) and winning the run.
+   */
   let run: object | null = null, runNight = 0, nightAt = 0, runPhase = '', runPaid = false;
+  const zomWatch = newZomWatch();
   function payRun() {
     const r = world.run;
     if (!r) return;
     if (r !== run) { run = r; runNight = r.night; nightAt = world.now; runPhase = r.phase.k; runPaid = false; }
-    if (r.phase.k === 'night' && runPhase !== 'night') nightAt = world.now;
+    const dusk = r.phase.k === 'night' && runPhase !== 'night';
+    if (dusk) nightAt = world.now;
     runPhase = r.phase.k;
-    const seated = () => joined().flatMap((c) => { const p = world.players.get(c.playerId); const key = p && profileKey(c, p.name); return key && c.since <= nightAt ? [key] : []; });
-    if (r.night > runNight) { runNight = r.night; for (const key of seated()) profiles.round(key, { won: false, finished: false, nights: 1 }); }
+    const seated = () => joined().flatMap((c) => { const p = world.players.get(c.playerId); const key = p && profileKey(c, p.name); return key && c.since <= nightAt ? [{ key, id: c.playerId }] : []; });
+    if (dusk) for (const { id } of seated()) profile(id, { zom: { bestNight: r.night } });
+    const sawOut = (won: boolean): ZomDelta => ({ nights: 1, ...(!zomWatch.hurt && { flawless: 1 }), ...(won && { wins: 1 }) });
+    if (r.night > runNight) {
+      runNight = r.night;
+      for (const { key, id } of seated()) { profiles.round(key, { won: false, finished: false, nights: 1 }); profile(id, { zom: sawOut(false) }); }
+    }
     if (r.phase.k === 'over' && !runPaid) {
       runPaid = true;
-      for (const key of seated()) profiles.round(key, { won: r.phase.won, finished: true, nights: r.phase.won ? 1 : 0, bastion: r.phase.won });
+      for (const { key, id } of seated()) {
+        profiles.round(key, { won: r.phase.won, finished: true, nights: r.phase.won ? 1 : 0, bastion: r.phase.won });
+        if (r.phase.won) profile(id, { zom: sawOut(true) });
+      }
     }
   }
 
@@ -248,12 +262,13 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
    * medal lands the moment it is earned rather than when the life ends.
    */
   function creditProfiles(events: readonly GameEvent[]) {
-    const deltas = new Map<number, { kills: number; deaths: number; medals: MedalId[]; weaponKills: WeaponId[]; zkills: number }>();
+    const deltas = new Map<number, { kills: number; deaths: number; medals: MedalId[]; weaponKills: WeaponId[]; zkills: number; zom?: ZomDelta }>();
     const delta = (id: number) => {
       let d = deltas.get(id);
       if (!d) deltas.set(id, (d = { kills: 0, deaths: 0, medals: [], weaponKills: [], zkills: 0 }));
       return d;
     };
+    if (mode === 'ZOM') for (const [id, zom] of watchZombies(zomWatch, world, events)) delta(id).zom = zom;
     for (const e of events) {
       if (e.e === 'medal') delta(e.id).medals.push(e.medal);
       if (e.e === 'kill' && e.killerId !== null && e.killerId !== e.victimId) {
@@ -323,9 +338,19 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       case 'input': enqueueInput(client.inputs, { seq: msg.seq, input: msg.input, viewAt: msg.viewAt, rewindCapMs, arrivedTick: world.tick }); return;
       case 'pick': choosePick(world, id, msg.level, msg.option); return;
       case 'respawn': respawn(world, id, msg.loadout); return;
-      case 'build': if ('cells' in msg) buildLine(world, id, msg.kind, msg.cells, msg.lv); else build(world, id, msg.kind, msg.cx, msg.cy, msg.lv); return;
+      case 'build': {
+        const refused = 'cells' in msg ? buildLine(world, id, msg.kind, msg.cells, msg.lv) : [build(world, id, msg.kind, msg.cx, msg.cy, msg.lv)];
+        const built = refused.filter((r) => r === null).length;
+        if (built) profile(id, { zom: { built } });
+        return;
+      }
       case 'demolish': demolish(world, id, msg.cx, msg.cy); return;
-      case 'upgrade': upgrade(world, id, msg.cx, msg.cy); return;
+      case 'upgrade': {
+        if (upgrade(world, id, msg.cx, msg.cy) !== null) return;
+        const b = world.buildings.find((o) => o.cx === msg.cx && o.cy === msg.cy);
+        if ((b?.lv ?? 1) >= MAX_LEVEL) profile(id, { zom: { maxed: 1 } });
+        return;
+      }
       case 'ready': toggleReady(world, id); return;
       case 'range': { const refused = applyRangeMsg(world, id, msg); if (refused) send(client.ws, { t: 'error', message: refused }); return; }
       case 'equip': {
@@ -384,6 +409,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const walk = walked.get(c.playerId);
     const key = left ? profileKey(c, left.name) : null;
     if (key && walk?.px && !practice) profiles.record(key, { distance: walk.px });
+    const owed = mode === 'ZOM' ? settleLeaver(zomWatch, c.playerId) : null;
+    if (key && owed && !practice) profiles.record(key, { zom: owed });
     walked.delete(c.playerId);
     removePlayer(world, c.playerId);
     creditLives(c);

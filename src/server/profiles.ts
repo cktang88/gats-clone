@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, WEAPON_IDS, type Badge, type MedalId, type WeaponId } from '../shared/defs.ts';
+import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, WEAPON_IDS, ZOM_STATS, type Badge, type MedalId, type WeaponId, type ZomStat } from '../shared/defs.ts';
 import { challengesView, cleanItems, DAILY_POOL, rollChallenges, WEEKLY_POOL, type ChallengesState } from '../shared/challenges.ts';
 import { COSMETIC_BY_ID, dayKey, levelState, lifeGains, resolveEquipped, roundGains, SLOTS, toCos, isCosmeticId, type Cos, type Equipped, type Picks, type ProgressMsg, type RoundResult } from '../shared/cosmetics.ts';
 import { challengeEvents, equip as equipOn, grantUnlocks, hasNews, newPending, settle, syncLevel, type Pending } from './progression.ts';
@@ -23,6 +23,8 @@ export type Profile = {
   medals: Partial<Record<MedalId, number>>;
   /** Career kills by weapon class, for the weapon mastery tracks. */
   weaponKills: Partial<Record<WeaponId, number>>;
+  /** What Zombies runs added (`ZOM_STATS`), for the Zombies tracks: running totals, but `bestNight` is a best. */
+  zombies: Partial<Record<ZomStat, number>>;
   /** When each lifetime medal was earned, in ms since the epoch, by `badgeKey`. */
   badges: Record<string, number>;
   firstSeen: number;
@@ -53,6 +55,8 @@ export type GuestClaim = { from: string; owner: string };
 /** Career stats, plus events that only feed challenges (`wins`, `finishes`, `nights`, `zkills`, `bastion`) and are not stored. */
 export type ProfileDelta = {
   kills?: number; deaths?: number; games?: number; streak?: number; distance?: number; medals?: readonly MedalId[]; weaponKills?: readonly WeaponId[];
+  /** Zombies stats to add, or for `bestNight` the night reached (kept when it beats the best). */
+  zom?: Partial<Record<ZomStat, number>>;
   wins?: number; finishes?: number; nights?: number; zkills?: number; bastion?: number;
 };
 
@@ -119,7 +123,7 @@ const ownerMatches = (p: Profile | undefined, owner: string) =>
 
 export const freshProfile = (name: string, now: number): Profile => {
   const p: Profile = {
-    name, kills: 0, deaths: 0, games: 0, bestStreak: 0, distance: 0, medals: {}, weaponKills: {}, badges: {}, firstSeen: now, lastSeen: now,
+    name, kills: 0, deaths: 0, games: 0, bestStreak: 0, distance: 0, medals: {}, weaponKills: {}, zombies: {}, badges: {}, firstSeen: now, lastSeen: now,
     xp: 0, level: 1, prestige: 0, unlocked: [], equipped: {}, challenges: { day: '', daily: [], week: '', weekly: [] }, lastWinDay: '',
   };
   grantUnlocks(p);
@@ -132,6 +136,7 @@ export function trackCount(p: Profile, track: (typeof CAREER_IDS)[number]): numb
   if (needs === 'km') return Math.floor(p.distance / KM_PX);
   if (needs === 'kills' || needs === 'games' || needs === 'bestStreak') return p[needs];
   if (needs.startsWith('kills:')) return p.weaponKills[needs.slice(6) as WeaponId] ?? 0;
+  if (needs.startsWith('zom:')) return Math.floor(p.zombies[needs.slice(4) as ZomStat] ?? 0);
   return p.medals[needs as MedalId] ?? 0;
 }
 
@@ -144,6 +149,11 @@ export function applyDelta(p: Profile, delta: ProfileDelta, now: number): Badge[
   p.bestStreak = Math.max(p.bestStreak, delta.streak ?? 0);
   for (const m of delta.medals ?? []) p.medals[m] = (p.medals[m] ?? 0) + 1;
   for (const g of delta.weaponKills ?? []) p.weaponKills[g] = (p.weaponKills[g] ?? 0) + 1;
+  for (const stat of ZOM_STATS) {
+    const n = delta.zom?.[stat];
+    if (!n || !(n > 0) || !Number.isFinite(n)) continue;
+    p.zombies[stat] = stat === 'bestNight' ? Math.max(p.zombies[stat] ?? 0, n) : (p.zombies[stat] ?? 0) + n;
+  }
   p.lastSeen = now;
   const earned: Badge[] = [];
   for (const track of CAREER_IDS) {
@@ -184,7 +194,7 @@ function clean(raw: unknown): Profile | null {
   const keys = CAREER_IDS.flatMap((track) => [0, 1, 2, 3].map((tier) => badgeKey({ track, tier: tier as Badge['tier'] })));
   const p: Profile = {
     name: r.name, kills: num(r.kills), deaths: num(r.deaths), games: num(r.games), bestStreak: num(r.bestStreak), distance: num(r.distance),
-    medals: pick(MEDAL_IDS, r.medals), weaponKills: pick(WEAPON_IDS, r.weaponKills), badges: pick(keys, r.badges) as Record<string, number>, firstSeen: num(r.firstSeen), lastSeen: num(r.lastSeen),
+    medals: pick(MEDAL_IDS, r.medals), weaponKills: pick(WEAPON_IDS, r.weaponKills), zombies: pick(ZOM_STATS, r.zombies), badges: pick(keys, r.badges) as Record<string, number>, firstSeen: num(r.firstSeen), lastSeen: num(r.lastSeen),
     // Profiles saved before progression existed have none of this: they start at level 1 and are retro-granted what their lifetime medals earn.
     xp: Math.floor(num(r.xp)), level: 1, prestige: 0,
     unlocked: Array.isArray(r.unlocked) ? r.unlocked.filter((id): id is string => typeof id === 'string' && COSMETIC_BY_ID.has(id)) : [],

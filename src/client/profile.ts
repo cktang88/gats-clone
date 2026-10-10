@@ -1,4 +1,4 @@
-import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, MEDALS, type Badge, type CareerId, type MedalId, type WeaponId } from '../shared/defs.ts';
+import { badgeKey, CAREER, CAREER_IDS, KM_PX, MEDAL_IDS, MEDALS, ZOM_CAREER_IDS, type Badge, type CareerId, type MedalId, type WeaponId, type ZomStat } from '../shared/defs.ts';
 import { careerArt, careerName, careerTooltip, medalArt, medalSvg } from './medals.ts';
 import { trackRootScale } from './uiscale.ts';
 import { loadAccount } from './api.ts';
@@ -13,11 +13,12 @@ import { reducedMotion } from './screenfx.ts';
 
 /**
  * A player's profile page (profile.html?name=...): their worn medal and career numbers, every lifetime track with the
- * highest rung reached and progress to the next, and every match medal with how often they have earned it.
+ * highest rung reached and progress to the next (the Zombies tracks in a section of their own, under the run numbers), and
+ * every match medal with how often they have earned it.
  */
 type ProfileJson = {
   name: string; kills: number; deaths: number; games: number; bestStreak: number; distance: number;
-  medals: Partial<Record<MedalId, number>>; weaponKills?: Partial<Record<WeaponId, number>>; badges: Record<string, number>; firstSeen: number; featured: Badge | null;
+  medals: Partial<Record<MedalId, number>>; weaponKills?: Partial<Record<WeaponId, number>>; zombies?: Partial<Record<ZomStat, number>>; badges: Record<string, number>; firstSeen: number; featured: Badge | null;
 };
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -33,8 +34,13 @@ function count(p: ProfileJson, track: CareerId): number {
   if (needs === 'km') return Math.floor(p.distance / KM_PX);
   if (needs === 'kills' || needs === 'games' || needs === 'bestStreak') return p[needs];
   if (needs.startsWith('kills:')) return p.weaponKills?.[needs.slice(6) as WeaponId] ?? 0;
+  if (needs.startsWith('zom:')) return Math.floor(p.zombies?.[needs.slice(4) as ZomStat] ?? 0);
   return p.medals[needs as MedalId] ?? 0;
 }
+
+const zomStat = (p: ProfileJson, s: ZomStat) => Math.floor(p.zombies?.[s] ?? 0);
+const isZom = (t: CareerId) => ZOM_CAREER_IDS.includes(t);
+const heldOn = (p: ProfileJson, tracks: readonly CareerId[]) => tracks.reduce((n, track) => n + [0, 1, 2, 3].filter((tier) => p.badges[badgeKey({ track, tier: tier as Badge['tier'] })] !== undefined).length, 0);
 
 function trackCard(p: ProfileJson, track: CareerId): HTMLElement {
   const def = CAREER[track];
@@ -127,15 +133,23 @@ function render(p: ProfileJson) {
     ['Kills', p.kills.toLocaleString('en-US')], ['Deaths', p.deaths.toLocaleString('en-US')], ['K/D', kd],
     ['Matches', p.games.toLocaleString('en-US')], ['Best streak', String(p.bestStreak)], ['Walked', `${(p.distance / KM_PX).toFixed(1)} km`],
   ];
-  $('profile-stats').replaceChildren(...stats.map(([label, value]) => {
+  const statList = (rows: [string, string][]) => rows.map(([label, value]) => {
     const d = el('div');
     d.append(el('dt', '', label), el('dd', '', value));
     return d;
-  }));
+  });
+  $('profile-stats').replaceChildren(...statList(stats));
+  const n = (s: ZomStat) => zomStat(p, s).toLocaleString('en-US');
+  $('zom-stats').replaceChildren(...statList([
+    ['Nights survived', n('nights')], ['Best night', zomStat(p, 'bestNight') ? `Night ${n('bestNight')}` : '—'], ['Runs won', n('wins')],
+    ['Zombies killed', n('kills')], ['Built', n('built')], ['Revives', n('revives')],
+  ]));
   renderLocker(p);
-  const earned = Object.keys(p.badges).length;
-  $('career-count').textContent = `${earned} of ${CAREER_IDS.length * 4}`;
-  $('career').replaceChildren(...CAREER_IDS.map((t) => trackCard(p, t)));
+  const versus = CAREER_IDS.filter((t) => !isZom(t));
+  $('career-count').textContent = `${heldOn(p, versus)} of ${versus.length * 4}`;
+  $('career').replaceChildren(...versus.map((t) => trackCard(p, t)));
+  $('zom-career-count').textContent = `${heldOn(p, ZOM_CAREER_IDS)} of ${ZOM_CAREER_IDS.length * 4}`;
+  $('zom-career').replaceChildren(...ZOM_CAREER_IDS.map((t) => trackCard(p, t)));
   $('medal-grid').replaceChildren(...MEDAL_IDS.map((id) => medalCard(p, id)));
 }
 
