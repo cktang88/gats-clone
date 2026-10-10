@@ -190,9 +190,11 @@ export function step(w: World, dtMs: number): void {
     // Like a barrel or a prop, a crate waits for its spot to clear: standing up around a body would trap it inside.
     if (c.respawnAt !== null && w.now >= c.respawnAt && !standsOn(w, crateRect(c))) { c.respawnAt = null; c.hp = WORLD.crateHp; w.wallsVersion++; }
   }
-  const wallCount = w.walls.length;
-  w.walls = w.walls.filter((wall) => w.now < wall.expiresAt);
-  if (w.walls.length !== wallCount) w.wallsVersion++;
+  // The same array while nothing expires, so the lists built from it (coverRects, the wall grid's memo) hold across ticks.
+  if (w.walls.some((wall) => !(w.now < wall.expiresAt))) {
+    w.walls = w.walls.filter((wall) => w.now < wall.expiresAt);
+    w.wallsVersion++;
+  }
   tickMatch(w, dtMs);
   recordPoses(w);
 }

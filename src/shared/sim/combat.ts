@@ -485,7 +485,11 @@ function posesAt(w: World, at: number): ReadonlyMap<number, Pose> {
  */
 export function flyThroughPast(w: World, b: Bullet, rewindMs: number): boolean {
   const from = w.now - rewindMs, until = w.now - TICK_MS;
-  const walls = [...new Set([...w.history.filter((f) => f.at >= from - TICK_MS).flatMap((f) => f.walls), ...w.walls])];
+  // Frames share their walls array while no wall comes or goes, so the union is usually today's array itself, with no copy to make.
+  const lists: (readonly Wall[])[] = [];
+  for (const f of w.history) if (f.at >= from - TICK_MS && !lists.includes(f.walls)) lists.push(f.walls);
+  if (!lists.includes(w.walls)) lists.push(w.walls);
+  const walls = lists.length === 1 ? lists[0]! : [...new Set(lists.flat())];
   for (let t = from; t < until - 1e-6;) {
     const dtMs = Math.min(TICK_MS, until - t);
     t += dtMs;

@@ -405,16 +405,68 @@ export function coreRect(w: World): Rect | null {
   return core ? coreRectAt(core) : null;
 }
 
-/** What stops grenades: walls and standing crates. The squad's own walls and core let them fly over. */
-export const coverRects = (w: World): Rect[] => [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect), ...w.barrels.filter((b) => b.respawnAt === null).map(barrelRect), ...w.props.filter(propSolid).map(propRect)];
+/**
+ * `coverRects` and `solidRects` are asked for by every player's move and every grenade, each tick, and copying the map's 150 to 700
+ * walls each time (and then matching the copy to its wall grid) was a twentieth of the tick. The lists are kept per world and handed out
+ * again while nothing they are built from has changed: the same `w.walls` array at the same length (walls are only appended to or the
+ * array replaced, see rectgrid.ts), and the same standing crates, barrels, solid props and buildings in the same places. Callers only
+ * read them; a list handed out is never changed, a change builds a new one.
+ */
+type SolidsMemo = { walls: readonly Wall[]; wallsLen: number; sig: SolidsSig; cover: Rect[]; solid: Rect[] | null };
+/** What the lists were built from: the standing crates, barrels and solid props by object and place, and the buildings' cells. */
+type SolidsSig = { crates: (Crate | null)[]; barrels: (Barrel | null)[]; props: (Prop | null)[]; at: number[]; cells: number[]; run: boolean };
+const SOLIDS = new WeakMap<World, SolidsMemo>();
 
-/** What stops bodies: cover, plus the squad's walls and the core in a zombies run. */
+function sameSolids(w: World, sig: SolidsSig): boolean {
+  if (w.crates.length !== sig.crates.length || w.barrels.length !== sig.barrels.length || w.props.length !== sig.props.length) return false;
+  if ((w.run !== null) !== sig.run || w.buildings.length * 2 !== sig.cells.length) return false;
+  const at = sig.at;
+  let k = 0;
+  for (let i = 0; i < w.crates.length; i++) {
+    const c = w.crates[i]!;
+    if ((c.respawnAt === null ? c : null) !== sig.crates[i]) return false;
+    if (c.respawnAt === null && (at[k++] !== c.x || at[k++] !== c.y || at[k++] !== c.size)) return false;
+  }
+  for (let i = 0; i < w.barrels.length; i++) {
+    const b = w.barrels[i]!;
+    if ((b.respawnAt === null ? b : null) !== sig.barrels[i]) return false;
+    if (b.respawnAt === null && (at[k++] !== b.x || at[k++] !== b.y)) return false;
+  }
+  for (let i = 0; i < w.props.length; i++) {
+    const q = w.props[i]!, solid = propSolid(q);
+    if ((solid ? q : null) !== sig.props[i]) return false;
+    if (solid && (at[k++] !== q.x || at[k++] !== q.y || at[k++] !== PROPS[q.kind].size)) return false;
+  }
+  for (let i = 0; i < w.buildings.length; i++) if (sig.cells[2 * i] !== w.buildings[i]!.cx || sig.cells[2 * i + 1] !== w.buildings[i]!.cy) return false;
+  return true;
+}
+
+function solidsMemo(w: World): SolidsMemo {
+  const m = SOLIDS.get(w);
+  if (m && m.walls === w.walls && m.wallsLen === w.walls.length && sameSolids(w, m.sig)) return m;
+  const at: number[] = [];
+  const crates = w.crates.map((c) => (c.respawnAt === null ? (at.push(c.x, c.y, c.size), c) : null));
+  const barrels = w.barrels.map((b) => (b.respawnAt === null ? (at.push(b.x, b.y), b) : null));
+  const props = w.props.map((q) => (propSolid(q) ? (at.push(q.x, q.y, PROPS[q.kind].size), q) : null));
+  const sig: SolidsSig = { crates, barrels, props, at, cells: w.buildings.flatMap((b) => [b.cx, b.cy]), run: w.run !== null };
+  const cover = [...w.walls, ...w.crates.filter((c) => c.respawnAt === null).map(crateRect), ...w.barrels.filter((b) => b.respawnAt === null).map(barrelRect), ...w.props.filter(propSolid).map(propRect)];
+  const fresh: SolidsMemo = { walls: w.walls, wallsLen: w.walls.length, sig, cover, solid: null };
+  SOLIDS.set(w, fresh);
+  return fresh;
+}
+
+/** What stops grenades: walls and standing crates. The squad's own walls and core let them fly over. Shared: read it, never change it. */
+export const coverRects = (w: World): Rect[] => solidsMemo(w).cover;
+
+/** What stops bodies: cover, plus the squad's walls and the core in a zombies run. Shared: read it, never change it. */
 export function solidRects(w: World): Rect[] {
-  const solids = coverRects(w);
+  const m = solidsMemo(w);
+  if (m.solid) return m.solid;
+  const solids = [...m.cover];
   for (const b of w.buildings) solids.push(cellRect(b.cx, b.cy));
   const core = w.run && coreRect(w);
   if (core) solids.push(core);
-  return solids;
+  return (m.solid = solids);
 }
 
 const SPAWN_CLEARANCE = 10;

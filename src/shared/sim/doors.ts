@@ -7,7 +7,9 @@ import { WORLD } from '../defs.ts';
 import { partRect, signedArea, type MapDoor, type Pt } from '../geom.ts';
 import { MAPS, type MapId } from '../maps.ts';
 import { circleHitsRect, clamp, walks, type Rect } from './movement.ts';
-import type { Wall, World } from './world.ts';
+import type { Life, Player, Wall, World } from './world.ts';
+
+type Up = Player & { life: Extract<Life, { k: 'alive' }> };
 
 export const DOOR_THICK = 12;
 /** How far a swing leaf opens, in radians (about 95 degrees). */
@@ -133,7 +135,8 @@ type Body = { x: number; y: number };
 
 /** Distance from a point to the door's span segment. */
 function spanDist(d: MapDoor, p: Body): number {
-  const { ax, ay, bx, by } = doorSpan(d);
+  // `doorSpan` inline: every auto slider asks this of every player every tick.
+  const ax = d.x, ay = d.y, bx = d.axis === 'h' ? d.x + d.w : d.x, by = d.axis === 'v' ? d.y + d.w : d.y;
   const ex = bx - ax, ey = by - ay;
   const t = clamp(((p.x - ax) * ex + (p.y - ay) * ey) / (ex * ex + ey * ey), 0, 1);
   return Math.hypot(p.x - (ax + ex * t), p.y - (ay + ey * t));
@@ -142,12 +145,32 @@ function spanDist(d: MapDoor, p: Body): number {
 /** Which side of a door's centre line `p` stands on: -1 toward -normal, 1 toward +normal. */
 const sideOf = (d: MapDoor, p: Body): 1 | -1 => ((d.axis === 'h' ? p.y - d.y : p.x - d.x) < 0 ? -1 : 1);
 
-/** Someone walking or dashing into a shut swing leaf pushes it away from themselves. */
-function pushing(w: World, d: MapDoor): { sign: 1 | -1 } | null {
-  const shut = doorLeaves(d, 0, 1);
-  for (const p of w.players.values()) {
-    if (p.life.k !== 'alive' || (!walks(p.input) && p.life.dash === null)) continue;
-    if (!shut.some((c) => circleHitsRect(p.x, p.y, WORLD.playerRadius + 5, c))) continue;
+/**
+ * A door's shut leaves never change, and `pushing` asks for them for every swing door every tick: built once per door, with the box
+ * round them grown by the push reach (a pixel more, for float edges), which a body outside of cannot touch any of them.
+ */
+const SHUT = new WeakMap<MapDoor, { leaves: DoorLeaf[]; x0: number; y0: number; x1: number; y1: number }>();
+const PUSH_REACH = WORLD.playerRadius + 5;
+function shutLeaves(d: MapDoor) {
+  let shut = SHUT.get(d);
+  if (!shut) {
+    const leaves = doorLeaves(d, 0, 1), pad = PUSH_REACH + 1;
+    shut = { leaves, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (const l of leaves) { shut.x0 = Math.min(shut.x0, l.x - pad); shut.y0 = Math.min(shut.y0, l.y - pad); shut.x1 = Math.max(shut.x1, l.x + l.w + pad); shut.y1 = Math.max(shut.y1, l.y + l.h + pad); }
+    SHUT.set(d, shut);
+  }
+  return shut;
+}
+
+/** Someone walking or dashing into a shut swing leaf pushes it away from themselves. `movers` are the live players walking or dashing, in turn order. */
+function pushing(d: MapDoor, movers: readonly Up[]): { sign: 1 | -1 } | null {
+  if (!movers.length) return null;
+  const shut = shutLeaves(d);
+  for (const p of movers) {
+    if (p.x < shut.x0 || p.x > shut.x1 || p.y < shut.y0 || p.y > shut.y1) continue;
+    let hits = false;
+    for (let i = 0; i < shut.leaves.length && !hits; i++) hits = circleHitsRect(p.x, p.y, PUSH_REACH, shut.leaves[i]!);
+    if (!hits) continue;
     const side = sideOf(d, p);
     // Walking toward the leaf, not along it or away from it.
     const mx = (p.input.right ? 1 : 0) - (p.input.left ? 1 : 0), my = (p.input.down ? 1 : 0) - (p.input.up ? 1 : 0);
@@ -168,12 +191,19 @@ function crushes(w: World, cand: readonly Rect[], cur: readonly Rect[]): boolean
 export function tickDoors(w: World, dtMs: number): void {
   const defs = MAPS[w.map].doors;
   if (!defs?.length) return;
+  // Nothing in a door's tick moves a body, so who is up and who is walking is read once for every door.
+  const alive: Up[] = [], movers: Up[] = [];
+  for (const p of w.players.values()) {
+    if (p.life.k !== 'alive') continue;
+    alive.push(p as Up);
+    if (walks(p.input) || p.life.dash !== null) movers.push(p as Up);
+  }
   for (const s of w.doors) {
     const d = defs[s.idx]!;
     if (d.locked) continue;
     const swing = isSwing(d);
     if (swing) {
-      const push = pushing(w, d);
+      const push = pushing(d, movers);
       if (push) {
         // A leaf all but shut swings the way it is pushed: left on its old side it would swing into its pusher and stall on him.
         const sign = s.open === 0 || s.open <= FLIP_OPEN ? d.side ?? push.sign : s.sign;
@@ -183,7 +213,7 @@ export function tickDoors(w: World, dtMs: number): void {
       } else if (s.target === 255 && w.now >= s.closeAt) s.target = 0;
     } else if (doorAuto(d)) {
       let near = false;
-      for (const p of w.players.values()) if (p.life.k === 'alive' && spanDist(d, p) <= DOOR_NEAR_PX) { near = true; break; }
+      for (const p of alive) if (spanDist(d, p) <= DOOR_NEAR_PX) { near = true; break; }
       if (near) { s.target = 255; s.closeAt = w.now + doorHoldMs(d); }
       else if (s.target === 255 && w.now >= s.closeAt) s.target = 0;
     } else {
