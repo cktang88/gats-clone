@@ -233,6 +233,8 @@
 /* Gearing up for Zombies: the gun's scrap bounty and its job against the horde, wrapped under its numbers. */
 #menu .loadout .weapon small.zom-perk { white-space: normal; padding: 6px 12px 0; color: var(--m-accent); font: 700 13px/1.2 var(--text); }
 #menu .loadout .weapon small.zom-perk[hidden] { display: none; }
+#menu .loadout .weapon small.zom-perk .zom-bounty { display: block; color: var(--m-gold); font: 800 14px/1.25 var(--text); margin-bottom: 2px; }
+#menu .loadout .weapon small.zom-perk span { color: var(--m-accent); }
 #menu .loadout .gun-stats { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px 8px; width: auto; margin: 9px 12px 11px; align-items: center; }
 #menu .loadout .gun-stats span { font: 800 12px/1 var(--display); letter-spacing: 0.12em; color: var(--m-sub); }
 #menu .loadout .gun-stats i {

@@ -23,7 +23,7 @@ test('every pistol-class gun builds by night, and no other gun does', () => {
   assert.equal(ZOMBIE_CLASS_ROLES.pistol.nightBuild, true);
   for (const gun of GUN_IDS) assert.equal(zombieRole(gun).nightBuild, GUNS[gun].base === 'pistol', gun);
   for (const gun of ['pistol', 'handCannon', 'machinePistol', 'executioner', 'gunslinger', 'akimbo', 'hailstorm'] as const) assert.ok(buildsNow('night', gun), gun);
-  assert.ok(ZOMBIE_CLASS_ROLES.pistol.perk.startsWith('Field mechanic: builds and upgrades by night'));
+  assert.ok(ZOMBIE_CLASS_ROLES.pistol.perk.startsWith('Field mechanic: builds by night'));
 });
 
 test('buildsNow: anyone by day, a pistol by night, nobody once the run is over', () => {
