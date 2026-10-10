@@ -126,7 +126,7 @@ test('a round or grenade from a player who left still spares their old team', ()
   const enemy = spawnAt(w, 1200, 500, { team: 'blue' });
   press(w, shooter, { angle: 0, shots: 1 });
   step(w, TICK_MS);
-  w.thrown.push({ id: 999, kind: 'grenade', owner: shooter.id, team: shooter.team, x: 900, y: 560, vx: 0, vy: 0, explodeAt: w.now + 100 });
+  w.thrown.push({ id: 999, kind: 'fragGrenade', owner: shooter.id, team: shooter.team, x: 900, y: 560, vx: 0, vy: 0, explodeAt: w.now + 100 });
   removePlayer(w, shooter.id);
   run(w, 900);
   assert.equal(hpOf(mate), WORLD.baseHp, 'neither the round nor the blast hurt a teammate');

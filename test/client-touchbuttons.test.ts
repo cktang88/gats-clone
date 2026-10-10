@@ -11,13 +11,13 @@ const self = (over: Partial<Snapshot['self']>) => ({ ammo: 12, mag: 12, reloadin
 test('the ability button is hidden until an ability is picked, then shows it with its cooldown and seconds left', () => {
   assert.equal(buttonFaces(self({}), 40).ability, null, 'a locked ability takes no room');
   assert.equal(buttonFaces(self({ pending: { level: 4, k: 'perk', tier: 3 } }), undefined).ability, null, 'nor while its pick waits in the dock');
-  const full = ABILITY_COOLDOWN_MS.grenade;
-  const cooling = buttonFaces(self({ ability: 'grenade', abilityReadyIn: full * 0.75 }), 40).ability!;
-  assert.equal(cooling.icon, 'grenade');
+  const full = ABILITY_COOLDOWN_MS.fragGrenade;
+  const cooling = buttonFaces(self({ ability: 'fragGrenade', abilityReadyIn: full * 0.75 }), 40).ability!;
+  assert.equal(cooling.icon, 'fragGrenade');
   assert.ok(Math.abs(cooling.sweep - 0.25) < 1e-9, 'a quarter of the cooldown has run');
   assert.equal(cooling.label, String(Math.ceil((full * 0.75) / 1000)));
   assert.equal(cooling.ready, false);
-  assert.deepEqual(buttonFaces(self({ ability: 'grenade', abilityReadyIn: 0 }), 40).ability, { icon: 'grenade', sweep: 0, label: '', ready: true });
+  assert.deepEqual(buttonFaces(self({ ability: 'fragGrenade', abilityReadyIn: 0 }), 40).ability, { icon: 'fragGrenade', sweep: 0, label: '', ready: true });
 });
 
 test('the reload button fills as the reload runs and flags an empty mag', () => {

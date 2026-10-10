@@ -55,7 +55,7 @@ test('a knife bot lunges only at an enemy inside its lunge reach', () => {
 });
 
 test('a grenade bot throws only at mid range', () => {
-  for (const ability of ['grenade', 'fragGrenade', 'gasGrenade'] as const) {
+  for (const ability of ['fragGrenade', 'fragGrenade', 'gasGrenade'] as const) {
     assert.ok(uses(inputs({ ability, enemyAt: { x: 1300, y: 1000 } })), `${ability}: throws at 300px`);
     assert.ok(!uses(inputs({ ability, enemyAt: { x: 1080, y: 1000 } })), `${ability}: holds at 80px, inside its own blast`);
     assert.ok(!uses(inputs({ ability, enemyAt: { x: 1600, y: 1000 } })), `${ability}: holds at 600px`);
@@ -63,7 +63,7 @@ test('a grenade bot throws only at mid range', () => {
 });
 
 test('a grenade bot does not throw before its reaction delay has passed', () => {
-  const first = inputs({ ability: 'grenade', enemyAt: { x: 1300, y: 1000 } }).findIndex((i) => i.ability);
+  const first = inputs({ ability: 'fragGrenade', enemyAt: { x: 1300, y: 1000 } }).findIndex((i) => i.ability);
   assert.ok(first * TICK_MS >= 0.8 * 220 - TICK_MS / 2, `first throw after ${(first * TICK_MS).toFixed(0)}ms`);
 });
 
@@ -83,11 +83,11 @@ test('a hurt bot dashes around a wall behind it rather than into it', () => {
 });
 
 test('a bot drops a land mine when hurt in a fight or standing on a zone it does not own', () => {
-  assert.ok(uses(inputs({ ability: 'landMine', enemyAt: { x: 1300, y: 1000 }, hp: 20 })), 'mines its retreat');
-  assert.ok(!uses(inputs({ ability: 'landMine', enemyAt: { x: 1300, y: 1000 } })), 'keeps the mine at full health');
+  assert.ok(uses(inputs({ ability: 'claymore', enemyAt: { x: 1300, y: 1000 }, hp: 20 })), 'mines its retreat');
+  assert.ok(!uses(inputs({ ability: 'claymore', enemyAt: { x: 1300, y: 1000 } })), 'keeps the mine at full health');
   const center = emptyWorld('DOM').zones[1]!;
-  assert.ok(uses(inputs({ ability: 'landMine', mode: 'DOM', botAt: center }, 1)), 'mines a zone it is capturing');
-  assert.ok(!uses(inputs({ ability: 'landMine', mode: 'DOM', botAt: { x: center.x - 400, y: center.y } }, 1)), 'no mine off the zone');
+  assert.ok(uses(inputs({ ability: 'claymore', mode: 'DOM', botAt: center }, 1)), 'mines a zone it is capturing');
+  assert.ok(!uses(inputs({ ability: 'claymore', mode: 'DOM', botAt: { x: center.x - 400, y: center.y } }, 1)), 'no mine off the zone');
 });
 
 test('an engineer bot builds cover only while under fire at mid range', () => {
@@ -99,7 +99,7 @@ test('an engineer bot builds cover only while under fire at mid range', () => {
 test('a bot with its knife ready closes on a nearby enemy instead of strafing at range', () => {
   const knife = inputs({ ability: 'knife', enemyAt: { x: 1250, y: 1000 } }, 1)[0]!;
   assert.ok(knife.right, 'steps toward an enemy 250px away');
-  const grenade = inputs({ ability: 'grenade', enemyAt: { x: 1250, y: 1000 } }, 1)[0]!;
+  const grenade = inputs({ ability: 'fragGrenade', enemyAt: { x: 1250, y: 1000 } }, 1)[0]!;
   assert.ok(!grenade.right, 'a grenade bot holds its distance');
 });
 
@@ -109,7 +109,7 @@ test('a bot throws a grenade where a moving target will be when it lands', () =>
   for (let seed = 1; seed <= 20; seed++) {
     const w = emptyWorld();
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
-    grantPerks(w, bot, ['extended', 'thickSkin', 'grenade']);
+    grantPerks(w, bot, ['extended', 'thickSkin', 'fragGrenade']);
     const target = spawnAt(w, 1350, 850);
     const r = seeded(seed);
     let mem = newBotMemory(r, { skill: VETERAN });

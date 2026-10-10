@@ -126,7 +126,7 @@ const airdropView = (w: World): AirdropView | null => {
   return f && { x: Math.round(f.x), y: Math.round(f.y), a: Math.round(f.a * 100) / 100, dropAt: Math.round(f.dropAt), landAt: Math.round(f.landAt) };
 };
 
-const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS, fireSlick: PROP_FX.oil.radius, radar: 10, healPole: HEAL_POLE.radius };
+const THROWN_RADIUS: Record<ThrownKind, number> = { fragGrenade: 10, gasGrenade: 10, claymore: 14, gasCloud: GAS_RADIUS, fireSlick: PROP_FX.oil.radius, radar: 10, healPole: HEAL_POLE.radius };
 
 /**
  * How far `me`'s camera may lean toward their aim this tick (lookahead.ts): the full lean along their angle while they are alive and
@@ -171,11 +171,11 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   const thrown: ThrownView[] = w.thrown
     .filter((t) => inView(t.x, t.y, THROWN_RADIUS[t.kind]))
     .filter((t) => {
-      if (t.kind !== 'landMine' || t.owner === me.id || stats.thermal) return true;
+      if (t.kind !== 'claymore' || t.owner === me.id || stats.thermal) return true;
       const owner = w.players.get(t.owner);
       return !!owner && !isEnemy(me, owner);
     })
-    .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner }));
+    .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner, ...(t.kind === 'claymore' && { angle: Math.round(t.angle * 100) / 100 }) }));
   const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress, ...(z.crew > 0 && { crew: z.crew }), ...(z.contested && { contested: true as const }) }));
   const minimap: MinimapMark[] = [];
   for (const p of w.players.values()) {

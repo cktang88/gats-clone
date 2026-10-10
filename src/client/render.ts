@@ -130,7 +130,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const colorOf = (p: PlayerView) => (snap.run ? COLORS[p.color] : bodyColor(p));
   const zones = zonesOf(snap.zones);
   for (const z of zones) drawZoneFloor(ctx, z, now, dark, reducedMotion());
-  for (const t of snap.thrown) if (t.kind === 'landMine') drawThrown(ctx, t, now);
+  for (const t of snap.thrown) if (t.kind === 'claymore') drawThrown(ctx, t, now);
   if (snap.run) drawCoreGlow(ctx, snap.run, now);
   if (snap.run && snap.buildings) drawFloorItems(ctx, snap.buildings.filter((b) => !standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), now);
   drawScorches(ctx, now, view);
@@ -261,7 +261,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     if (p.golden) drawGoldShine(ctx, p.x, p.y, muzzleTip(p.x, p.y, angle, p.gun, R), p.id, now);
   }
   drawEmoteGestures(ctx, alive, colorOf, now, partyOn() ? s.myId : null, reducedMotion());
-  for (const t of snap.thrown) if (t.kind !== 'landMine' && t.kind !== 'gasCloud') drawThrown(ctx, t, now);
+  for (const t of snap.thrown) if (t.kind !== 'claymore' && t.kind !== 'gasCloud') drawThrown(ctx, t, now);
   for (const t of snap.thrown) if (t.kind === 'gasCloud') drawThrown(ctx, t, now);
   drawEffects(ctx, s.effects.filter((e) => e.kind !== 'flash' && e.kind !== 'boom' && e.kind !== 'slash'), now);
   drawBlastFx(ctx, now, view);
@@ -319,7 +319,7 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, w: number, h: number
 function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
   if (t.kind === 'gasCloud') return drawGasCloud(ctx, t, now);
   if (t.kind === 'fireSlick') return drawFireSlick(ctx, t, now);
-  if (t.kind === 'grenade' || t.kind === 'fragGrenade') drawBlastRing(ctx, t.x, t.y, BLAST_RADIUS[t.kind], now);
+  if (t.kind === 'fragGrenade') drawBlastRing(ctx, t.x, t.y, BLAST_RADIUS[t.kind], now);
   if (isGadget(t.kind)) return drawGadgetBody(ctx, t, now);
   drawThrownBody(ctx, t, now);
 }

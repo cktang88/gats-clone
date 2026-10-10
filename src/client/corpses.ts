@@ -29,7 +29,7 @@ const DEAD_GREY = '#8a8d93';
 const BLOOD = '#7a1015';
 const BLOOD_DARK = '#4e080c';
 const SOOT = 'rgba(28, 26, 24, 0.55)';
-const EXPLOSIVES = new Set(['Grenade', 'Frag', 'Land mine', 'Barrel', ...Object.values(GUNS).filter((g) => g.blast).map((g) => g.name)]);
+const EXPLOSIVES = new Set(['Grenade', 'Frag', 'Claymore', 'Barrel', ...Object.values(GUNS).filter((g) => g.blast).map((g) => g.name)]);
 
 /** Whether the kill feed's `weapon` label names something that explodes. */
 export const explosiveDeath = (weapon: string): boolean => EXPLOSIVES.has(weapon);

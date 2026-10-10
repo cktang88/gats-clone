@@ -1,5 +1,5 @@
 import type { ThrownView } from '../shared/protocol.ts';
-import { GRENADE_FUSE_MS } from '../shared/sim/abilities.ts';
+import { CLAYMORE, GRENADE_FUSE_MS } from '../shared/sim/abilities.ts';
 import { clamp01, easeOut, noteThrown, SMOKE_WIND, seeded } from './blastfx.ts';
 import { drawGadgetBody, isGadget } from './gadgetart.ts';
 import { setLight } from './lighting.ts';
@@ -114,15 +114,14 @@ function bodyPoint(tr: Track, x: number, y: number, age: number, back: number, l
 // ---------------------------------------------------------------- the grenades
 
 type Look = { base: string; lit: string; shade: string; band: string };
-const LOOK: Record<'grenade' | 'fragGrenade' | 'gasGrenade', Look> = {
-  grenade: { base: '#4b5a3a', lit: '#66784c', shade: '#36422a', band: '#c7c9cc' },
+const LOOK: Record<'fragGrenade' | 'gasGrenade', Look> = {
   fragGrenade: { base: '#5a5338', lit: '#7a7048', shade: '#3e3a28', band: '#e07a22' },
   gasGrenade: { base: '#4b5a3a', lit: '#66784c', shade: '#36422a', band: '#c7d84a' },
 };
 const METAL = { base: '#8a909a', lit: '#c7c9cc', shade: '#5a6068' };
 
 export function drawThrownBody(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
-  if (t.kind === 'landMine') return drawMine(ctx, t, now);
+  if (t.kind === 'claymore') return drawMine(ctx, t, now);
   if (t.kind === 'gasCloud' || t.kind === 'fireSlick') return;
   if (isGadget(t.kind)) return drawGadgetBody(ctx, t, now);
   const tr = trackOf(t, now), age = now - tr.t0, u = clamp01(age / GRENADE_FUSE_MS);
@@ -341,111 +340,64 @@ function gasLeak(ctx: CanvasRenderingContext2D, tr: Track, t: ThrownView, _z: nu
 // ---------------------------------------------------------------- the mine
 
 /** A land mine: a squat puck seen three-quarter (top face and a darker front face), a press plate, studs, and a blinking light that is amber while it arms. */
+/**
+ * A claymore: a curved olive box on little legs, its convex face toward where it fires (`t.angle`), with a faint fan on the floor
+ * showing the cone it watches (only its owner's side ever sees one: an enemy's is not on the wire), and a red arming light that
+ * blinks slowly once it is live.
+ */
 function drawMine(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
   const tr = trackOf(t, now), age = now - tr.t0;
-  const rx = 14, ry = 12, depth = 5.5, x = t.x, y = t.y - 1;
-  shadow(ctx, x, y + depth, 14);
-  const settle = age < 160 ? 1 - age / 160 : 0;
+  const a = t.angle ?? 0;
   ctx.save();
-  ctx.translate(x, y + depth);
-  ctx.scale(1 + 0.12 * settle, 1 - 0.18 * settle);
-  ctx.translate(-x, -(y + depth));
+  // The cone it watches, faint on the floor.
+  ctx.fillStyle = 'rgba(224, 80, 60, 0.07)';
+  ctx.strokeStyle = 'rgba(224, 80, 60, 0.28)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.moveTo(t.x, t.y);
+  ctx.arc(t.x, t.y, CLAYMORE.reach, a - CLAYMORE.cone, a + CLAYMORE.cone);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.setLineDash([]);
+  shadow(ctx, t.x, t.y + 3, 12);
+  ctx.translate(t.x, t.y);
+  ctx.rotate(a);
+  const settle = age < 160 ? 1 - age / 160 : 0;
+  ctx.scale(1 + 0.12 * settle, 1 + 0.12 * settle);
   ctx.lineJoin = 'round';
   ctx.lineWidth = 2;
   ctx.strokeStyle = INK;
-  // Front face: the lower ellipse and the wall between.
-  ctx.fillStyle = '#2a2e35';
+  // Two little legs behind it.
   ctx.beginPath();
-  ctx.ellipse(x, y + depth, rx, ry, 0, 0, TAU);
-  ctx.fill();
-  ctx.fillRect(x - rx, y, rx * 2, depth);
-  ctx.beginPath();
-  ctx.ellipse(x, y + depth, rx, ry, 0, 0, Math.PI);
-  ctx.moveTo(x - rx, y);
-  ctx.lineTo(x - rx, y + depth);
-  ctx.moveTo(x + rx, y);
-  ctx.lineTo(x + rx, y + depth);
+  ctx.moveTo(-3, -7); ctx.lineTo(-8, -10);
+  ctx.moveTo(-3, 7); ctx.lineTo(-8, 10);
   ctx.stroke();
-  // Top face, with a lit band toward the light and a shade band away.
-  ctx.fillStyle = '#3b4048';
+  // The body: a slab bowed out toward its front.
+  ctx.fillStyle = '#5b6340';
   ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, TAU);
+  ctx.moveTo(-4, -12);
+  ctx.quadraticCurveTo(8, 0, -4, 12);
+  ctx.lineTo(-9, 11);
+  ctx.quadraticCurveTo(2, 0, -9, -11);
+  ctx.closePath();
   ctx.fill();
-  ctx.save();
-  ctx.clip();
-  ctx.fillStyle = '#4f5560';
+  ctx.stroke();
+  // The face that fires, a lighter band.
+  ctx.strokeStyle = '#8a9563';
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.ellipse(x - LIGHT.x * 2.4, y - LIGHT.y * 2.4, rx - 1.5, ry - 1.5, 0, 0, TAU);
+  ctx.moveTo(-3, -9);
+  ctx.quadraticCurveTo(6, 0, -3, 9);
+  ctx.stroke();
+  // The arming light.
+  const live = age >= CLAYMORE.armMs;
+  ctx.fillStyle = live ? (Math.sin(now / 260 + t.id) > 0.4 ? '#ff4a3a' : '#7a1f18') : '#e0b84a';
+  ctx.beginPath();
+  ctx.arc(-6, 0, 2.2, 0, TAU);
   ctx.fill();
   ctx.restore();
-  ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, TAU);
-  ctx.stroke();
-  // Studs around the rim.
-  ctx.fillStyle = '#80868f';
-  ctx.lineWidth = 1.2;
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * TAU + 0.3, sx = x + Math.cos(a) * (rx - 3.4), sy = y + Math.sin(a) * (ry - 3);
-    ctx.beginPath();
-    ctx.arc(sx, sy, 1.5, 0, TAU);
-    ctx.fill();
-    ctx.stroke();
-  }
-  // The press plate: a raised disc with its own little front face, so it reads as something to step on.
-  const px = x - 1, py = y - 0.6, pr = 7.2;
-  ctx.lineWidth = 1.8;
-  ctx.fillStyle = '#23272e';
-  ctx.beginPath();
-  ctx.ellipse(px, py + 2.4, pr, pr * 0.86, 0, 0, TAU);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#6b727d';
-  ctx.beginPath();
-  ctx.ellipse(px, py, pr, pr * 0.86, 0, 0, TAU);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#8c939e';
-  ctx.beginPath();
-  ctx.ellipse(px - LIGHT.x * 1.6, py - LIGHT.y * 1.4, pr * 0.58, pr * 0.46, 0, 0, TAU);
-  ctx.fill();
-  ctx.strokeStyle = INK;
-  ctx.globalAlpha = 0.6;
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(px - pr * 0.7, py);
-  ctx.lineTo(px + pr * 0.7, py);
-  ctx.moveTo(px, py - pr * 0.55);
-  ctx.lineTo(px, py + pr * 0.55);
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-  ctx.restore();
-  // The light: steady amber while it arms (the first 600 ms), then a short red blink once a second.
-  const arming = age < 600, phase = (now % 1000) / 1000, on = arming ? Math.floor(age / 100) % 2 === 0 : phase < 0.16;
-  const glowK = arming ? (on ? 0.7 : 0.15) : on ? 1 - phase / 0.16 : 0;
-  const lx = x + 8.6, ly = y + 5.6;
-  if (glowK > 0) {
-    ctx.globalAlpha = glowK * 0.4;
-    ctx.fillStyle = arming ? '#ffb347' : '#ff4d4f';
-    ctx.beginPath();
-    ctx.arc(lx, ly, 8 + 4 * glowK, 0, TAU);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    setLight(`mine:${t.id}`, { x: lx, y: ly, radius: 70, color: arming ? '#ffb347' : '#ff4d4f', intensity: 0.5 * glowK, size: 3, inside: 14, shadows: false });
-  }
-  ctx.fillStyle = INK;
-  ctx.beginPath();
-  ctx.arc(lx, ly, 3.9, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = on ? (arming ? '#ffd27a' : '#ff6b6d') : arming ? '#7a5420' : '#6f2022';
-  ctx.beginPath();
-  ctx.arc(lx, ly, 2.8, 0, TAU);
-  ctx.fill();
-  if (on) {
-    ctx.fillStyle = '#fff6f0';
-    ctx.beginPath();
-    ctx.arc(lx - 0.8, ly - 0.8, 1.1, 0, TAU);
-    ctx.fill();
-  }
 }
 
 // ---------------------------------------------------------------- the danger ring
@@ -454,7 +406,7 @@ function drawMine(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
 function fuseAt(x: number, y: number, now: number): number {
   let best = 0, bd = 44 * 44, found = false;
   for (const tr of tracks.values()) {
-    if (tr.kind !== 'grenade' && tr.kind !== 'fragGrenade') continue;
+    if (tr.kind !== 'fragGrenade') continue;
     const d = (tr.x - x) ** 2 + (tr.y - y) ** 2;
     if (d < bd) { bd = d; best = clamp01((now - tr.t0) / GRENADE_FUSE_MS); found = true; }
   }

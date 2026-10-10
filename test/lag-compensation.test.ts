@@ -116,7 +116,7 @@ test('a shooter killed by their own rewound blast round in their tick does not u
   w.walls = [{ x: 540, y: 400, w: 40, h: 200, built: false, material: 'concrete', expiresAt: Infinity }];
   const p = spawnAt(w, 500, 500);
   equip(p, 'grenadier');
-  p.perks = { 3: 'grenade' };
+  p.perks = { 3: 'fragGrenade' };
   run(w, 300);
   if (p.life.k === 'alive') p.life.hp = 1;
   setInput(w, p.id, seq++, { ...IDLE_INPUT, angle: 0, fire: true, shots: p.input.shots + 1, ability: true }, w.now - 100);

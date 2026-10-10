@@ -150,7 +150,7 @@ export function kindOfRadius(r: number): BlastKind {
 }
 
 type Seen = { kind: BlastKind; x: number; y: number; at: number };
-const THROWN_KIND: Record<string, BlastKind> = { grenade: 'grenade', fragGrenade: 'frag', gasGrenade: 'gas', landMine: 'mine' };
+const THROWN_KIND: Record<string, BlastKind> = { grenade: 'grenade', fragGrenade: 'frag', gasGrenade: 'gas', claymore: 'mine' };
 const thrownSeen = new Map<number, Seen>();
 const hints: (Seen & { used: boolean })[] = [];
 const HINT_MS = 500, HINT_PX = 70;

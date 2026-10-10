@@ -45,14 +45,14 @@ function arcsDrawnFor(kind: ThrownKind): Arc[] {
 }
 
 test('a live grenade or frag grenade shows a danger ring at its blast radius', () => {
-  for (const kind of ['grenade', 'fragGrenade'] as const) {
+  for (const kind of ['fragGrenade', 'fragGrenade'] as const) {
     assert.ok(arcsDrawnFor(kind).some((a) => a.r === BLAST_RADIUS[kind]), `${kind} ring at ${BLAST_RADIUS[kind]}`);
   }
   assert.ok(!arcsDrawnFor('gasGrenade').some((a) => a.r > 20), 'a gas grenade has no blast ring');
 });
 
 test('the blast reaches exactly the bodies the ring touches', () => {
-  for (const kind of ['grenade', 'fragGrenade'] as const) {
+  for (const kind of ['fragGrenade', 'fragGrenade'] as const) {
     const w = emptyWorld();
     const owner = spawnAt(w, 200, 200);
     const reach = BLAST_RADIUS[kind] + WORLD.playerRadius;

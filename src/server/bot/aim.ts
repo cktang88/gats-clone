@@ -204,8 +204,9 @@ export function aimSigma(e: Engagement, me: Point, sharpness: Sharpness, tick: n
 
 export const landingErr = (sigma: number, rand: () => number) => sigma * gaussian(rand);
 
-export const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade']);
-const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'radar', 'knife', 'engineer']);
+export const GRENADES: ReadonlySet<AbilityId | null> = new Set(['fragGrenade', 'gasGrenade']);
+/** Aimed before use: the throws, the knife, the shield, and the claymore, which is set facing the enemy. */
+const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'radar', 'knife', 'engineer', 'claymore']);
 
 export type Look = { want: number; spin: number; hand: Hand; d: number; err: number };
 

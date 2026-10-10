@@ -158,15 +158,15 @@ test('a blast hurts targets by distance and a wall shelters one', () => {
   assert.ok((rangeView(w, p.id).last?.dmg ?? 0) > 0, 'a blast counts as a hit in the readout');
 });
 
-test('the grenade ability, a knife lunge, a gas cloud and a land mine all hurt targets', () => {
+test('the frag grenade, a knife lunge, a gas cloud and a claymore all hurt targets', () => {
   const w = rangeWorld();
   const t = targetOf(w, 'dummy');
   const p = spawnAt(w, t.x - 400, t.y, { loadout: PISTOL });
   p.angle = 0;
   p.input = { ...p.input, aimDist: 400 };
-  ABILITIES.grenade(w, p);
+  ABILITIES.fragGrenade(w, p);
   run(w, 1100);
-  assert.ok(t.hp < t.maxHp, 'grenade');
+  assert.ok(t.hp < t.maxHp, 'fragGrenade');
   const before = t.hp;
   const q = spawnAt(w, t.x - 40, t.y);
   ABILITIES.knife(w, q);
@@ -178,9 +178,9 @@ test('the grenade ability, a knife lunge, a gas cloud and a land mine all hurt t
   assert.ok(g.hp < g.maxHp, 'gas');
   const m = targetOf(w, 'paper');
   const s = spawnAt(w, m.x - 300, m.y);
-  w.thrown.push({ id: 9002, kind: 'landMine', owner: s.id, team: null, x: m.x - 10, y: m.y, armedAt: 0, expiresAt: w.now + 60000 });
-  run(w, TICK_MS * 2);
-  assert.ok(m.hp < m.maxHp, 'mine');
+  w.thrown.push({ id: 9002, kind: 'claymore', owner: s.id, team: null, x: m.x - 10, y: m.y, angle: 0, armedAt: 0, expiresAt: w.now + 60000 });
+  run(w, TICK_MS * 4);
+  assert.ok(m.hp < m.maxHp, 'claymore');
   assert.ok(!w.thrown.some((o) => o.id === 9002), 'the mine is spent');
 });
 
@@ -245,11 +245,11 @@ test('any gun, armor and perk can be put on at once: health, magazine and abilit
     assert.ok(setRangeLoadout(w, p, { perks: { [tier]: null } }));
     assert.equal(p.perks[tier], undefined, `tier ${tier} cleared`);
   }
-  setRangeLoadout(w, p, { gun: 'minigun', armor: 'heavy', perks: { 1: 'grip', 2: 'thickSkin', 3: 'grenade' } });
-  assert.deepEqual(p.perks, { 1: 'grip', 2: 'thickSkin', 3: 'grenade' });
+  setRangeLoadout(w, p, { gun: 'minigun', armor: 'heavy', perks: { 1: 'grip', 2: 'thickSkin', 3: 'fragGrenade' } });
+  assert.deepEqual(p.perks, { 1: 'grip', 2: 'thickSkin', 3: 'fragGrenade' });
   assert.equal(p.loadout.armor, 'heavy');
   setRangeLoadout(w, p, { perks: { 2: 'brace' } });
-  assert.deepEqual(p.perks, { 1: 'grip', 2: 'brace', 3: 'grenade' }, 'a tier left out stays');
+  assert.deepEqual(p.perks, { 1: 'grip', 2: 'brace', 3: 'fragGrenade' }, 'a tier left out stays');
   if (p.life.k !== 'alive') throw new Error('alive');
   p.life.ammo = 0;
   p.life.hp = 1;
@@ -288,7 +288,7 @@ test('only a Range room takes the loadout message; any other room says no and ch
     room.connect(ws.socket);
     ws.send({ t: 'join', name: 'Ann', loadout: PISTOL, aspect: 1.5 });
     const me = [...room.world.players.values()].find((p) => p.kind === 'human')!;
-    ws.send({ t: 'range', a: 'loadout', gun: 'minigun', perks: { 3: 'grenade' } });
+    ws.send({ t: 'range', a: 'loadout', gun: 'minigun', perks: { 3: 'fragGrenade' } });
     assert.equal(me.gun, 'pistol', mode);
     assert.deepEqual(me.perks, {}, mode);
     assert.ok(ws.sent.some((m) => m.t === 'error' && /shooting range/.test(m.message)), mode);
@@ -299,12 +299,12 @@ test('only a Range room takes the loadout message; any other room says no and ch
   room.connect(ws.socket);
   ws.send({ t: 'join', name: 'Ann', loadout: PISTOL, aspect: 1.5 });
   const me = [...room.world.players.values()][0]!;
-  ws.send({ t: 'range', a: 'loadout', gun: 'minigun', armor: 'heavy', perks: { 1: 'grip', 3: 'grenade' } });
+  ws.send({ t: 'range', a: 'loadout', gun: 'minigun', armor: 'heavy', perks: { 1: 'grip', 3: 'fragGrenade' } });
   assert.equal(me.gun, 'minigun');
-  assert.deepEqual(me.perks, { 1: 'grip', 3: 'grenade' });
+  assert.deepEqual(me.perks, { 1: 'grip', 3: 'fragGrenade' });
   room.tick();
   const snap = lastSnap(ws.sent);
-  assert.equal(snap.self.perks[3], 'grenade');
+  assert.equal(snap.self.perks[3], 'fragGrenade');
   assert.equal(snap.players.find((p) => p.id === me.id)!.gun, 'minigun');
   assert.equal(snap.targets?.length, layout.targets.length);
   assert.ok(snap.range);
