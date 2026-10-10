@@ -100,14 +100,11 @@ function leadJudgment(id: number, tick: number): number {
   return mean + ((v - Math.floor(v)) * 2 - 1) * spread;
 }
 
-/** A flashed eye is slow and shaky: at full flash a bot takes `reactionMs` longer to take a target in, and its aim error is `1 + aimMul` times as wide. They fade out as the flash does. */
-export const FLASHED = { reactionMs: 700, aimMul: 3 } as const;
-
 /** `reactMul` is the bot's own temper's share of the reaction time (`Personality.reactMul`). */
-export function engage(prev: Engagement | null, enemy: Point & { id: number }, sharpness: Sharpness, tick: number, rand: () => number, flash = 0, reactMul = 1): Engagement {
+export function engage(prev: Engagement | null, enemy: Point & { id: number }, sharpness: Sharpness, tick: number, rand: () => number, reactMul = 1): Engagement {
   if (!prev) {
     const [fastest, slowest] = BOT_AIM.noticeMs.map((ms) => ms * sharpness.reactionMul * reactMul);
-    const noticeAtTick = tick + Math.round((fastest + rand() * (slowest - fastest) + FLASHED.reactionMs * flash) / TICK_MS);
+    const noticeAtTick = tick + Math.round((fastest + rand() * (slowest - fastest)) / TICK_MS);
     return { id: enemy.id, x: enemy.x, y: enemy.y, vx: 0, vy: 0, acquiredTick: tick, noticeAtTick, leadMul: leadJudgment(enemy.id, tick), at: tick };
   }
   // Its read of his motion is over the time since it last looked (`at`), so a bot that looked away a few ticks does not read a burst of speed.
@@ -119,17 +116,17 @@ export function engage(prev: Engagement | null, enemy: Point & { id: number }, s
   return { ...prev, id: enemy.id, x: enemy.x, y: enemy.y, vx, vy, at: tick };
 }
 
-export function aimSigma(e: Engagement, me: Point, sharpness: Sharpness, tick: number, flash = 0): number {
+export function aimSigma(e: Engagement, me: Point, sharpness: Sharpness, tick: number): number {
   const rx = e.x - me.x, ry = e.y - me.y;
   const crossing = Math.abs(rx * e.vy - ry * e.vx) / Math.max(1, rx * rx + ry * ry);
   const unsettled = 1 + BOT_AIM.unsettledMul * Math.exp(-(Math.max(0, tick - e.noticeAtTick) * TICK_MS) / BOT_AIM.settleMs);
-  return (BOT_AIM.baseSigma + BOT_AIM.sigmaPerRadPerSec * crossing) * unsettled * sharpness.aimMul * BOT_AIM.errMul * (1 + FLASHED.aimMul * flash);
+  return (BOT_AIM.baseSigma + BOT_AIM.sigmaPerRadPerSec * crossing) * unsettled * sharpness.aimMul * BOT_AIM.errMul;
 }
 
 export const landingErr = (sigma: number, rand: () => number) => sigma * gaussian(rand);
 
-export const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade', 'flashbang']);
-const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'smokeGrenade', 'knife', 'engineer']);
+export const GRENADES: ReadonlySet<AbilityId | null> = new Set(['grenade', 'fragGrenade', 'gasGrenade']);
+const AIMED_ABILITIES: ReadonlySet<AbilityId | null> = new Set([...GRENADES, 'radar', 'knife', 'engineer']);
 
 export type Look = { want: number; spin: number; hand: Hand; d: number; err: number };
 

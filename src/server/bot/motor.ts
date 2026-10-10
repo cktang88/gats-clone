@@ -1,7 +1,7 @@
 import { GUNS, rulesOf, WORLD, type AbilityId, type GunId, type PerkId, type Tier } from '../../shared/defs.ts';
 import type { CrateView, InputState, Snapshot } from '../../shared/protocol.ts';
 import type { LookSides } from '../../shared/lookahead.ts';
-import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
+import { GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { bloomRecoverMul, settleShare, spreadFor } from '../../shared/sim/stats.ts';
 import { coolSpray, sprayCap } from '../../shared/sim/trigger.ts';
@@ -11,8 +11,7 @@ import { doorLeaves, swingArcAt, swingHinges, SWING_MAX } from '../../shared/sim
 import type { MapDoor } from '../../shared/geom.ts';
 import { barrelToShoot, seenBarrels, shotWouldBurnMe } from './barrels.ts';
 import { hazardState, hazardsOf, propToShoot, seenProps, shotWouldHurtMe } from './props.ts';
-import { aimsAtLead, BLIND_AT, botSight, focus, inBotSight, unseenShooter, type Perception, type Threat } from './awareness.ts';
-import { sightBlocked } from '../../shared/sim/vision.ts';
+import { aimsAtLead, botSight, focus, inBotSight, unseenShooter, type Perception, type Threat } from './awareness.ts';
 import { justLost, lane, type Intent, type IntentCtx } from './intent.ts';
 import { hiddenFromSeen } from './tactics.ts';
 import { between, clearShot, dist, findPath, isOpen, walkable, type Point } from './nav.ts';
@@ -57,7 +56,7 @@ type Keys = Pick<InputState, 'up' | 'down' | 'left' | 'right'>;
 
 /**
  * Where a bot points its gun when it is not tracking an enemy: at a spot (`follow` keeps it on the tracked enemy as he moves, before it has
- * taken him in), down its route, or at a bearing fixed when it decided (a throw, its back to a flash). `sigma` is a blind spray's shake.
+ * taken him in), down its route, or at a bearing fixed when it decided (a throw). `sigma` is a spray's shake.
  */
 export type Gaze =
   | { k: 'point'; at: Point; minPx: number; hand: Hand; sigma: number; fire: boolean; follow?: boolean }
@@ -78,7 +77,7 @@ export type Hold = {
   gaze: Gaze;
   /** The enemy it is fighting: tracked from where he is each tick, leading him, with its own aim error; `shoot` a barrel or prop by him instead. */
   track: { id: number; sharp: Sharpness; shoot: Point | null; fire: boolean } | null;
-  /** A look that overrides the aim for now (a throw, smoke at its feet, its back to a flash), and whether it holds its fire meanwhile. */
+  /** A look that overrides the aim for now (a throw), and whether it holds its fire meanwhile. */
   turn: { gaze: Gaze; holdFire: boolean } | null;
   ability: AbilityId | null;
   /** A planted gun moving off its spot holds its fire until its keys are up. */
@@ -112,6 +111,12 @@ export type Situation = {
   threat: { d: number } | null; hurting: boolean; underFire: boolean; onContestedZone: boolean;
   /** An enemy it saw lately but cannot see now (behind a corner or in cover), and how far off he was. */
   lastKnown?: { d: number } | null;
+  /** Its health share, when known (else `hurting` stands for it). */
+  hpFrac?: number;
+  /** Behind cover from where it saw the enemy, or falling back. */
+  sheltered?: boolean;
+  /** With nobody in sight, the nearest lead it has on one (where it last saw him, gunfire it heard, a minimap mark), and how far off. */
+  lead?: { d: number } | null;
 };
 
 /** Lunge plus reach, leaving the target's radius as slack so a strafing target is still caught. */
@@ -123,19 +128,20 @@ export const ABILITY_RULES: Record<AbilityId, (s: Situation) => boolean> = {
   grenade: throwRange,
   fragGrenade: throwRange,
   gasGrenade: throwRange,
-  // A flash thrown at the enemy lands past its own reach, so only the target is caught: at a visible enemy, or at the corner or cover an unseen one went to.
-  flashbang: (s) => [s.threat, s.lastKnown].some((t) => t && t.d >= FLASH.radius + 20 && t.d <= 480),
-  // Smoke is a screen to back off behind: thrown at the enemy's side of a bot that is hurting or under his fire.
-  smokeGrenade: (s) => s.threat !== null && s.threat.d >= 120 && (s.hurting || s.underFire),
+  // A radar sensor finds an enemy it has lost: thrown toward its lead on him while nobody is in sight.
+  radar: (s) => s.threat === null && !!s.lead,
+  // A heal pole is planted at its feet once it is hurt and out of the line of fire (not shot at, or in cover or falling back).
+  healPole: (s) => (s.hpFrac ?? (s.hurting ? 0 : 1)) < HEAL_POLE_HP_FRAC && (!s.underFire || !!s.sheltered),
   landMine: (s) => (s.hurting && s.threat !== null) || s.onContestedZone,
   dash: (s) => s.hurting && s.threat !== null,
   engineer: (s) => s.underFire && s.threat !== null && s.threat.d >= 200 && s.threat.d <= 500,
 };
 
 export const HURTING_HP_FRAC = 0.4;
+const HEAL_POLE_HP_FRAC = 0.6;
 const KNIFE_CHASE_PX = 300;
-/** A smoke grenade is thrown this far toward the enemy, so the cloud blooms over the bot and the ground between. */
-const SMOKE_THROW_PX = 100;
+/** A radar sensor is thrown at most this far toward its lead (it tags far wider than that, through walls). */
+const RADAR_THROW_PX = 500;
 const REACQUIRE_TICKS = Math.round(600 / TICK_MS);
 /** Leaving a sprint throws the post-sprint bloom on its gun, so a bot only breaks into one after this long out of any fight (no flicking it on and off at the edge of one). */
 const SPRINT_CALM_TICKS = Math.round(1500 / TICK_MS);
@@ -332,12 +338,12 @@ const crossing = (me: Point, e: Engagement | null): number => {
   return Math.abs((e.vx * dy - e.vy * dx) / k);
 };
 
-/** How far ahead it looks for the enemy it is fighting walking out of its sight (behind a wall or into smoke): a shot it must take now. */
+/** How far ahead it looks for the enemy it is fighting walking out of its sight (behind a wall): a shot it must take now. */
 const BREAK_LOOK_MS = 350;
-function breaksSight(me: Point, e: Engagement | null, solids: readonly Rect[], smokes: Perception['smokes']): boolean {
+function breaksSight(me: Point, e: Engagement | null, solids: readonly Rect[]): boolean {
   if (!e || (e.vx === 0 && e.vy === 0)) return false;
   const k = BREAK_LOOK_MS / 1000, fx = e.x + e.vx * k, fy = e.y + e.vy * k;
-  return segmentBlocked(solids, me.x, me.y, fx - me.x, fy - me.y) || sightBlocked(smokes, me.x, me.y, fx, fy);
+  return segmentBlocked(solids, me.x, me.y, fx - me.x, fy - me.y);
 }
 
 function nextStance(m: Motor, v: Perception, c: IntentCtx, planted: boolean, legMs: readonly [number, number] = STRAFE_MS): Motor['stance'] {
@@ -387,10 +393,6 @@ function steer(intent: Intent, v: Perception, c: IntentCtx, m: Motor, readyAbili
     case 'takePosition': return { steer: idle(intent.spot, intent.facing), stance: m.stance };
     case 'search': return { steer: { to: intent.at, face: intent.at, reload: false, crates: false }, stance: m.stance };
     case 'resupply': return { steer: { to: intent.at, face: null, reload: false, crates: false }, stance: m.stance };
-    case 'blinded': {
-      const to = intent.mode === 'fallBack' ? awayFrom(me, intent.at, c.arena, RETREAT_STEP) : null;
-      return { steer: { to, face: intent.mode === 'hold' ? null : intent.at, reload: v.self.ammo < v.self.mag / 2 && intent.mode !== 'spray', crates: false }, stance: m.stance };
-    }
     case 'flank': return { steer: { to: intent.via, face: intent.lastKnown, reload: false, crates: false }, stance: m.stance };
     case 'hold': {
       const there = dist(me, intent.spot) < WAYPOINT_PX * 2;
@@ -734,9 +736,9 @@ function gazeLook(g: Gaze, me: Point, mine: Point, before: AimState, route: Moto
 }
 
 /** The aim on an enemy it has taken in: led to where he will be, off by its own drifting error; at `shoot` (a barrel or prop by him) instead if set. */
-function trackLook(e: Engagement, me: Point, mine: Point, gun: GunId, sharp: Sharpness, tick: number, flash: number, before: AimState, rand: () => number, shoot: Point | null): Look {
+function trackLook(e: Engagement, me: Point, mine: Point, gun: GunId, sharp: Sharpness, tick: number, before: AimState, rand: () => number, shoot: Point | null): Look {
   const def = GUNS[gun];
-  const sigma = aimSigma(e, me, sharp, tick, flash);
+  const sigma = aimSigma(e, me, sharp, tick);
   const err = tick === e.noticeAtTick ? landingErr(sigma, rand) : drift(before.err, sigma, TICK_MS, rand);
   if (shoot) {
     const bx = shoot.x - me.x, by = shoot.y - me.y;
@@ -808,7 +810,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const gun = GUNS[me.gun];
 
   // Shot at from off its screen, it turns to where the rounds come from before it fights on (`unseenShooter`): a quick turn, as on a startle.
-  const turnTo = intent.k !== 'blinded' ? unseenShooter(v) : null;
+  const turnTo = unseenShooter(v);
   const t: Threat | undefined = turnTo ? undefined : intent.k === 'engage' || intent.k === 'peekAndHide' || intent.k === 'flank' ? focus(v, intent.target) : v.threats[0];
   const aimSurvivesCover = (id: number) => intent.k === 'peekAndHide' && intent.target === id;
   const held = (id: number) => m.engaged?.id === id && (v.tick - m.engagedSeen <= REACQUIRE_TICKS || aimSurvivesCover(id));
@@ -819,8 +821,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   // facing it turns to quickly (`HANDS.startle`); it takes him in, and aims and fires, only once its reaction time has passed.
   // With nobody in sight but someone about, it pre-aims where he would come from (`watchPoint`: the edge of the cover he is behind, or the
   // way a shot came), whatever it is doing, as a person keeps his crosshair on the angle rather than on his own feet.
-  const watch = intent.k !== 'blinded' && !t ? c.tac?.watch ?? null : null;
-  const faceAt = (intent.k !== 'blinded' ? t?.p : undefined) ?? turnTo ?? watch ?? s.face ?? v.lastSeen ?? (aimsAtLead(v.lead, me) ? v.lead : null);
+  const watch = !t ? c.tac?.watch ?? null : null;
+  const faceAt = t?.p ?? turnTo ?? watch ?? s.face ?? v.lastSeen ?? (aimsAtLead(v.lead, me) ? v.lead : null);
   const startled = turnTo !== null || (t !== undefined && faceAt === t.p && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) > STARTLE_RAD);
   let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: startled ? HANDS.startle : HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p } : { k: 'ahead' };
   const barrels = seenBarrels(snap.barrels);
@@ -832,7 +834,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     const sharp = sharpnessAgainst(t.p);
     // An enemy who steps into the angle its gun already holds is shot on sight: the reaction a person has for a target he was waiting for.
     const preAimed = !tracked && !!m.hold?.watching && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) < PRE_AIMED_RAD;
-    engaged = engage(tracked, t.p, sharp, v.tick, c.rand, v.flash, c.persona.reactMul * (preAimed ? PRE_AIMED_REACT : 1));
+    engaged = engage(tracked, t.p, sharp, v.tick, c.rand, c.persona.reactMul * (preAimed ? PRE_AIMED_REACT : 1));
     const shot = barrelToShoot(me, barrels, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range)
       ?? propToShoot(me, props, v.threats.map((x) => x.p), v.allies, c.arena.walls, gun.range);
     const blocked = !shot && (shotWouldBurnMe(barrels, me, t.p) || shotWouldHurtMe(props, me, t.p));
@@ -842,12 +844,10 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     const crate = crateInSight(me, snap.crates, [...c.arena.walls, ...c.arena.barrels], gun.range * 0.95, botSight(snap.self.viewRadius, me.gun, me.angle));
     if (crate) gaze = { k: 'point', at: crate, minPx: 0, hand: HANDS.calm, sigma: 0, fire: true };
   }
-  // Blind or half-blind, it still has a trigger: it rakes the spot the enemy was last in, with an error that only a flash gives.
-  if (!t && intent.k === 'blinded' && intent.mode === 'spray') gaze = { k: 'point', at: intent.at, minPx: 1, hand: HANDS.calm, sigma: 0.3, fire: snap.self.ammo > 0 };
   const tracking = t !== undefined && engaged !== null && v.tick >= engaged.noticeAtTick;
   let look: Look, wantsFire: boolean;
   if (tracking) {
-    look = trackLook(engaged!, me, mine, me.gun, track!.sharp, v.tick, v.flash, before, c.rand, track!.shoot);
+    look = trackLook(engaged!, me, mine, me.gun, track!.sharp, v.tick, before, c.rand, track!.shoot);
     wantsFire = track!.shoot !== null || (t!.d < gun.range * 0.95 && track!.fire);
   } else ({ look, fire: wantsFire } = gazeLook(gaze, me, mine, before, way.route, c.rand));
 
@@ -856,12 +856,17 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     const fuse = GRENADE_FUSE_MS / 1000;
     throwAt = { x: t!.p.x + engaged!.vx * fuse, y: t!.p.y + engaged!.vy * fuse, err: look.err };
   }
-  // An enemy it cannot see but has just lost behind cover: a flash there is the way to push him.
+  // An enemy it cannot see but has just lost behind cover: a grenade there is the way to push him.
   const lostFor = v.lastSeen && !t ? (v.tick - v.lastSeen.seenTick) * TICK_MS : Infinity;
-  const lastKnown = v.lastSeen && !t && lostFor < 2500 && intent.k !== 'blinded' && !sightBlocked(v.smokes, me.x, me.y, v.lastSeen.x, v.lastSeen.y) ? { d: dist(v.lastSeen, me) } : null;
+  const lastKnown = v.lastSeen && !t && lostFor < 2500 ? { d: dist(v.lastSeen, me) } : null;
   if (lastKnown && v.lastSeen) throwAt = { x: v.lastSeen.x, y: v.lastSeen.y, err: drift(before.err, 0.08, TICK_MS, c.rand) };
+  // Nobody in sight: where it last saw one, or else gunfire or a minimap mark, is where a radar sensor goes.
+  const leadAt = !t && v.threats.length === 0 ? v.lastSeen ?? v.lead : null;
+  // Not in the open with an enemy about (see `hiddenFromSeen`).
+  const exposed = !!c.tac && !hiddenFromSeen(me, c.tac.seen, v.solids, v.tick);
   const situation: Situation = {
-    lastKnown,
+    lastKnown, lead: leadAt ? { d: dist(leadAt, me) } : null, hpFrac: v.hpFrac,
+    sheltered: !exposed || intent.k === 'retreatAndHeal' || intent.k === 'reloadInCover',
     threat, hurting: v.hpFrac < HURTING_HP_FRAC, underFire: v.underFire,
     onContestedZone: v.zones.some((z) => z.owner !== me.team && dist(z, me) < z.r),
   };
@@ -876,14 +881,11 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   if (hazard.k === 'in') keys = keysToward({ ...m, dir: null, stuckTicks: 0, pace: { lastDir: null, lastTurnBackTick: -Infinity } }, me, awayFrom(me, hazard.h, c.arena, RETREAT_STEP), v.tick).keys;
   else if (hazard.k === 'entering') keys = { up: false, down: false, left: false, right: false };
   let turn: Hold['turn'] = null;
-  if (wanted === 'smokeGrenade' && t) {
-    turn = { gaze: { k: 'fixed', want: Math.atan2(t.p.y - me.y, t.p.x - me.x), d: SMOKE_THROW_PX, hand: look.hand }, holdFire: false };
+  if (wanted === 'radar' && leadAt) {
+    turn = { gaze: { k: 'fixed', want: Math.atan2(leadAt.y - me.y, leadAt.x - me.x), d: Math.min(RADAR_THROW_PX, dist(leadAt, me)), hand: look.hand }, holdFire: false };
   } else if (throwAt && GRENADES.has(wanted)) {
     turn = { gaze: { k: 'fixed', want: Math.atan2(throwAt.y - me.y, throwAt.x - me.x) + throwAt.err, d: Math.hypot(throwAt.x - me.x, throwAt.y - me.y), hand: look.hand }, holdFire: false };
   }
-  // A flashbang it has noticed in the air: it turns its back on it instead of watching it go off, and holds its fire while it does.
-  const turnAway = v.incomingFlash !== null && v.flash <= BLIND_AT;
-  if (v.incomingFlash && turnAway) turn = { gaze: { k: 'fixed', want: Math.atan2(me.y - v.incomingFlash.y, me.x - v.incomingFlash.x), d: 300, hand: HANDS.flick, err: 0 }, holdFire: true };
   if (turn) {
     const g = turn.gaze as Extract<Gaze, { k: 'fixed' }>;
     look = { ...look, want: g.want, spin: 0, d: g.d, hand: g.hand, err: g.err ?? look.err };
@@ -894,15 +896,13 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   if (stillToFire && anyKey(keys)) wantsFire = false;
   const rhythm = fireRhythm(me.gun, c.band.rushes, c.persona.commitMul, snap.self.perks, snap.self.suppression);
   // Being shot, or the enemy about to walk out of its sight: the round goes now, bloom or not.
-  const urgent = v.underFire || (t !== undefined && breaksSight(me, engaged, v.solids, v.smokes));
+  const urgent = v.underFire || (t !== undefined && breaksSight(me, engaged, v.solids));
   const own = ownBloom(rhythm, me.gun, m.tap, snap.self.ammo, v.tick);
-  const ability0 = turnAway && wanted !== null ? null : wanted;
   const rests = resting(rhythm, me.gun, own, { d: t?.d ?? null, still: !anyKey(keys), lateral: crossing(me, engaged), urgent, settle: snap.self.settle ?? 0, settleMs: snap.self.settleMs ?? 0 }, m.tap, v.tick);
-  const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !rests, ability0, m.shots);
+  const { aim, fire, ability, shots } = aimAndTrigger(before, look, wantsFire && !rests, wanted, m.shots);
   const tap = nextTap(rhythm, fire, m.tap, v.tick, own, snap.self.ammo);
   const angle = aim.angle, aimDist = Math.max(1, look.d);
   // Not in the open with an enemy about: a half-empty magazine waits for cover from where it last saw him (a dry one never waits).
-  const exposed = !!c.tac && !hiddenFromSeen(me, c.tac.seen, v.solids, v.tick);
   const reloadWish = s.reload || (!t && snap.self.ammo < snap.self.mag / 2 && (!exposed || snap.self.ammo < snap.self.mag * OPEN_RELOAD_FRAC));
   const reload = !fire && snap.self.ammo < snap.self.mag && !snap.self.reloading && reloadWish;
   // A bot sprints only to travel: with no enemy in sight (or its fight just ended) or when running to cover to heal. Anything else, it walks, so it can fire.
@@ -922,7 +922,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   ].filter((x) => x > v.tick);
   const hold: Hold = {
     tick: v.tick, to, at: heading === null && way.at !== routed.at ? way.at : null, heading, keys: keys !== drive.keys ? keys : null,
-    gaze, track, turn, ability: ability0, stillToFire, reload: reloadWish, sprint: sprintWish && wanted === null, mag: snap.self.mag, rhythm, settleMs: snap.self.settleMs ?? 0, urgent,
+    gaze, track, turn, ability: wanted, stillToFire, reload: reloadWish, sprint: sprintWish && wanted === null, mag: snap.self.mag, rhythm, settleMs: snap.self.settleMs ?? 0, urgent,
     wakeAt: Math.min(Infinity, ...timers), wakeOnFire: style.k === 'plant' && fighting !== undefined, arrived: to !== null && dist(me, to) < ARRIVED_PX * 2,
     nav: c.arena.nav.serial, door: doorOnWay(me, way.at, c.arena, snap.doors), ...(watch && faceAt === watch && { watching: true }),
   };
@@ -936,10 +936,10 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   };
 }
 
-/** What the motor reads off the world each tick for its bot: where it is and its gun, its magazine, whether its ability is up, how flashed it is, and where a player stands (alive), by id. */
+/** What the motor reads off the world each tick for its bot: where it is and its gun, its magazine, whether its ability is up, and where a player stands (alive), by id. */
 export type Body = {
   me: Point & { id: number; gun: GunId; angle: number };
-  ammo: number; reloading: boolean; abilityReady: boolean; flash: number;
+  ammo: number; reloading: boolean; abilityReady: boolean;
   /** The post-sprint bloom still to ease out on its gun, ms (see `settleShare`); left out, none. */
   settleLeftMs?: number;
   find: (id: number) => Point | null;
@@ -999,10 +999,10 @@ export function motorTick(m: Motor, b: Body, arena: BotArena, tick: number, rand
   let engaged = m.engaged, engagedSeen = m.engagedSeen, d: number | null = null;
   let look: Look, wantsFire: boolean;
   if (h.track && foe && engaged?.id === h.track.id) {
-    engaged = engage(engaged, { id: h.track.id, x: foe.x, y: foe.y }, h.track.sharp, tick, rand, b.flash);
+    engaged = engage(engaged, { id: h.track.id, x: foe.x, y: foe.y }, h.track.sharp, tick, rand);
     engagedSeen = tick;
     if (tick >= engaged.noticeAtTick) {
-      look = trackLook(engaged, me, mine, me.gun, h.track.sharp, tick, b.flash, before, rand, h.track.shoot);
+      look = trackLook(engaged, me, mine, me.gun, h.track.sharp, tick, before, rand, h.track.shoot);
       d = dist(foe, me);
       wantsFire = h.track.shoot !== null || (d < GUNS[me.gun].range * 0.95 && h.track.fire);
     } else ({ look, fire: wantsFire } = gazeLook(h.gaze, me, mine, before, route, rand, foe));

@@ -566,6 +566,50 @@ export function drawAirdropMap(ctx: CanvasRenderingContext2D, air: AirdropView |
 }
 
 /**
+ * The Shield ability's barrier: a pane of blue energy, bright along the face rounds leave by, with chevrons pointing the way they
+ * pass (`out`): its owner's side shoots out through it, and nothing shoots back in.
+ */
+export function drawShields(ctx: CanvasRenderingContext2D, walls: readonly { x: number; y: number; w: number; h: number; out?: readonly [number, number] }[], now: number) {
+  for (const wall of walls) {
+    if (!wall.out) continue;
+    const [ox, oy] = wall.out;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 260);
+    ctx.save();
+    ctx.fillStyle = `rgba(90, 190, 255, ${0.28 + 0.1 * pulse})`;
+    ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+    ctx.strokeStyle = 'rgba(150, 220, 255, 0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(wall.x + 0.75, wall.y + 0.75, wall.w - 1.5, wall.h - 1.5);
+    // The face rounds leave by: a hot line.
+    ctx.strokeStyle = '#c9f0ff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    if (ox) { const fx = ox > 0 ? wall.x + wall.w : wall.x; ctx.moveTo(fx, wall.y); ctx.lineTo(fx, wall.y + wall.h); }
+    else { const fy = oy > 0 ? wall.y + wall.h : wall.y; ctx.moveTo(wall.x, fy); ctx.lineTo(wall.x + wall.w, fy); }
+    ctx.stroke();
+    // Chevrons along the pane, pointing out.
+    const along = ox ? wall.h : wall.w, n = Math.max(2, Math.floor(along / 34));
+    const cx0 = wall.x + wall.w / 2, cy0 = wall.y + wall.h / 2, s = 5;
+    ctx.strokeStyle = `rgba(230, 248, 255, ${0.6 + 0.3 * pulse})`;
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const t = ((i + 0.5) / n - 0.5) * along;
+      const px = cx0 + (ox ? 0 : t), py = cy0 + (ox ? t : 0);
+      // The chevron's tip leads along `out`; its arms trail back and to each side.
+      const tx = px + ox * s * 0.6, ty = py + oy * s * 0.6;
+      ctx.moveTo(tx - ox * s - oy * s, ty - oy * s - ox * s);
+      ctx.lineTo(tx, ty);
+      ctx.lineTo(tx - ox * s + oy * s, ty - oy * s + ox * s);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/**
  * A plate over every standing supply crate that says what it is and what breaking it gives, so a gold box is never a mystery:
  * a Last Squad drop gives a level and a full resupply, an airdrop a golden gun or a resupply.
  */

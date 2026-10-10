@@ -18,7 +18,6 @@ import { BUILD_CONTROLS, buildRows, downedLine, forecast, phaseLine, readyHint, 
 import { airdropLine, drawAirdropMap } from './arenafx.ts';
 import { drawRingMap, drawTracker, reviveHint, ringLine, ringPill, spectateLines, squadLabel, trackerSize } from './royale.ts';
 import { drawGunArt, skinInk } from './gunart.ts';
-import { drawFlashOverlay } from './flashsmoke.ts';
 import type { Session } from './state.ts';
 import { uiScaleFor } from './uiscale.ts';
 import { crosshairLook } from './settings.ts';
@@ -228,7 +227,6 @@ export function drawHud(ctx: CanvasRenderingContext2D, dpr: number, screenCam: C
   hud.F = F;
   boardShown = false;
   drawSuppression(hud);
-  drawFlashOverlay(ctx, w, h, snap.self.flash ?? 0, now);
   drawHurtVignette(hud);
   drawHurtArcs(hud);
   const boardBottom = P && F ? (F.board ? drawBoardChip(hud, P, fullBoard) : P.board.y + P.board.h) : drawLeaderboard(hud, compact, fullBoard);
@@ -861,6 +859,8 @@ const boardMine = { place: null as number | null, climbAt: -1e9 };
 
 /** Friends: a pink heart beside their name on the board and on the minimap, where they always show. */
 export const FRIEND_COLOR = '#ff7eb6';
+/** An enemy radar's tag, on the minimap and on your own warning. */
+const RADAR_TAG = '#7fd4ff';
 let friendIds: ReadonlySet<number> = new Set();
 /** Your friends in this match (the server's `friends` message). */
 export const setHudFriends = (ids: ReadonlySet<number>) => { friendIds = ids; };
@@ -1002,6 +1002,12 @@ function drawMinimap(hud: Hud, size: number) {
   const y0 = hud.P ? hud.P.minimap.y : touchScreen ? EDGE + inset().t + VITALS.height + 8 : h - EDGE - inset().b - size - pad * 2;
   const base = fadePanel(hud, 'minimap', x0, y0, size + pad * 2, size + pad * 2);
   panel(ctx, x0, y0, size + pad * 2, size + pad * 2, MINIMAP.bg);
+  // Caught by an enemy radar: everyone not on your side has you on their map, and this says for how long.
+  if (snap.self.tagged) {
+    const ph = 22, py = touchScreen ? y0 + size + pad * 2 + 4 : y0 - ph - 4;
+    panel(ctx, x0, py, size + pad * 2, ph, MINIMAP.bg);
+    text(ctx, `ON ENEMY RADAR · ${snap.self.tagged}s`, x0 + (size + pad * 2) / 2, py + ph / 2 + 1, TYPE.micro, RADAR_TAG, 'center', 800);
+  }
   const x = x0 + pad, y = y0 + pad;
   for (const wall of s.walls) {
     ctx.fillStyle = wall.built ? MINIMAP.built : MINIMAP.block;
@@ -1053,6 +1059,14 @@ function drawMinimap(hud: Hud, size: number) {
     ctx.beginPath();
     ctx.arc(x + m.x * k, y + m.y * k, 2.5, 0, TAU);
     ctx.fill();
+    // A radar tag: a blue ring that pings, round an enemy the sensor caught.
+    if (m.tagged) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = RADAR_TAG;
+      ctx.beginPath();
+      ctx.arc(x + m.x * k, y + m.y * k, 5 + 1.5 * Math.sin(now / 200), 0, TAU);
+      ctx.stroke();
+    }
     // A Tracker mark: a ring round an enemy you hurt.
     if (m.marked) {
       ctx.lineWidth = 1.5;

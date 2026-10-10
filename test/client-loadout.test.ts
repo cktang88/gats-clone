@@ -33,7 +33,7 @@ test('with nothing unlocked the strip is empty, and each unlock adds exactly its
 });
 
 test('every slot has a short label, a name and what it does', () => {
-  const slots = loadoutSlots('phantom', { 1: 'quickReload', 2: 'steadyHands', 3: 'smokeGrenade' }, 'smokeGrenade');
+  const slots = loadoutSlots('phantom', { 1: 'quickReload', 2: 'steadyHands', 3: 'healPole' }, 'healPole');
   for (const s of slots) {
     assert.ok(s.label.length > 0 && s.label.length <= 10, `${s.key} has a short label (${s.label})`);
     assert.ok(s.name.length > 0 && s.desc.length > 0 && s.kindLabel.length > 0);

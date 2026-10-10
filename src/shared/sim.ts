@@ -26,7 +26,7 @@ export function addPlayer(w: World, name: string, loadout: Loadout, opts: AddPla
   const p: Player = {
     id: newId(w), name, kind: opts.kind ?? 'bot', loadout, gun: loadout.weapon, team, x: 0, y: 0, angle: 0,
     input: IDLE_INPUT, seq: 0, viewAt: null, rewindCapMs: MAX_REWIND_MS, shotsSeen: 0, fired: 0, life: { k: 'dead', respawnAt: 0 },
-    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, nemesis: null, badge: null, cos: null, chain: { count: 0, at: -Infinity }, lowAt: null, quiet: { px: 0, x: 0, y: 0, firedAt: -Infinity }, feats: freshFeats(), revealedUntil: 0, huntedPing: null, abilityReadyAt: 0, tier2Offer: [],
+    score: 0, level: 0, perks: {}, kills: 0, deaths: 0, lifeKills: 0, nemesis: null, badge: null, cos: null, chain: { count: 0, at: -Infinity }, lowAt: null, quiet: { px: 0, x: 0, y: 0, firedAt: -Infinity }, feats: freshFeats(), revealedUntil: 0, huntedPing: null, abilityReadyAt: 0, tier2Offer: [], taggedUntil: 0,
   };
   w.players.set(p.id, p);
   spawn(w, p, loadout, opts.at);
@@ -38,6 +38,7 @@ function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: numbe
   resetProgress(p, w);
   p.lifeKills = 0;
   p.feats = freshFeats();
+  p.taggedUntil = 0;
   // A player with a friend standing comes back right beside them.
   const pos = at ?? friendSpawn(w, p.id) ?? spawnPoint(w, p.team);
   p.x = pos.x;
