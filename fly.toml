@@ -30,5 +30,5 @@ kill_timeout = '10s'
   concurrency = { hard_limit = 250, soft_limit = 200, type = 'connections' }
 
 [[vm]]
-  size = 'shared-cpu-4x'
-  memory = '1024mb'
+  size = 'shared-cpu-8x'
+  memory = '2048mb'
