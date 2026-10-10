@@ -1,4 +1,4 @@
-import { BARREL, byTurret, PROP_FX, PROP_KINDS, ROYALE, STREAK, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { ARMORS, BARREL, byTurret, PROP_FX, PROP_KINDS, ROYALE, STREAK, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
   AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
@@ -9,6 +9,7 @@ import { GAS_RADIUS, HEAL_POLE } from './abilities.ts';
 import { doorViews } from './doors.ts';
 import { heardShots } from './hearing.ts';
 import { empMul, propState } from './props.ts';
+import { armorByte, packViews } from './packs.ts';
 import { dist2 } from './movement.ts';
 import { abilityOf, effectiveStats, hasPerk, isHunted, pendingPick, rushMul } from './stats.ts';
 import { zombieMaxHp } from './run.ts';
@@ -48,6 +49,7 @@ function playerView(w: World, p: Player, me: Player): PlayerView {
     color: p.loadout.color, gun: p.gun, team: p.team,
     alive, hidden: isHidden(w, p), shield: stats.shield, dashing: alive && life.dash !== null,
     score: p.score, level: p.level, armorTier: p.loadout.armor, kind: p.kind, hunted: huntedFor(w, me, p),
+    ...(alive && life.armor < ARMORS[p.loadout.armor].points && { ap: armorByte(life.armor, ARMORS[p.loadout.armor].points) }),
     ...(alive && !w.run && w.now < life.shieldUntil && { spawnShield: true as const }),
     ...(alive && p.lifeKills >= STREAK.showAt && { streak: p.lifeKills }),
     ...(alive && life.golden && { golden: true as const }),
@@ -200,6 +202,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     t: 'snap', tick: w.tick, ackSeq: me.seq, self: selfView(w, me),
     players, bullets, crates, thrown, zones, minimap, leaderboard: leaderboard(w), match: matchView(w), events: visibleEvents,
     barrels: barrelViews(w), props: propViews(w), airdrop: airdropView(w),
+    ...(w.packs.length && { packs: packViews(w) }),
     ...(MAPS[w.map].doors?.length && { doors: doorViews(w).filter(([i]) => { const d = MAPS[w.map].doors![i]!; return inView(d.x + (d.axis === 'h' ? d.w / 2 : 0), d.y + (d.axis === 'v' ? d.w / 2 : 0), d.w + 300); }) }),
     ...(w.run && siegeViews(w, w.run, inView)),
     ...(w.royale && { royale: royaleView(w, w.royale, me) }),

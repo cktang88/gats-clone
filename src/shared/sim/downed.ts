@@ -4,7 +4,8 @@ import { freshLife } from './stats.ts';
 import { sameTeam, type Player, type World } from './world.ts';
 
 export function goDown(w: World, p: Player, hp = 0) {
-  p.life = { k: 'downed', bleedOutAt: w.now + ZOM.bleedOutMs, reviveProgress: 0, hp };
+  const armor = p.life.k === 'alive' ? p.life.armor : 0;
+  p.life = { k: 'downed', bleedOutAt: w.now + ZOM.bleedOutMs, reviveProgress: 0, hp, armor };
   w.events.push({ e: 'life', id: p.id, name: p.name, k: 'downed', by: null });
 }
 
@@ -22,6 +23,7 @@ export function tickDowned(w: World, p: Player, dtMs: number, revivers: Set<Play
   if (life.reviveProgress < ZOM.reviveMs) return null;
   const revived = freshLife(p, w.now);
   revived.hp *= ZOM.reviveHpFrac;
+  revived.armor = Math.min(revived.armor, life.armor ?? revived.armor);
   revived.lastDamageAt = w.now;
   revived.shieldUntil = -Infinity;
   p.life = revived;

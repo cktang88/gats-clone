@@ -20,7 +20,7 @@ const THROW_SPEED = 700;
 
 /** A radar sensor: lands after `fuseMs` and tags every enemy within `radius` (through walls) on everyone's minimap for `tagMs`. */
 export const RADAR = { fuseMs: 700, radius: 900, tagMs: 30_000 } as const;
-/** A heal pole: planted at your feet, it heals you, your teammates and your friends within `radius` by `hps` a second, in pulses, for `lifeMs`. */
+/** A heal pole: planted at your feet, it heals you, your teammates and your friends within `radius` by `hps` a second, in pulses, for `lifeMs`. Health only: it never mends armor, which only a fresh life, an armor pack or a supply drop fills. */
 export const HEAL_POLE = { radius: 150, hps: 18, lifeMs: 8000 } as const;
 
 /** Whether `p` is on the other side from a sensor thrown by `owner` for `team`: not its thrower, a teammate or a friend. */

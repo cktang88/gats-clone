@@ -1446,7 +1446,7 @@ function sheen(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h
 
 /** What the vitals plate remembers between frames so its numbers roll and its cues fire once. */
 const vfx = {
-  id: -1, at: -1e9, hp: 0, shownHp: 0, trail: 1, hold: 0, hurtAt: -1e9, healAt: -1e9,
+  id: -1, at: -1e9, hp: 0, shownHp: 0, trail: 1, hold: 0, hurtAt: -1e9, healAt: -1e9, armor: 1, armorAt: -1e9, armorUpAt: -1e9,
   ammo: 0, ammoAt: -1e9, topN: 0, topAt: -1e9, level: 0, levelAt: -1e9, shownFrac: 0, shownScore: 0, streak: 0, streakAt: -1e9, abilitySpark: -1, levelBurst: false,
 };
 
@@ -1456,13 +1456,15 @@ function stepVitals({ dt, now }: Hud, me: PlayerView, self: SelfView, displayLev
   vfx.id = me.id;
   vfx.at = now;
   if (fresh) {
-    Object.assign(vfx, { hp: me.hp, shownHp: me.hp, trail: hpFrac, ammo: self.ammo, level: displayLevel, shownFrac: frac, shownScore: me.score, streak: self.streak, hurtAt: -1e9, healAt: -1e9 });
+    Object.assign(vfx, { armor: armorFrac(me), armorAt: -1e9, armorUpAt: -1e9, hp: me.hp, shownHp: me.hp, trail: hpFrac, ammo: self.ammo, level: displayLevel, shownFrac: frac, shownScore: me.score, streak: self.streak, hurtAt: -1e9, healAt: -1e9 });
     sparks = [];
     return;
   }
   if (me.hp < vfx.hp - 0.5) { vfx.hurtAt = now; vfx.hold = now + 360; vfx.trail = Math.max(vfx.trail, vfx.hp / me.maxHp); }
   else if (me.hp > vfx.hp + 0.5) vfx.healAt = now;
   vfx.hp = me.hp;
+  const armor = armorFrac(me);
+  if (armor !== vfx.armor) { vfx.armorAt = now; if (armor > vfx.armor + 0.01) vfx.armorUpAt = now; vfx.armor = armor; }
   if (hpFrac > vfx.trail) vfx.trail = hpFrac;
   else if (now > vfx.hold) vfx.trail = Math.max(hpFrac, vfx.trail - dt * 0.0007);
   const ease = REDUCED ? 1 : 1 - Math.exp(-dt / 90);
@@ -1598,15 +1600,22 @@ function drawHealthCross(ctx: CanvasRenderingContext2D, x: number, y: number, s:
 }
 
 /** The armor worn as a small shield chip with a pip per tier (light, medium, heavy). Returns its width, 0 when none is worn. */
-function drawArmorChip(ctx: CanvasRenderingContext2D, x: number, cy: number, tier: number): number {
+/** The armor chip beside the cross: the shield, the tier's pips, and under them the pool left, steel blue; empty, the chip greys out. */
+function drawArmorChip(ctx: CanvasRenderingContext2D, x: number, cy: number, tier: number, frac: number, now: number): number {
   if (tier <= 0) return 0;
   const w = 50;
-  cel(ctx, x, cy - 10, w, 20, '#3d4450', 4, 2);
-  fillIcon(ctx, PERK_ICONS.shield, x + 12, cy, 14, PANEL_INK);
+  const empty = frac <= 0;
+  const up = popOf(now - vfx.armorUpAt, 420);
+  cel(ctx, x, cy - 10, w, 20, empty ? '#2a2f38' : up > 0 ? mixHex('#3d4450', ARMOR.fill, up * 0.6) : '#3d4450', 4, 2);
+  fillIcon(ctx, PERK_ICONS.shield, x + 12, cy, 14, empty ? ARMOR.empty : PANEL_INK);
   for (let i = 0; i < 3; i++) {
-    ctx.fillStyle = i < tier ? PANEL_INK : 'rgba(236, 230, 214, 0.2)';
-    ctx.fillRect(x + 23 + i * 8, cy - 5, 5, 10);
+    ctx.fillStyle = i < tier ? (empty ? ARMOR.empty : PANEL_INK) : 'rgba(236, 230, 214, 0.2)';
+    ctx.fillRect(x + 23 + i * 8, cy - 6, 5, 7);
   }
+  ctx.fillStyle = ARMOR.track;
+  ctx.fillRect(x + 23, cy + 3, 21, 3);
+  ctx.fillStyle = ARMOR.fill;
+  ctx.fillRect(x + 23, cy + 3, 21 * frac, 3);
   return w;
 }
 
@@ -2057,6 +2066,39 @@ function drawAmmoCluster(ctx: CanvasRenderingContext2D, x: number, y: number, se
   }
 }
 
+/** Armor's colours: the steel-blue pool, its empty groove, and the grey a spent armor turns. */
+const ARMOR = { fill: '#8fb8ff', track: '#262a32', empty: '#6b717c' } as const;
+
+/** The share of a full armor pool `p` has left (the view's `ap` byte; absent is full), 0 with no armor. */
+export const armorFrac = (p: Pick<PlayerView, 'armorTier' | 'ap'>): number => (p.armorTier === 'none' ? 0 : (p.ap ?? 255) / 255);
+
+/**
+ * Armor as a thin arc just outside the health ring, on the same centre (your drawn soldier, so it keeps the ring's alignment): steel blue
+ * for the pool left, a dark groove for what is spent, all grey once it is empty. A pack's refill flashes it pale.
+ */
+function drawArmorRing(hud: Hud, frac: number) {
+  const { ctx, selfAt, cam, now } = hud;
+  const R = WORLD.playerRadius * cam.scale + 9 + 5.5;
+  const a0 = -Math.PI / 2, up = popOf(now - vfx.armorUpAt, 420);
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = CEL.ink;
+  ctx.beginPath();
+  ctx.arc(selfAt.x, selfAt.y, R, 0, TAU);
+  ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = frac <= 0 ? ARMOR.empty : ARMOR.track;
+  ctx.beginPath();
+  ctx.arc(selfAt.x, selfAt.y, R, 0, TAU);
+  ctx.stroke();
+  if (frac <= 0) return;
+  ctx.strokeStyle = up > 0 ? mixHex(ARMOR.fill, '#f2f7ff', up * 0.9) : ARMOR.fill;
+  ctx.lineWidth = 2 + up * 1.5;
+  ctx.beginPath();
+  ctx.arc(selfAt.x, selfAt.y, R, a0, a0 + TAU * frac);
+  ctx.stroke();
+}
+
 /** Health as a thin segmented ring round your soldier while hurt: a glance-cue where your eyes already are; the cross holds the figure. */
 function drawHpRing(hud: Hud, me: PlayerView, frac: number, tone: string) {
   const { ctx, selfAt, cam, now } = hud;
@@ -2120,6 +2162,17 @@ function drawVitals(hud: Hud, compact: boolean) {
     drawHpRing(hud, me, look.frac, look.tone);
     ctx.globalAlpha = 1;
   }
+  // The armor arc rides with the health ring, and on its own for a few seconds after the pool wears or refills; spent, it stays up grey.
+  const armor = armorFrac(me);
+  if (me.armorTier !== 'none') {
+    const sinceArmor = now - vfx.armorAt;
+    const armorA = Math.max(ringA, armor <= 0 ? 0.7 : REDUCED ? (sinceArmor < 2400 ? 1 : 0) : Math.max(0, Math.min(1, (3000 - sinceArmor) / 700)));
+    if (armorA > 0.01) {
+      ctx.globalAlpha = armorA * 0.85;
+      drawArmorRing(hud, armor);
+      ctx.globalAlpha = 1;
+    }
+  }
   // The health cross, with the armor chip and the health statuses (shield, rush) beside it.
   const S = P ? HEALTH.phoneSize : compact || touchScreen ? HEALTH.compactSize : HEALTH.size;
   const bx = X0, by = touchScreen ? Y0 : h - EDGE - ins.b - S;
@@ -2169,12 +2222,13 @@ function drawVitals(hud: Hud, compact: boolean) {
   };
   const tabWidth = (label: string) => { setFont(ctx, 800, TYPE.micro); return ctx.measureText(label).width + 29; };
   if (touchScreen) {
-    if (tier > 0) put(50, (x, y) => drawArmorChip(ctx, x, y, tier));
+    // A phone shows the armor chip only once the pool is short: a full one says nothing the ring does not.
+    if (tier > 0 && (!P || armor < 1)) put(50, (x, y) => drawArmorChip(ctx, x, y, tier, armor, now));
     for (const [label, color, icon] of healthTabs) put(tabWidth(label), (x, y) => statusTab(ctx, x, y, label, color, icon));
   } else {
     const sx = bx + S + 8;
     let ty = by + S / 2;
-    if (drawArmorChip(ctx, sx, ty, tier) > 0) ty -= 26;
+    if (drawArmorChip(ctx, sx, ty, tier, armor, now) > 0) ty -= 26;
     for (const [label, color, icon] of healthTabs) { statusTab(ctx, sx, ty, label, color, icon); ty -= 24; }
   }
   // A phone keeps the tabs that warn (hunted); the sprint ring lights on the stick itself and streaks have their callout.

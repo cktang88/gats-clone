@@ -5,6 +5,7 @@ import { standsOn, tickAirdrops } from './sim/airdrop.ts';
 import { tickDoors } from './sim/doors.ts';
 import { tickBarrels } from './sim/barrels.ts';
 import { empMul, tickProps } from './sim/props.ts';
+import { tickPacks } from './sim/packs.ts';
 import { tickRange } from './sim/targets.ts';
 import { MUZZLE_PX, spreadPick } from './sim/ballistics.ts';
 import { flyThroughPast, MAX_REWIND_MS, recordPoses, tickBullets, watchCloseCalls } from './sim/combat.ts';
@@ -186,6 +187,7 @@ export function step(w: World, dtMs: number): void {
   tickThrown(w, dt);
   tickBarrels(w);
   tickProps(w, dt, playersThisTick(w));
+  if (w.packs.length) tickPacks(w, playersThisTick(w));
   if (w.range) tickRange(w);
   tickAirdrops(w);
   watchCloseCalls(w);

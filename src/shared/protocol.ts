@@ -92,6 +92,11 @@ export type PlayerView = {
   alive: boolean; hidden: boolean; shield: boolean; dashing: boolean;
   score: number; level: number;
   armorTier: ArmorId;
+  /**
+   * What is left of the armor's pool (`ARMORS[armorTier].points`) as a byte, 0..255 of full, rounded up so 0 means empty; absent while the pool
+   * is full and with no armor, so a fresh life costs nothing on the wire.
+   */
+  ap?: number;
   kind: PlayerKind;
   /** True for an enemy holding a stage-2 gun, and for yourself when you hold one. */
   hunted: boolean;
@@ -126,6 +131,8 @@ export type BulletView = { id: number; x: number; y: number; vx: number; vy: num
  * Whole px, and none while a burst barrel waits to stand again; the list changes only when one is hurt, so it rides as a sticky field.
  */
 export type BarrelView = [id: number, x: number, y: number, hp: number];
+/** An armor pack lying on the floor: `[id, x, y]`, whole px; a taken one is left out until it lies again. Sticky. */
+export type PackView = [id: number, x: number, y: number];
 /**
  * A prop (`PROPS`): `[id, kind, x, y, state]`, `kind` indexing `PROP_KINDS`, whole px, none while it is gone. `state` is tenths of full
  * health 1..10 standing, 0 while a propane tank flies or a generator arcs, 11 once spent (a dark lamp, a cabinet's pack on the floor). Sticky.
@@ -246,13 +253,15 @@ export type GameEvent =
   /** A prop (`PROPS`) did its thing: `pop` (shattered, burst, spilled), `launch` a tank at heading `a`, `arc` a generator shorting, `emp` its pulse of radius `r`, `pick` a pack taken, `relight` a lamp. `c` is the colour a paint can splatters. */
   | { e: 'prop'; kind: PropKind; k: 'pop' | 'launch' | 'arc' | 'emp' | 'pick' | 'relight'; x: number; y: number; a?: number; r?: number; c?: ColorId }
   /**
-   * Player `id` took something: `hp` health and `ammo` rounds actually gained (what was wasted is not counted), `ability` ready again,
+   * Player `id` took something: `hp` health, `armor` armor points and `ammo` rounds actually gained (what was wasted is not counted), `ability` ready again,
    * `gold` a golden gun. `from` is where it came from. News only to that player, who sees it pop up over their own soldier.
    */
-  | { e: 'gain'; id: number; from: GainSource; hp?: number; ammo?: number; ability?: true; gold?: true; level?: true };
+  | { e: 'gain'; id: number; from: GainSource; hp?: number; ammo?: number; ability?: true; gold?: true; level?: true; armor?: number }
+  /** An armor pack at (`x`, `y`) was taken (`pick`). */
+  | { e: 'pack'; k: 'pick'; x: number; y: number };
 
-/** Where a `gain` came from: a health or ammo pack, a supply plane's crate, a Last Squad drop. */
-export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop';
+/** Where a `gain` came from: a health or ammo pack, a supply plane's crate, a Last Squad drop, an armor pack. */
+export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop' | 'armor';
 
 export type Circle = { x: number; y: number; r: number };
 /**
@@ -322,6 +331,8 @@ export type Snapshot = {
   barrels?: BarrelView[];
   /** The other props standing, versus modes. Sticky. */
   props?: PropView[];
+  /** Armor packs lying on the floor, versus modes and Last Squad. Sticky. */
+  packs?: PackView[];
   /** The supply plane in flight or the landed crate not yet opened, or null. Sticky. */
   airdrop?: AirdropView | null;
   /** Zombies only: the horde in view, the squad's walls and the run. */
@@ -343,7 +354,7 @@ export type Snapshot = {
 export type HeardShot = { x: number; y: number };
 
 /** Fields that change rarely; the wire omits each one while it is unchanged since the last snapshot sent to that client. */
-export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'barrels', 'props', 'airdrop', 'targets', 'doors'] as const;
+export const STICKY_KEYS = ['crates', 'leaderboard', 'zones', 'match', 'buildings', 'run', 'royale', 'barrels', 'props', 'packs', 'airdrop', 'targets', 'doors'] as const;
 type StickyKey = (typeof STICKY_KEYS)[number];
 /** `cos` maps player id to what they wear, sent only when it changes; `fillSnapshot` folds it onto each `PlayerView.cos`. */
 /** `minimap` rides at most every `MINIMAP_EVERY`th snapshot (a 10 Hz map needs no 30 Hz feed); a snapshot without it keeps the last. */

@@ -88,11 +88,11 @@ export function fillSnapshot(wire: SnapshotWire, last: Snapshot | null): Snapsho
   const match = wire.match ?? last?.match;
   if (!crates || !leaderboard || !zones || !match) return null;
   const buildings = wire.buildings ?? last?.buildings, run = wire.run ?? last?.run, royale = wire.royale ?? last?.royale;
-  const barrels = wire.barrels ?? last?.barrels, props = wire.props ?? last?.props, targets = wire.targets ?? last?.targets, doors = wire.doors ?? last?.doors;
+  const barrels = wire.barrels ?? last?.barrels, props = wire.props ?? last?.props, packs = wire.packs ?? last?.packs, targets = wire.targets ?? last?.targets, doors = wire.doors ?? last?.doors;
   const airdrop = wire.airdrop !== undefined ? wire.airdrop : last?.airdrop;
   const minimap = wire.minimap ?? last?.minimap ?? [];
   const { cos: sentCos, ...rest } = wire;
   const known: Record<number, Cos> = sentCos ?? Object.fromEntries((last?.players ?? []).filter((p) => p.cos).map((p) => [p.id, p.cos!]));
   const players = Object.keys(known).length ? wire.players.map((p) => (known[p.id] ? { ...p, cos: known[p.id] } : p)) : wire.players;
-  return { ...rest, minimap, players, crates, leaderboard, zones, match, ...(buildings && { buildings }), ...(run && { run }), ...(royale && { royale }), ...(barrels && { barrels }), ...(props && { props }), ...(targets && { targets }), ...(doors && { doors }), ...(airdrop !== undefined && { airdrop }) };
+  return { ...rest, minimap, players, crates, leaderboard, zones, match, ...(buildings && { buildings }), ...(run && { run }), ...(royale && { royale }), ...(barrels && { barrels }), ...(props && { props }), ...(packs && { packs }), ...(targets && { targets }), ...(doors && { doors }), ...(airdrop !== undefined && { airdrop }) };
 }

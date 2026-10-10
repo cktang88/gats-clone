@@ -1,6 +1,6 @@
 /**
  * Pickups, as the player sees them:
- * - the gain popups: whatever you just took (a health pack's +hp, an ammo pack's +rounds, the ability back, a golden gun) pops up over
+ * - the gain popups: whatever you just took (a health pack's +hp, an armor pack's +armor, an ammo pack's +rounds, the ability back, a golden gun) pops up over
  *   your own soldier as small toy chips, an icon and a number on a gunmetal plate, and rises and fades. What lands at once shares a row
  *   (and a second pack of the same kind adds to its chip); a later pickup starts a new row under it and lifts the older ones. Only you see
  *   your own: nobody else's gains are on your wire (sim/snapshot.ts).
@@ -14,7 +14,7 @@ import { INK, shade } from './palette.ts';
 
 // ---------------------------------------------------------------------------------------------------------------- gain popups
 
-export type GainKind = 'hp' | 'ammo' | 'ability' | 'gold' | 'level';
+export type GainKind = 'hp' | 'armor' | 'ammo' | 'ability' | 'gold' | 'level';
 export type GainIn = Partial<Record<GainKind, number>>;
 export type GainChip = { kind: GainKind; amount: number; touched: number; from: number };
 export type GainRow = { chips: GainChip[]; born: number; touched: number; push: number; pushFrom: number; pushedAt: number };
@@ -26,9 +26,9 @@ export type GainRow = { chips: GainChip[]; born: number; touched: number; push: 
 export const GAIN = { mergeMs: 350, holdMs: 950, fadeMs: 420, rise: 26, gap: 30, cap: 4, popMs: 170 } as const;
 export const GAIN_LIFE_MS = GAIN.holdMs + GAIN.fadeMs;
 
-/** Each kind's icon colour (art bible: heal mint, lamp amber, spark, reward gold). */
-export const GAIN_COLOR: Record<GainKind, string> = { hp: '#8ff0c4', ammo: '#ffb347', ability: '#ffd27a', gold: '#ffd34d', level: '#ffd34d' };
-const ORDER: readonly GainKind[] = ['level', 'hp', 'ammo', 'ability', 'gold'];
+/** Each kind's icon colour (art bible: heal mint, armor steel blue, lamp amber, spark, reward gold). */
+export const GAIN_COLOR: Record<GainKind, string> = { hp: '#8ff0c4', armor: '#8fb8ff', ammo: '#ffb347', ability: '#ffd27a', gold: '#ffd34d', level: '#ffd34d' };
+const ORDER: readonly GainKind[] = ['level', 'hp', 'armor', 'ammo', 'ability', 'gold'];
 
 /** Your gains in a snapshot's events, one per `gain` event; an event that gave nothing is dropped. */
 export function gainsOf(events: readonly GameEvent[], myId: number): GainIn[] {
@@ -37,6 +37,7 @@ export function gainsOf(events: readonly GameEvent[], myId: number): GainIn[] {
     if (e.e !== 'gain' || e.id !== myId) continue;
     const g: GainIn = {};
     if (e.hp && e.hp > 0) g.hp = e.hp;
+    if (e.armor && e.armor > 0) g.armor = e.armor;
     if (e.ammo && e.ammo > 0) g.ammo = e.ammo;
     if (e.ability) g.ability = 1;
     if (e.gold) g.gold = 1;
@@ -92,12 +93,16 @@ const TEXT = 16, ICON = 16, PAD = 6, H = 24, CHIP_GAP = 6;
 const SCALE = 1.5;
 const PLATE = '#3d4450';
 
-/** The icons, centred on the origin, `ICON` px across: a chunky cross, a round of ammo, a lightning bolt, a star. */
+/** The icons, centred on the origin, `ICON` px across: a chunky cross, a shield plate, a round of ammo, a lightning bolt, a star. */
 function icon(ctx: CanvasRenderingContext2D, kind: GainKind) {
   const c = GAIN_COLOR[kind];
   if (kind === 'hp') {
     const a = 2.6, b = 7;
     celPart(ctx, polygon([-a, -b], [a, -b], [a, -a], [b, -a], [b, a], [a, a], [a, b], [-a, b], [-a, a], [-b, a], [-b, -a], [-a, -a]), c, 0, 12, 1.4);
+  } else if (kind === 'armor') {
+    celPart(ctx, (g) => { g.moveTo(0, -8.5); g.lineTo(6.8, -6); g.lineTo(6.2, 1.5); g.quadraticCurveTo(4.8, 6.4, 0, 8.8); g.quadraticCurveTo(-4.8, 6.4, -6.2, 1.5); g.lineTo(-6.8, -6); g.closePath(); }, c, 0, 12, 1.4);
+    ctx.fillStyle = INK;
+    ctx.fillRect(-0.7, -5.5, 1.4, 11);
   } else if (kind === 'ammo') {
     ctx.save();
     ctx.rotate(0.5);

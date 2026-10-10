@@ -1,7 +1,7 @@
-import { COLORS, PROP_FX, PROP_KINDS, PROPS, type PropKind } from '../shared/defs.ts';
+import { ARMOR_PACK, COLORS, PROP_FX, PROP_KINDS, PROPS, type PropKind } from '../shared/defs.ts';
 import { markBlast } from './blastfx.ts';
 import { lightingEnabled } from './lighting.ts';
-import type { PropView, Snapshot, ThrownView } from '../shared/protocol.ts';
+import type { PackView, PropView, Snapshot, ThrownView } from '../shared/protocol.ts';
 import { seeded } from './grain.ts';
 import { INK } from './palette.ts';
 import { LIGHT } from './tilt.ts';
@@ -14,7 +14,7 @@ import { LIGHT } from './tilt.ts';
  */
 
 const TAU = Math.PI * 2;
-const BONE = '#ece6d6', AMBER = '#ffb347', SPARK = '#ffd27a', SMOKE = '#5a5550', SIGNAL = '#ff5a1f', HEAL = '#8ff0c4', TOXIC = '#c7d84a', EMP = '#bfe6ff';
+const STEEL = '#8fb8ff', STEEL_DARK = '#5f7fb8', BONE = '#ece6d6', AMBER = '#ffb347', SPARK = '#ffd27a', SMOKE = '#5a5550', SIGNAL = '#ff5a1f', HEAL = '#8ff0c4', TOXIC = '#c7d84a', EMP = '#bfe6ff';
 const GUNMETAL = '#4f5560', GUNMETAL_DARK = '#3d4450', OLIVE = '#6c7356', OLIVE_DARK = '#4e543c', RUST = '#a8552e';
 const SHADOW = 'rgba(10, 12, 18, 0.46)', CONTACT = 'rgba(10, 12, 18, 0.42)';
 const HIGHLIGHT = 'rgba(255, 255, 255, 0.24)', SHADE = 'rgba(10, 12, 16, 0.3)';
@@ -28,7 +28,8 @@ const visible = (v: View, x: number, y: number, pad: number) => x > v.x0 - pad &
 
 // ---------------------------------------------------------------------------------------------------------------- memory
 
-type Burst = { k: 'pop' | 'launch' | 'emp' | 'pick' | 'relight'; kind: PropKind; x: number; y: number; born: number; seed: number; a: number; r: number; color: string };
+/** `kind` 'armor' is an armor pack taken (sim/packs.ts), which bursts like a cabinet's pack in steel blue. */
+type Burst = { k: 'pop' | 'launch' | 'emp' | 'pick' | 'relight'; kind: PropKind | 'armor'; x: number; y: number; born: number; seed: number; a: number; r: number; color: string };
 type Splat = { x: number; y: number; born: number; seed: number; color: string };
 type Mem = { map: string; bursts: Burst[]; splats: Splat[]; last: Map<number, { x: number; y: number }>; slicks: Map<number, number> };
 const mem: Mem = { map: '', bursts: [], splats: [], last: new Map(), slicks: new Map() };
@@ -50,6 +51,7 @@ export function resetPropFx() {
 export function notePropEvents(snap: Pick<Snapshot, 'events' | 'match'>, now: number) {
   if (mem.map !== snap.match.map) { resetPropFx(); mem.map = snap.match.map; }
   for (const ev of snap.events) {
+    if (ev.e === 'pack') { mem.bursts.push({ k: 'pick', kind: 'armor', x: ev.x, y: ev.y, born: now, seed: Math.round(ev.x * 31 + ev.y * 17 + now), a: 0, r: 0, color: STEEL }); continue; }
     if (ev.e !== 'prop') continue;
     if (ev.k === 'arc') continue;
     // A tank that bursts is a blast (blastfx.ts): it throws its own staves, flash, fire and smoke, so it only names itself here.
@@ -92,8 +94,9 @@ function lampLit(q: PropView, now: number): number {
 }
 
 /** Every light the props cast right now: lit lamps, burning slicks, arcing generators, rocketing tanks, and the flashes of what just went off. */
-export function propLights(snap: Pick<Snapshot, 'props' | 'thrown'>, now: number): PropLight[] {
+export function propLights(snap: Pick<Snapshot, 'props' | 'thrown' | 'packs'>, now: number): PropLight[] {
   const out: PropLight[] = [];
+  for (const [id, x, y] of snap.packs ?? []) out.push({ x, y, r: 60, color: STEEL, core: BONE, intensity: 0.28, key: `armor:${id}` });
   for (const q of snap.props ?? []) {
     const kind = PROP_KINDS[q[1]]!;
     if (kind === 'lamp') { const lit = lampLit(q, now); if (lit > 0) out.push({ x: q[2] + 6, y: q[3] + 16, r: 170, color: AMBER, core: '#ffe08a', intensity: 0.3 * lit, key: `lamp:${q[0]}` }); }
@@ -428,7 +431,7 @@ const splatPath = (ctx: CanvasRenderingContext2D, s: Splat) => {
 const shown = (q: PropView) => q[4] !== 0 || PROP_KINDS[q[1]] !== 'propane';
 
 /** Paint splats, contact and cast shadows, and the props themselves: laid after the solids and before any body, so a player at a prop's foot stands in front of it. */
-export function drawProps(ctx: CanvasRenderingContext2D, snap: Pick<Snapshot, 'props' | 'match' | 'events'>, now: number, view: View) {
+export function drawProps(ctx: CanvasRenderingContext2D, snap: Pick<Snapshot, 'props' | 'match' | 'events' | 'packs'>, now: number, view: View) {
   if (mem.map !== snap.match.map) { resetPropFx(); mem.map = snap.match.map; }
   mem.splats = mem.splats.filter((s) => now - s.born < SPLAT_MS);
   for (const s of mem.splats) {
@@ -457,6 +460,47 @@ export function drawProps(ctx: CanvasRenderingContext2D, snap: Pick<Snapshot, 'p
     else if (kind === 'lamp') lampBase(ctx, x, y, hp);
     else if (kind === 'medic' || kind === 'ammo') { if (hp === 11) packBody(ctx, kind, x, y, id, now); else cabinetBody(ctx, kind, x, y, hp); }
   }
+  for (const k of snap.packs ?? []) if (visible(view, k[1], k[2], 60)) armorPackBody(ctx, k, now);
+}
+
+/**
+ * An armor pack on the floor (sim/packs.ts): a gunmetal plate carrier with a steel-blue plate and a bone shield stencil, bobbing over its
+ * contact shadow inside a pulsing steel ring the size of its pickup reach, the same toy kit and ring as a cabinet's pack.
+ */
+function armorPackBody(ctx: CanvasRenderingContext2D, [id, cx, cy]: PackView, now: number) {
+  const still = REDUCED ? 0 : 1;
+  const bob = Math.sin(now / 320 + id) * 2 * still;
+  ctx.save();
+  ctx.strokeStyle = STEEL;
+  ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now / 260 + id) * still;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, ARMOR_PACK.pickR - 6 + 2 * Math.sin(now / 260 + id) * still, 0, TAU);
+  ctx.stroke();
+  ctx.restore();
+  contact(ctx, cx, cy + 10, 13, 5, 0, 0);
+  const y = cy + bob - 3;
+  // The carrier: shoulder straps over a vest body, one front face hanging below.
+  boxBody(ctx, cx, y, { w: 26, h: 18, face: 6, top: GUNMETAL, side: GUNMETAL_DARK }, 10);
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = INK;
+  ctx.fillStyle = GUNMETAL_DARK;
+  for (const sx of [-8, 5]) { rrect(ctx, cx + sx, y - 13, 4, 6, 1.5); ctx.fill(); ctx.stroke(); }
+  // The plate, with its shield stencil.
+  ctx.beginPath();
+  ctx.moveTo(cx, y - 7); ctx.lineTo(cx + 7, y - 5); ctx.lineTo(cx + 6.4, y + 1.5); ctx.quadraticCurveTo(cx + 5, y + 6, cx, y + 8);
+  ctx.quadraticCurveTo(cx - 5, y + 6, cx - 6.4, y + 1.5); ctx.lineTo(cx - 7, y - 5); ctx.closePath();
+  ctx.fillStyle = STEEL;
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = STEEL_DARK;
+  ctx.fillRect(cx + 1, y - 5, 4.6, 11);
+  ctx.fillStyle = BONE;
+  ctx.fillRect(cx - 0.8, y - 4.5, 1.6, 10);
+  ctx.restore();
+  specular(ctx, cx - 9, y - 5);
 }
 
 /** A generator that has just shorted flickers white along its edge. */
@@ -649,7 +693,7 @@ function drawBurst(ctx: CanvasRenderingContext2D, b: Burst, now: number) {
     ctx.fillStyle = BONE;
     for (let i = 0; i < 8; i++) { const a = b.a + Math.PI + (rand() - 0.5) * 1.4, d = ease(t) * (30 + rand() * 40); ctx.beginPath(); ctx.arc(b.x + Math.cos(a) * d, b.y + Math.sin(a) * d, 3 + rand() * 5 * t, 0, TAU); ctx.fill(); }
   } else if (b.k === 'pick' || b.k === 'relight') {
-    const mint = b.kind === 'medic', c = b.kind === 'lamp' ? SPARK : mint ? HEAL : AMBER;
+    const mint = b.kind === 'medic', c = b.kind === 'lamp' ? SPARK : mint ? HEAL : b.kind === 'armor' ? STEEL : AMBER;
     ctx.globalAlpha = 1 - t;
     ctx.strokeStyle = c;
     ctx.lineWidth = 3;

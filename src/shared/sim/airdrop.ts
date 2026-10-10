@@ -1,4 +1,4 @@
-import { AIRDROP, PROPS, WORLD } from '../defs.ts';
+import { AIRDROP, ARMORS, PROPS, WORLD } from '../defs.ts';
 import { MAPS, type MapId } from '../maps.ts';
 export { planeAt } from '../protocol.ts';
 import { award } from './combat.ts';
@@ -15,11 +15,18 @@ const MIN_LEAD_MS = 5000;
 /** A drop wants this much clear floor around its center: its half width, a body and some room to stand and shoot. */
 const CLEAR_R = AIRDROP.size / 2 + WORLD.playerRadius + 24;
 
-const spotCache = new Map<MapId, Pose[]>();
+const spotCache = new Map<string, Pose[]>();
 
 /** Spots on `map` a player can walk to from a spawn, clear of every wall, crate and barrel, and away from the edge: where a supply crate may land. */
-export function dropSpots(map: MapId): readonly Pose[] {
-  const cached = spotCache.get(map);
+export const dropSpots = (map: MapId): readonly Pose[] => openSpots(map, CLEAR_R, AIRDROP.edge);
+
+/**
+ * The centres of the `CELL` px grid on `map` a player can walk to from a spawn with `clearR` px of floor clear of every wall, crate, barrel
+ * and prop round them, at least `edge` px in from the map's edge. Cached per map and size.
+ */
+export function openSpots(map: MapId, clearR: number, edge: number): readonly Pose[] {
+  const cacheKey = `${map}:${clearR}:${edge}`;
+  const cached = spotCache.get(cacheKey);
   if (cached) return cached;
   const def = MAPS[map];
   const n = Math.ceil(def.size / CELL);
@@ -39,7 +46,7 @@ export function dropSpots(map: MapId): readonly Pose[] {
     }
     return out;
   };
-  const body = blocked(WORLD.playerRadius), wide = blocked(CLEAR_R);
+  const body = blocked(WORLD.playerRadius), wide = blocked(clearR);
   const seen = new Uint8Array(n * n);
   const queue: number[] = [];
   for (const r of [...def.spawns.red, ...def.spawns.blue, ...def.spawns.ffa]) {
@@ -59,9 +66,9 @@ export function dropSpots(map: MapId): readonly Pose[] {
   const spots: Pose[] = [];
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const c = j * n + i, x = at(i), y = at(j);
-    if (seen[c] && !wide[c] && x >= AIRDROP.edge && y >= AIRDROP.edge && x <= def.size - AIRDROP.edge && y <= def.size - AIRDROP.edge) spots.push({ x, y });
+    if (seen[c] && !wide[c] && x >= edge && y >= edge && x <= def.size - edge && y <= def.size - edge) spots.push({ x, y });
   }
-  spotCache.set(map, spots);
+  spotCache.set(cacheKey, spots);
   return spots;
 }
 
@@ -116,7 +123,7 @@ export function tickAirdrops(w: World) {
 
 /**
  * Cracking a supply drop open: a golden gun for the rest of the life (and a full magazine), or, `AIRDROP.supplyChance` of the time
- * or when the gun is golden already, a full heal, a full magazine, the abilities back and score. Either way it is a Special Delivery.
+ * or when the gun is golden already, a full heal, full armor, a full magazine, the abilities back and score. Either way it is a Special Delivery.
  */
 export function openAirdrop(w: World, p: Player, crate: Crate) {
   const life = p.life;
@@ -126,15 +133,17 @@ export function openAirdrop(w: World, p: Player, crate: Crate) {
   const stats = effectiveStats(p);
   const gold = !life.golden && roll >= AIRDROP.supplyChance;
   const rounds = Math.max(0, stats.mag - life.ammo), healed = Math.round(Math.max(0, stats.maxHp - life.hp)), cooling = w.now < p.abilityReadyAt && abilityOf(p) !== null;
+  const plates = Math.round(Math.max(0, ARMORS[p.loadout.armor].points - life.armor));
   life.ammo = stats.mag;
   life.reloadUntil = null;
   if (gold) life.golden = true;
   else {
     life.hp = stats.maxHp;
+    life.armor = ARMORS[p.loadout.armor].points;
     p.abilityReadyAt = 0;
     addScore(w, p, AIRDROP.supplyScore);
   }
-  w.events.push({ e: 'gain', id: p.id, from: 'airdrop', ...(rounds > 0 && { ammo: rounds }), ...(gold ? { gold: true as const } : { ...(healed > 0 && { hp: healed }), ...(cooling && { ability: true as const }) }) });
+  w.events.push({ e: 'gain', id: p.id, from: 'airdrop', ...(rounds > 0 && { ammo: rounds }), ...(gold ? { gold: true as const } : { ...(healed > 0 && { hp: healed }), ...(plates > 0 && { armor: plates }), ...(cooling && { ability: true as const }) }) });
   const h = crate.size / 2;
   w.events.push({ e: 'airdrop', k: 'taken', x: crate.x + h, y: crate.y + h, by: p.name, gold });
   award(w, p, 'specialDelivery');
