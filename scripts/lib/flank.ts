@@ -11,6 +11,7 @@ import { segmentBlocked } from '../../src/shared/sim/movement.ts';
 import { lookReach } from '../../src/shared/lookahead.ts';
 import { boundLean, visibleHalf } from '../../src/client/camera.ts';
 import { newBotMemory, type BotMemory } from '../../src/server/bots.ts';
+import { VETERAN } from '../../src/server/bot/aim.ts';
 import { startIntent, type PersonalityId } from '../../src/server/bot/intent.ts';
 import { thinkBots } from '../../src/server/bot/tick.ts';
 
@@ -122,7 +123,7 @@ export function flank(scenario: Scenario, gun: WeaponId, persona: PersonalityId,
     return { x: spot.x + Math.cos(a) * d, y: spot.y + Math.sin(a) * d };
   })();
   const human = join(w, humanGun, humanStart.x, humanStart.y, 'human');
-  const mem: BotMemory = { ...newBotMemory(r), persona };
+  const mem: BotMemory = { ...newBotMemory(r, { skill: VETERAN }), persona };
   const mems = new Map<number, BotMemory>([[bot.id, mem]]);
   // Unseen: the bot holds the wall's east face looking east until the human first has a line on it (its plan pinned there till then, as a
   // minimap blip would otherwise send it off to look).

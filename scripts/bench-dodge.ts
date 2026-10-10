@@ -11,6 +11,7 @@ import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand, type Player, type World } from '../src/shared/sim/world.ts';
 import { rulesOf } from '../src/shared/defs.ts';
 import { newBotMemory, type BotMemory } from '../src/server/bots.ts';
+import { VETERAN } from '../src/server/bot/aim.ts';
 import { PERSONALITY_IDS, type PersonalityId } from '../src/server/bot/intent.ts';
 import { thinkBots } from '../src/server/bot/tick.ts';
 
@@ -58,7 +59,7 @@ function scripted(weapon: WeaponId, persona: PersonalityId, range: number, seed:
   const mid = MAPS.plaza.size / 2;
   const sniper = join(w, 'sniper', mid - range / 2, mid, 'human');
   const bot = join(w, weapon as GunId, mid + range / 2, mid);
-  const mems = new Map<number, BotMemory>([[bot.id, { ...newBotMemory(() => rand(w)), persona }]]);
+  const mems = new Map<number, BotMemory>([[bot.id, { ...newBotMemory(() => rand(w), { skill: VETERAN }), persona }]]);
   const acc: Acc = { shots: 0, hits: 0 };
   let last = { x: bot.x, y: bot.y }, shots = 0;
   const g = GUNS.sniper;
@@ -86,7 +87,7 @@ function botDuel(weapon: WeaponId, range: number, seed: number, swap: boolean) {
   const [sx, vx] = swap ? [mid + range / 2, mid - range / 2] : [mid - range / 2, mid + range / 2];
   const sniper = join(w, 'sniper', sx, mid), bot = join(w, weapon as GunId, vx, mid);
   const r = () => rand(w);
-  const mems = new Map<number, BotMemory>([[sniper.id, { ...newBotMemory(r), persona: PERSONALITY_IDS[seed % 3]! }], [bot.id, { ...newBotMemory(r), persona: PERSONALITY_IDS[Math.floor(seed / 3) % 3]! }]]);
+  const mems = new Map<number, BotMemory>([[sniper.id, { ...newBotMemory(r, { skill: VETERAN }), persona: PERSONALITY_IDS[seed % 3]! }], [bot.id, { ...newBotMemory(r, { skill: VETERAN }), persona: PERSONALITY_IDS[Math.floor(seed / 3) % 3]! }]]);
   const acc = { shots: 0, hits: 0 };
   while (w.now < 20_000) {
     thinkBots(w, mems, r, { picks: false, respawn: false, watched: true });

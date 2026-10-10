@@ -11,6 +11,7 @@ import type { MapId } from '../../src/shared/maps.ts';
 import { addPlayer, step } from '../../src/shared/sim.ts';
 import { crateRect, createWorld, isEnemy, rand, type World } from '../../src/shared/sim/world.ts';
 import { newBotMemory, randomLoadout, type BotMemory } from '../../src/server/bots.ts';
+import { VETERAN } from '../../src/server/bot/aim.ts';
 import { thinkBots } from '../../src/server/bot/tick.ts';
 import { arenaFor } from '../../src/server/bot/arena.ts';
 import { edgeToward } from '../../src/server/bot/tactics.ts';
@@ -49,7 +50,7 @@ export function freezeScan(mode: ModeId, map: MapId, seed: number, seconds: numb
   const w: World = createWorld(mode, seed, map);
   const r = () => rand(w);
   const mems = new Map<number, BotMemory>();
-  for (let i = 0; i < players; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r));
+  for (let i = 0; i < players; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, { skill: VETERAN }));
   const out: FreezeResult = { botMs: 0, threatMs: 0, facingMs: 0, frozenMs: 0, freezes: [], kills: 0, thinkMs: 0, ticks: 0, loops: 0, pokes: 0, fightMs: 0, outnumberedMs: 0, deaths: 0, outnumberedDeaths: 0, engages: 0, engagesLost: 0 };
   const outnumbered = new Set<number>(), engaging = new Set<number>(), phase = new Map<number, string>();
   const spell = new Map<number, { startMs: number; intent: string; x: number; y: number }>();

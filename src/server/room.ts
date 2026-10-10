@@ -105,7 +105,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   function addBot(team: Team) {
     const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
     const p = addPlayer(world, name, randomLoadout(botRand), { team });
-    bots.set(p.id, newBotMemory(botRand));
+    bots.set(p.id, newBotMemory(botRand, { name, seed }));
     p.cos = botCosmetics(name);
     return p;
   }

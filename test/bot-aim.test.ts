@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
-import { drift, freshAim, HANDS, intercept, MUZZLE_PX, turn, wrapAngle, type AimState, type Hand } from '../src/server/bot/aim.ts';
+import { drift, freshAim, HANDS, intercept, MUZZLE_PX, turn, wrapAngle, VETERAN, type AimState, type Hand } from '../src/server/bot/aim.ts';
 import { GUNS, rulesOf } from '../src/shared/defs.ts';
 import { flownAfter } from '../src/shared/sim/ballistics.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
@@ -106,7 +106,7 @@ test('a bot fires only once its gun has come round onto the enemy, so a flick be
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
     const enemy = spawnAt(w, enemyAt.x, enemyAt.y);
     const r = seeded(seed);
-    let mem = newBotMemory(r);
+    let mem = newBotMemory(r, { skill: VETERAN });
     for (let i = 0; i < 60; i++) {
       for (const p of [bot, enemy]) if (p.life.k === 'alive') p.life.hp = 100;
       const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);

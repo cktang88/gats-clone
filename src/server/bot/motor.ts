@@ -5,7 +5,7 @@ import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { bloomRecoverMul, settleShare, spreadFor } from '../../shared/sim/stats.ts';
 import { coolSpray, sprayCap } from '../../shared/sim/trigger.ts';
-import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, TICK_MS, wrapAngle, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
+import { aimAndTrigger, aimSigma, bearingSpin, BOT_SKILL, drift, engage, freshAim, GRENADES, handFor, HANDS, intercept, landingErr, MUZZLE_PX, sharpnessAgainst, skilled, slowHand, TICK_MS, wrapAngle, type AimState, type Engagement, type Hand, type Look, type Sharpness } from './aim.ts';
 import { clearOfLeaves, doorCentre, leavesCrossed, navAround, takeReplan, type BotArena, type StandingLeaf } from './arena.ts';
 import { doorLeaves, swingArcAt, swingHinges, SWING_MAX } from '../../shared/sim/doors.ts';
 import type { MapDoor } from '../../shared/geom.ts';
@@ -272,10 +272,11 @@ export function tapRhythm(gun: GunId, rushes: boolean): { windowMs: number; paus
  */
 export type Rhythm = { windowMs: number; pauseMs: number; patienceMs: number; recover: number; perks: Partial<Record<Tier, PerkId>>; suppression: number };
 export const PATIENCE_CAP_MS = 1600;
-export function fireRhythm(gun: GunId, rushes: boolean, commitMul: number, perks: Partial<Record<Tier, PerkId>> = {}, suppression = 0): Rhythm | null {
+export function fireRhythm(gun: GunId, rushes: boolean, commitMul: number, perks: Partial<Record<Tier, PerkId>> = {}, suppression = 0, sprayMul = 1): Rhythm | null {
   const tap = tapRhythm(gun, rushes);
   if (!tap) return null;
-  return { ...tap, patienceMs: Math.min(PATIENCE_CAP_MS, tap.pauseMs * commitMul), recover: bloomRecoverMul(perks), perks, suppression };
+  // A rookie holds each tap longer (`sprayMul`, see `BOT_SKILL`): more of its rounds go out on a blooming cone.
+  return { ...tap, windowMs: tap.windowMs * sprayMul, patienceMs: Math.min(PATIENCE_CAP_MS, tap.pauseMs * commitMul), recover: bloomRecoverMul(perks), perks, suppression };
 }
 
 /**
@@ -822,14 +823,15 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const watch = intent.k !== 'blinded' && !t ? c.tac?.watch ?? null : null;
   const faceAt = (intent.k !== 'blinded' ? t?.p : undefined) ?? turnTo ?? watch ?? s.face ?? v.lastSeen ?? (aimsAtLead(v.lead, me) ? v.lead : null);
   const startled = turnTo !== null || (t !== undefined && faceAt === t.p && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) > STARTLE_RAD);
-  let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: startled ? HANDS.startle : HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p } : { k: 'ahead' };
+  let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: startled ? slowHand(HANDS.startle, c.skill?.turnMul) : HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p } : { k: 'ahead' };
   const barrels = seenBarrels(snap.barrels);
   const props = seenProps(snap.props);
   let track: Hold['track'] = null;
   let threat: Situation['threat'] = null;
   if (t) {
     const tracked = held(t.p.id) ? m.engaged : null;
-    const sharp = sharpnessAgainst(t.p);
+    // Its target's row, played at its own skill (a rookie's aim error, reaction, hand, tracking and lead; see `BOT_SKILL`).
+    const sharp = skilled(sharpnessAgainst(t.p), c.skill ?? BOT_SKILL.veteran);
     // An enemy who steps into the angle its gun already holds is shot on sight: the reaction a person has for a target he was waiting for.
     const preAimed = !tracked && !!m.hold?.watching && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) < PRE_AIMED_RAD;
     engaged = engage(tracked, t.p, sharp, v.tick, c.rand, v.flash, c.persona.reactMul * (preAimed ? PRE_AIMED_REACT : 1));
@@ -865,7 +867,9 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     threat, hurting: v.hpFrac < HURTING_HP_FRAC, underFire: v.underFire,
     onContestedZone: v.zones.some((z) => z.owner !== me.team && dist(z, me) < z.r),
   };
-  const wanted = readyAbility !== null && ABILITY_RULES[readyAbility](situation) ? readyAbility : null;
+  // A rookie lets an ability's moment go by more often (`abilityOdds`); a veteran never does, and draws nothing for it.
+  const abilityOdds = c.skill?.abilityOdds ?? 1;
+  const wanted = readyAbility !== null && ABILITY_RULES[readyAbility](situation) && (abilityOdds >= 1 || c.rand() < abilityOdds) ? readyAbility : null;
   let keys = drive.keys;
   if (wanted === 'dash' && t) {
     const away = awayFrom(me, t.p, c.arena, RETREAT_STEP);
@@ -892,7 +896,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   // A planted gun moving off its spot between shots lets go of the trigger: its next round waits until it has stopped again.
   const stillToFire = style.k === 'plant' && !!dodge && !dodge.stop;
   if (stillToFire && anyKey(keys)) wantsFire = false;
-  const rhythm = fireRhythm(me.gun, c.band.rushes, c.persona.commitMul, snap.self.perks, snap.self.suppression);
+  // A rookie waits less on its bloom (`patienceMul`) and holds each tap longer (`sprayMul`): it sprays more and taps less.
+  const rhythm = fireRhythm(me.gun, c.band.rushes, c.persona.commitMul * (c.skill?.patienceMul ?? 1), snap.self.perks, snap.self.suppression, c.skill?.sprayMul);
   // Being shot, or the enemy about to walk out of its sight: the round goes now, bloom or not.
   const urgent = v.underFire || (t !== undefined && breaksSight(me, engaged, v.solids, v.smokes));
   const own = ownBloom(rhythm, me.gun, m.tap, snap.self.ammo, v.tick);

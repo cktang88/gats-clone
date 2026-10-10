@@ -9,6 +9,7 @@ import { addPlayer, setInput, step } from '../src/shared/sim.ts';
 import { effectiveStats, levelForScore } from '../src/shared/sim/stats.ts';
 import { createWorld, IDLE_INPUT, rand } from '../src/shared/sim/world.ts';
 import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { VETERAN } from '../src/server/bot/aim.ts';
 import { thinkBots } from '../src/server/bot/tick.ts';
 import { median, pct, sec } from './lib/stats.ts';
 
@@ -42,7 +43,7 @@ if (worlds > 0) {
     const bornAt = new Map<number, number>();
     for (let i = 0; i < WORLD.minPlayers; i++) {
       const p = addPlayer(w, `bot${i}`, randomLoadout(r));
-      bots.set(p.id, newBotMemory(r));
+      bots.set(p.id, newBotMemory(r, { skill: VETERAN }));
       bornAt.set(p.id, w.now);
       tally(livesByArmor, p.loadout.armor);
     }
