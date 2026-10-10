@@ -7,7 +7,7 @@ import { parseServerMsg, routeServerMsg, SERVER_MSG_TYPES, type ServerMsgHandler
 function recording(): { seen: string[]; handlers: ServerMsgHandlers } {
   const seen: string[] = [];
   const note = (m: { t: string }) => { seen.push(m.t); };
-  return { seen, handlers: { welcome: note, walls: note, snap: note, chat: note, emote: note, radio: note, badge: note, error: note, progress: note, equipped: note } };
+  return { seen, handlers: { welcome: note, walls: note, snap: note, chat: note, emote: note, radio: note, badge: note, error: note, progress: note, equipped: note, friendInvite: note, friends: note, friendNote: note } };
 }
 
 test('every message type the page accepts off the socket has a handler, and nothing else does', () => {

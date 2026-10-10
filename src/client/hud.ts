@@ -859,6 +859,30 @@ const BOARD = { w: 196, compactW: 162, row: 26, pad: 10, touchTop: 3 } as const;
 let boardYs = new Map<number, number>();
 const boardMine = { place: null as number | null, climbAt: -1e9 };
 
+/** Friends: a pink heart beside their name on the board and on the minimap, where they always show. */
+export const FRIEND_COLOR = '#ff7eb6';
+let friendIds: ReadonlySet<number> = new Set();
+/** Your friends in this match (the server's `friends` message). */
+export const setHudFriends = (ids: ReadonlySet<number>) => { friendIds = ids; };
+
+/** The board's names as last drawn (HUD units), so a click on one can open its menu; the one under the cursor is underlined. */
+/** `right` is the board's left edge, where its menu opens beside it. */
+type BoardName = { id: number; name: string; human: boolean; x: number; y: number; w: number; h: number; right: number };
+let boardNames: BoardName[] = [];
+let boardHover: number | null = null;
+export const setBoardHover = (id: number | null) => { boardHover = id; };
+
+/** Dev probe: the board's clickable names as last drawn, in CSS px. */
+export const drawnBoardNames = () => boardNames.map((n) => ({ id: n.id, name: n.name, human: n.human, x: n.x * hudScale, y: n.y * hudScale, w: n.w * hudScale, h: n.h * hudScale }));
+
+/** The board name under (sx, sy) CSS px, with its box in CSS px; never your own row. Only the desktop board is clickable. */
+export function boardNameAt(sx: number, sy: number): (BoardName & { right: number }) | null {
+  if (touchScreen) return null;
+  const x = sx / hudScale, y = sy / hudScale;
+  const hit = boardNames.find((n) => x >= n.x && x <= n.x + n.w && y >= n.y && y <= n.y + n.h);
+  return hit ? { ...hit, x: hit.x * hudScale, y: hit.y * hudScale, w: hit.w * hudScale, h: hit.h * hudScale, right: hit.right * hudScale } : null;
+}
+
 function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right: number; top: number; rows: number }): number {
   const { ctx, w, h, snap, s, me } = hud;
   const rows = boardRows(snap.leaderboard, s.myId, full ? at?.rows ?? (compact || h < 760 ? 6 : 12) : null, touchScreen && compact ? BOARD.touchTop : undefined);
@@ -881,6 +905,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right
   if (myPlace !== null && boardMine.place !== null && myPlace < boardMine.place) boardMine.climbAt = hud.now;
   boardMine.place = myPlace;
   const rowYs = new Map<number, number>();
+  const names: BoardName[] = [];
   rows.forEach(({ place, row: r }, i) => {
     if (split && i === rows.length - 1) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
@@ -905,11 +930,19 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right
     helmet(ctx, x + BOARD.pad + 26, y - 1, 8, hex);
     const nx = x + BOARD.pad + 40;
     const flags = seenFlags.get(r.id);
-    const icons = (flags?.hunted ? 1 : 0) + (flags && flags.streak >= 2 ? 1 : 0);
+    const friend = friendIds.has(r.id);
+    const icons = (flags?.hunted ? 1 : 0) + (flags && flags.streak >= 2 ? 1 : 0) + (friend ? 1 : 0);
     const scoreW = 26;
     const nameMax = pw - (nx - x) - BOARD.pad - scoreW - icons * 22;
     fitName(ctx, mine ? 'you' : r.name, nx, y - 1, TYPE.body, color, weight, nameMax);
+    if (!mine) {
+      // A name is a button: underlined under the cursor, and a click opens the friend menu beside the board.
+      const nameW = Math.min(ctx.measureText(r.name).width, Math.max(10, nameMax));
+      names.push({ id: r.id, name: r.name, human: !!r.human, x: nx - 3, y: y - BOARD.row / 2, w: nameW + 6, h: BOARD.row, right: x });
+      if (boardHover === r.id) { ctx.fillStyle = color; ctx.fillRect(nx, y + 6, nameW, 1.5); }
+    }
     let ix = x + pw - BOARD.pad - scoreW - 4;
+    if (friend) { ix -= 16; fillIcon(ctx, UI_ICONS.heart, ix + 6, y - 1, 12, FRIEND_COLOR); ix -= 4; }
     if (flags?.hunted) { ix -= 14; strokeIcon(ctx, UI_ICONS.target, ix + 6, y - 1, 13, PALETTE.hunted, 2.6); ix -= 8; }
     if (flags && flags.streak >= 2) { ix -= 20; fillIcon(ctx, UI_ICONS.flame, ix + 5, y - 1, 13, STREAK_FLAME); text(ctx, String(flags.streak), ix + 12, y, TYPE.micro, STREAK_FLAME, 'left', 800); }
     text(ctx, String(r.kills), x + pw - BOARD.pad - 2, y - 1, TYPE.title, PANEL_INK, 'right', 800);
@@ -924,6 +957,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right
     y = slotY + BOARD.row;
   });
   boardYs = rowYs;
+  boardNames = names;
   ctx.globalAlpha = 1;
   return top + ph;
 }
@@ -1009,6 +1043,12 @@ function drawMinimap(hud: Hud, size: number) {
   }
   for (const m of snap.minimap) {
     if (m.pingAge !== null) continue;
+    if (m.friend) {
+      // A friend: a heart in their own colour, ringed so it reads over any floor.
+      fillIcon(ctx, UI_ICONS.heart, x + m.x * k, y + m.y * k, 11, '#ffffff');
+      fillIcon(ctx, UI_ICONS.heart, x + m.x * k, y + m.y * k, 8, FRIEND_COLOR);
+      continue;
+    }
     ctx.fillStyle = m.team ? TEAM_COLORS[m.team] : '#ff6b5f';
     ctx.beginPath();
     ctx.arc(x + m.x * k, y + m.y * k, 2.5, 0, TAU);

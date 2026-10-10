@@ -13,7 +13,7 @@ import { blastTargets, targetHits } from './targets.ts';
 import { damageZombie } from './run.ts';
 import { blastShove, bulletShove, shovePlayer, shoveZombie } from './knock.ts';
 import { addScore, effectiveStats, falloffMul, hasPerk, isHunted, PERK_RULES } from './stats.ts';
-import { barrelRect, crateRect, friendly, propRect, propSolid, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
+import { areFriends, barrelRect, crateRect, friendly, propRect, propSolid, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
 
 const CRATE_RESPAWN_MS = 15000;
 const SHIELD_BLOCK = 0.33;
@@ -45,7 +45,7 @@ type KillHow = { gun: GunId | null; oneHit: boolean; pinned: number; chain?: num
 export function damagePlayer(w: World, victim: Player, amount: number, src: DamageSource): void {
   if (victim.life.k === 'dead' || w.match.k === 'over' || w.mode === 'RNG') return;
   const a = src.attacker;
-  if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim)) return;
+  if (a?.id === victim.id ? src.via !== 'blast' : friendly(src.team, victim) || (a !== null && areFriends(w, a.id, victim.id))) return;
   // The one bot/person rule (`BOT_DAMAGE_TO_HUMAN`), here where every path a player is hurt by an attacker meets. It is the health taken
   // only: the shove and Bloodlust go by the hit as fired (`felt`), the same whoever fires it.
   const kindMul = a?.kind === 'bot' && victim.kind === 'human' ? BOT_DAMAGE_TO_HUMAN : 1;
@@ -382,7 +382,7 @@ function suppressAlong(w: World, b: Bullet, dx: number, dy: number, view: View) 
   if (b.gun === null) return;
   const len2 = dx * dx + dy * dy;
   for (const p of w.players.values()) {
-    if (p.id === b.owner || p.life.k !== 'alive' || friendly(b.team, p) || b.suppressed?.includes(p.id)) continue;
+    if (p.id === b.owner || p.life.k !== 'alive' || friendly(b.team, p) || areFriends(w, b.owner, p.id) || b.suppressed?.includes(p.id)) continue;
     const at = view.poseOf(p);
     if (!at) continue;
     const t = len2 === 0 ? 0 : clamp(((at.x - b.x) * dx + (at.y - b.y) * dy) / len2, 0, 1);
@@ -423,7 +423,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
       t: segmentEntersRectAt(b.x, b.y, dx, dy, propRect(q)), victim: null, apply: () => damageProp(w, q, b.damage, { attacker: owner, team: b.team }, { x: b.vx, y: b.vy }),
     })),
     ...[...w.players.values()]
-      .filter((p) => p.id !== b.owner && (p.life.k === 'alive' || (p.life.k === 'downed' && w.royale !== null)) && !friendly(b.team, p) && !b.passed.includes(p.id))
+      .filter((p) => p.id !== b.owner && (p.life.k === 'alive' || (p.life.k === 'downed' && w.royale !== null)) && !friendly(b.team, p) && !areFriends(w, b.owner, p.id) && !b.passed.includes(p.id))
       .flatMap((p) => {
         const at = view.poseOf(p);
         return at ? [{

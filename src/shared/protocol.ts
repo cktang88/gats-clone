@@ -78,7 +78,12 @@ export type ClientMsg =
   | { t: 'equip'; slot: Slot; id: string }
   /** Range rooms only: put any gun, armor and perk on at once (a tier left out stays, `null` clears it), or start the readout over and stand everything up. */
   | { t: 'range'; a: 'loadout'; gun?: GunId; armor?: ArmorId; perks?: { [T in Tier]?: PerkId | null } }
-  | { t: 'range'; a: 'reset' };
+  | { t: 'range'; a: 'reset' }
+  /** Friends: invite player `id`, accept or decline their invite, or end a friendship with them. */
+  | { t: 'friend'; a: FriendAction; id: number };
+
+export const FRIEND_ACTIONS = ['invite', 'accept', 'decline', 'remove'] as const;
+export type FriendAction = (typeof FRIEND_ACTIONS)[number];
 
 export type PlayerView = {
   id: number; name: string; x: number; y: number; angle: number;
@@ -274,11 +279,12 @@ export type RoyaleView = {
 };
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
-/** `marked` is a Tracker mark on an enemy you hurt. */
-export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null; marked?: true };
+/** `marked` is a Tracker mark on an enemy you hurt; `friend` is one of your friends (see `World.friends`), shown wherever they are. */
+export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null; marked?: true; friend?: true };
 
 /** `kills` and `deaths` count this round only and every mode ranks on them; `score` is the current life's, which a death resets. */
-export type LeaderRow = { id: number; name: string; score: number; kills: number; deaths: number; team: Team };
+/** `human` marks a person (absent for a bot): only people can be friended. */
+export type LeaderRow = { id: number; name: string; score: number; kills: number; deaths: number; team: Team; human?: true };
 /** Most round kills first, then fewest deaths. The FFA timer crowns whoever this puts first, so the leaderboard and the winner agree. */
 export const byRank = (a: { kills: number; deaths: number }, b: { kills: number; deaths: number }): number => b.kills - a.kills || a.deaths - b.deaths;
 export const rankRows = (rows: readonly LeaderRow[]): LeaderRow[] => [...rows].sort(byRank);
@@ -356,6 +362,12 @@ export type ServerMsg =
   | ProgressMsg
   /** Your full equipped set, after an `equip` (`progress` carries it at join). */
   | { t: 'equipped'; equipped: Equipped }
+  /** Player `from` (named `name`) asks to be your friend; answer with a `friend` accept or decline. */
+  | { t: 'friendInvite'; from: number; name: string }
+  /** Your friends in this match, by player id, sent whenever the list changes. */
+  | { t: 'friends'; ids: number[] }
+  /** A line about friends to show you (an invite sent, declined, accepted or ended). */
+  | { t: 'friendNote'; text: string }
   | { t: 'error'; message: string };
 
 const oneOf = <T extends string>(xs: readonly T[], v: unknown): v is T => typeof v === 'string' && (xs as readonly string[]).includes(v);
@@ -488,6 +500,8 @@ export function parseClientMsg(raw: string): ClientMsg | null {
     }
     case 'equip':
       return isSlot(v.slot) && isCosmeticId(v.slot, v.id) ? { t: 'equip', slot: v.slot, id: v.id } : null;
+    case 'friend':
+      return oneOf(FRIEND_ACTIONS, v.a) && Number.isSafeInteger(v.id) && (v.id as number) > 0 ? { t: 'friend', a: v.a, id: v.id as number } : null;
     default:
       return null;
   }

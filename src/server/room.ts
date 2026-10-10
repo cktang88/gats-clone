@@ -2,7 +2,7 @@ import type { WebSocket } from 'ws';
 import type { Player } from '../shared/sim/world.ts';
 import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, GUN_IDS, GUNS, MAX_LEVEL, NIGHTS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
 import { MAPS, rotationMap, type MapId } from '../shared/maps.ts';
-import { parseClientMsg, type ClientMsg, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
+import { parseClientMsg, type ClientMsg, type FriendAction, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
 import { benchUntilNextMatch, placeOf, redeploysOpen, seatFor, takeSeat } from '../shared/sim/royale.ts';
@@ -11,7 +11,7 @@ import { interestLook, snapshotFor, wallViews } from '../shared/sim/snapshot.ts'
 import { holdLook, NO_LOOK, type LookSides } from '../shared/lookahead.ts';
 import { addScore, choosePick } from '../shared/sim/stats.ts';
 import { MODES, TEAM_NAME } from '../shared/sim/modes.ts';
-import { createWorld, rand, type World } from '../shared/sim/world.ts';
+import { areFriends, befriend, createWorld, friendsOf, rand, unfriend, type World } from '../shared/sim/world.ts';
 import { makeSnapshotEncoder } from '../shared/wire.ts';
 import { botCosmetics, XP } from '../shared/cosmetics.ts';
 import type { Accounts } from './accounts.ts';
@@ -29,6 +29,8 @@ import { RADIO_INTERVAL_MS, RADIO_MODES, type StationId } from '../shared/radio.
 
 const TICK_MS = 1000 / WORLD.tickHz;
 const CHAT_INTERVAL_MS = 1000;
+/** The least time between one player's friend invites. */
+const FRIEND_INVITE_MS = 1500;
 const RTT_SAMPLES = 5;
 /**
  * A side short of humans gets this many bots for each one it lacks: one, now that people and bots carry the same health (a bot's hits
@@ -385,6 +387,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         for (const c of joined()) send(c.ws, { t: 'radio', station: radioStation, by: p.name });
         return;
       }
+      case 'friend': return friendMsg(client, msg.a, msg.id);
       case 'chat': {
         const now = Date.now();
         if (now - client.lastChatAt < CHAT_INTERVAL_MS) { send(client.ws, { t: 'error', message: 'Slow down' }); return; }
@@ -395,6 +398,70 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         for (const c of joined()) send(c.ws, { t: 'chat', from: p.name, text, team: p.team });
         return;
       }
+    }
+  }
+
+  /** Friend invites waiting for an answer: whom each is to, and from whom. Friendships themselves live in the world (`World.friends`). */
+  const invites = new Map<number, Set<number>>();
+  const lastInviteAt = new Map<number, number>();
+  const clientOf = (id: number) => joined().find((c) => c.playerId === id) ?? null;
+  const sendFriends = (id: number) => { const c = clientOf(id); if (c) send(c.ws, { t: 'friends', ids: friendsOf(world, id) }); };
+  const friendNote = (id: number, text: string) => { const c = clientOf(id); if (c) send(c.ws, { t: 'friendNote', text }); };
+  const dropInvite = (to: number, from: number) => { const set = invites.get(to); set?.delete(from); if (set && !set.size) invites.delete(to); };
+
+  /** Friends play on one side: in a team mode, whoever sent the invite crosses to the other's team (bots then even the sides out). */
+  function sameSide(stay: Player, move: Player) {
+    if ((mode !== 'TDM' && mode !== 'DOM') || practice || stay.team === null || move.team === stay.team) return;
+    move.team = stay.team;
+    friendNote(move.id, `You joined ${stay.name}'s team.`);
+    balanceBots();
+  }
+
+  /** A friend invite, its answer, or the end of a friendship, between people only: bots cannot be friended. */
+  function friendMsg(client: Extract<Client, { k: 'joined' }>, action: FriendAction, other: number) {
+    const id = client.playerId;
+    const me = world.players.get(id), them = world.players.get(other);
+    if (!me || other === id) return;
+    switch (action) {
+      case 'invite': {
+        if (!them || them.kind !== 'human' || !clientOf(other)) { friendNote(id, 'Only players can be friends.'); return; }
+        if (areFriends(world, id, other)) return;
+        // They asked first: inviting them back is a yes.
+        if (invites.get(id)?.has(other)) { friendMsg(client, 'accept', other); return; }
+        const now = Date.now();
+        if (now - (lastInviteAt.get(id) ?? -Infinity) < FRIEND_INVITE_MS) { friendNote(id, 'Slow down'); return; }
+        lastInviteAt.set(id, now);
+        if (invites.get(other)?.has(id)) { friendNote(id, `Already asked ${them.name}.`); return; }
+        invites.set(other, (invites.get(other) ?? new Set()).add(id));
+        send(clientOf(other)!.ws, { t: 'friendInvite', from: id, name: me.name });
+        friendNote(id, `Friend invite sent to ${them.name}.`);
+        return;
+      }
+      case 'accept': {
+        if (!invites.get(id)?.has(other)) return;
+        dropInvite(id, other);
+        dropInvite(other, id);
+        if (!them) return;
+        befriend(world, id, other);
+        sameSide(me, them);
+        sendFriends(id);
+        sendFriends(other);
+        friendNote(id, `You and ${them.name} are friends now.`);
+        friendNote(other, `${me.name} accepted: you're friends now.`);
+        return;
+      }
+      case 'decline':
+        if (!invites.get(id)?.has(other)) return;
+        dropInvite(id, other);
+        if (them) friendNote(other, `${me.name} declined your friend invite.`);
+        return;
+      case 'remove':
+        if (!areFriends(world, id, other)) return;
+        unfriend(world, id, other);
+        sendFriends(id);
+        sendFriends(other);
+        if (them) friendNote(other, `${me.name} is no longer your friend.`);
+        return;
     }
   }
 
@@ -411,7 +478,12 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const owed = mode === 'ZOM' ? settleLeaver(zomWatch, c.playerId) : null;
     if (key && owed && !practice) profiles.record(key, { zom: owed });
     walked.delete(c.playerId);
+    const friends = friendsOf(world, c.playerId);
+    invites.delete(c.playerId);
+    for (const to of [...invites.keys()]) dropInvite(to, c.playerId);
+    lastInviteAt.delete(c.playerId);
     removePlayer(world, c.playerId);
+    for (const f of friends) sendFriends(f);
     creditLives(c);
     if (key && !practice) profiles.notice(key);
     balanceBots();
