@@ -6,6 +6,12 @@ export type ChangelogDay = { date: string; items: string[] };
 
 export const CHANGELOG: ChangelogDay[] = [
   {
+    date: '2026-10-10',
+    items: [
+      'Zombies: every gun has a job against the horde, and slower guns earn more scrap per kill',
+    ],
+  },
+  {
     date: '2026-10-09',
     items: [
       'Your picks this life in a clear row of slots top left, with what unlocks next',
@@ -37,12 +43,6 @@ export const CHANGELOG: ChangelogDay[] = [
       'Levels, 98 cosmetics, and daily and weekly challenges',
       'Killcam, slow-mo, emotes, celebrations, barrels and airdrops',
       'Medals, player profiles and a mastery track for every weapon',
-    ],
-  },
-  {
-    date: '2026-10-06',
-    items: [
-      'New mode: Last Squad, six squads of three in a shrinking ring',
     ],
   },
 ];

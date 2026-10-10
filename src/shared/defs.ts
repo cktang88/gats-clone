@@ -794,6 +794,68 @@ export function nightOf(night: number): NightDef {
 export const isEndless = (night: number) => night > NIGHTS.length;
 /** A boss is a kind that walks alone (`pack: 1`): it comes as listed for any squad, its health scaled by the squad's share instead. */
 export const isBoss = (kind: ZombieKind) => ZOMBIES[kind].pack === 1;
+
+/**
+ * Zombies only: what a gun does to the horde beyond its numbers, so each class has a job against it that matches its job in versus. Nothing here is
+ * read outside a zombies run, and none of it touches a player. A player's own round, blast or kill is judged by the gun in their hand:
+ * - `vs`: its harm to a kind is multiplied by this (a sniper's to the heavies, a pistol's and an SMG's to runners).
+ * - `pierce`: how many zombies each round passes through, on top of the bodies the gun's `penetrate` already lets it pass.
+ * - `plate`: the share of a zombie's plate that comes off each of its rounds (an assault rifle's steady rounds strip half of it).
+ * - `slow`: each hit holds the zombie to `mul` of its pace for `ms` (an LMG's suppression; a shotgun's stagger, stronger and shorter); the strongest hold wins.
+ *   Brutes and the Colossus, which take no shove (`KNOCK.zombie`), shrug holds off too.
+ * - `shove`: scales the knockback its hits give a zombie (`KNOCK.zombie`).
+ * - `blast`: scales its blast's harm to the horde; `blastPlated` what of that a plated zombie or the Colossus takes (their plate turns shrapnel).
+ * - `mend`: how much faster than anyone else its holder repairs buildings and reloads turrets with use (a sidearm leaves the hands free); the core mends at the plain rate.
+ * `perk` is the one line the loadout step and the HUD show for it.
+ */
+export type ZombieRole = {
+  perk: string; vs: Partial<Record<ZombieKind, number>>; pierce: number; plate: number; slow: { mul: number; ms: number } | null; shove: number;
+  blast: number; blastPlated: number; mend: number;
+};
+const ZROLE_BASE: Omit<ZombieRole, 'perk'> = { vs: {}, pierce: 0, plate: 1, slow: null, shove: 1, blast: 1, blastPlated: 1, mend: 1 };
+const HEAVIES = { brute: 1.3, plated: 1.3, colossus: 1.3 } as const;
+export const ZOMBIE_CLASS_ROLES: Record<WeaponId, ZombieRole> = {
+  pistol: { ...ZROLE_BASE, perk: 'Field mechanic: repairs and reloads 60% faster, x1.5 vs runners', vs: { runner: 1.5 }, mend: 1.6 },
+  smg: { ...ZROLE_BASE, perk: 'Runner hunter: x1.75 vs runners, repairs and reloads 30% faster', vs: { runner: 1.75 }, mend: 1.3 },
+  shotgun: { ...ZROLE_BASE, perk: 'Crowd breaker: staggers and shoves packs, x1.8 vs walkers and runners', vs: { walker: 1.8, runner: 1.8 }, slow: { mul: 0.35, ms: 700 }, shove: 2 },
+  assault: { ...ZROLE_BASE, perk: 'Long-range anchor: x1.8 vs bloaters, rounds ignore half of plating', plate: 0.5, vs: { bloater: 1.8 } },
+  sniper: { ...ZROLE_BASE, perk: 'Big game: pierces 3 zombies, x1.3 vs brutes, plated, bosses', pierce: 3, vs: HEAVIES },
+  lmg: { ...ZROLE_BASE, perk: 'Suppressor: hits slow zombies to 70%', slow: { mul: 0.7, ms: 450 } },
+};
+/** Evolutions whose job against the horde differs from their class's: the rails and piercing guns, and the explosive guns. */
+const ZOMBIE_GUN_ROLES: Partial<Record<GunId, ZombieRole>> = {
+  railSlug: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'Rail: pierces 3 zombies, x1.4 vs brutes, plated, bosses', vs: { brute: 1.4, plated: 1.4, colossus: 1.4 } },
+  executioner: { ...ZOMBIE_CLASS_ROLES.pistol, perk: 'Pierces 2 zombies, x1.3 vs brutes, plated, bosses', pierce: 2, vs: { brute: 1.3, plated: 1.3, colossus: 1.3 } },
+  // The quick-firing marksman rifles already pour rounds in: the heavies take a smaller bonus from them than from a bolt's one big round.
+  semiAuto: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'Pierces 3 zombies, x1.2 vs brutes, plated, bosses', vs: { brute: 1.2, plated: 1.2, colossus: 1.2 } },
+  ghost: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'Pierces 3 zombies, x1.2 vs brutes, plated, bosses', vs: { brute: 1.2, plated: 1.2, colossus: 1.2 } },
+  repeater: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'Pierces 3 zombies, x1.2 vs brutes, plated, bosses', vs: { brute: 1.2, plated: 1.2, colossus: 1.2 } },
+  ripper: { ...ZOMBIE_CLASS_ROLES.smg, perk: 'Pierces 2 zombies, x1.5 vs runners', pierce: 2 },
+  boomSlug: { ...ZROLE_BASE, perk: 'Blasts packs (x1.3); plated shrug off half', blast: 1.3, blastPlated: 0.5 },
+  grenadier: { ...ZROLE_BASE, perk: 'Blasts packs (x1.3); plated shrug off half', blast: 1.3, blastPlated: 0.5 },
+  artillery: { ...ZROLE_BASE, perk: 'Blasts packs (x1.3); plated shrug off half', blast: 1.3, blastPlated: 0.5 },
+};
+/**
+ * Zombies only: the share of a player's gun harm (round or blast, before the role's multipliers) that reaches the horde. The roles above, and the smoother
+ * bloom since ecbd4ed, made a squad that never builds hold to night 4 or 5 on many seeds; this brings it back to falling on night 3
+ * (scripts/bench-zombie-curve.ts, one human, seeds 1 to 8: night 3 on every seed), while a building squad's curve stays where it was (seeds 1 to 6: 7.3, against 7.5
+ * without the roles) and turrets, which a building squad leans on, hit as hard as ever.
+ */
+export const HORDE_GUN_MUL = 0.72;
+export const zombieRole = (gun: GunId): ZombieRole => ZOMBIE_GUN_ROLES[gun] ?? ZOMBIE_CLASS_ROLES[GUNS[gun].base];
+
+/**
+ * Zombies only: each gun's harm a second to the horde in real runs, its role included, as measured by `node scripts/bench-zombie-guns.ts runs 1,2,3`: two of a
+ * squad's four seats bot brains flagged human, held to the gun with no perks for whole seeded runs, their harm over the seconds they stood at night. The bench prints
+ * this table again and names the guns that drift from it; paste it here when guns change.
+ */
+export const HORDE_DPS: Record<GunId, number> = { pistol: 32, smg: 36, shotgun: 27, assault: 38, sniper: 37, lmg: 34, handCannon: 42, machinePistol: 75, executioner: 70, gunslinger: 47, akimbo: 30, hailstorm: 34, skirmisher: 33, heavySmg: 40, phantom: 34, hornet: 33, ripper: 52, bulldog: 40, slugGun: 35, doubleBarrel: 30, railSlug: 60, boomSlug: 56, sawedOff: 35, streetSweeper: 30, battleRifle: 83, carbine: 68, marksman: 44, grenadier: 50, specter: 45, scout: 43, longshot: 40, semiAuto: 79, piercer: 39, artillery: 37, repeater: 85, ghost: 76, heavyLmg: 47, lightMg: 38, minigun: 71, juggernaut: 74, ranger: 36, twinMg: 44 };
+/**
+ * Zombies only: a player's own kill pays the zombie's scrap times their gun's bounty, so a gun slow to kill the horde builds faster instead: `ref` over the gun's
+ * horde harm a second, to the 0.05, held between `min` and `max`. `ref` is the middle gun's, so half the guns pay more and the fastest killers a little less (they burn through ammo).
+ */
+export const BOUNTY = { ref: 40, min: 0.8, max: 1.8 } as const;
+export const zombieBounty = (gun: GunId): number => Math.min(BOUNTY.max, Math.max(BOUNTY.min, Math.round((BOUNTY.ref / HORDE_DPS[gun]) * 20) / 20));
 /** How many of a kind listed `listed` times come for a squad with this share of the horde. */
 export const hordeCount = (kind: ZombieKind, listed: number, share: number) => (!listed || isBoss(kind) ? listed : Math.max(1, Math.round(listed * share)));
 

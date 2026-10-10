@@ -10,7 +10,7 @@ import { perkKeyLabel } from './input.ts';
 import { $ } from './menu.ts';
 import { TEAM_COLORS } from './palette.ts';
 import { drawGunCard } from './gunart.ts';
-import { GUN_ROLES, TRAITS } from '../shared/roles.ts';
+import { GUN_ROLES, TRAITS, zombieGunLine } from '../shared/roles.ts';
 import type { ChatLine, ClientState, Session } from './state.ts';
 import { resultTitle } from './royale.ts';
 import type { Recap } from './records.ts';
@@ -98,7 +98,7 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
   };
 
   /** An evolution says how it plays: one line of role, and an icon for each thing it changes (hover reads them out). */
-  const gunTile = (gun: GunId) => {
+  const gunTile = (gun: GunId, zombies: boolean) => {
     const { name, desc } = GUNS[gun];
     const { role, traits } = GUN_ROLES[gun];
     const art = document.createElement('canvas');
@@ -118,11 +118,16 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
       chip.append(iconSvg(TRAIT_ICONS[trait], 'trait-icon'), text);
       return chip;
     }));
-    return { className: 'perk evolve', name, desc: `${desc}. ${traits.map((t) => TRAITS[t].hint).join('; ')}.`, parts: [art, label, detail, chips] };
+    // Zombies: the evolution's scrap bounty and job against the horde, under its traits.
+    const zom = document.createElement('small');
+    zom.className = 'zom-perk';
+    zom.textContent = zombies ? zombieGunLine(gun) : '';
+    const parts = zombies ? [art, label, detail, chips, zom] : [art, label, detail, chips];
+    return { className: 'perk evolve', name, desc: `${desc}. ${traits.map((t) => TRAITS[t].hint).join('; ')}.${zombies ? ` Zombies: ${zombieGunLine(gun)}.` : ''}`, parts };
   };
 
-  const renderPick = (pending: PendingPick | null, gun: GunId) => {
-    const key = pending ? `${pending.level}|${gun}` : '';
+  const renderPick = (pending: PendingPick | null, gun: GunId, zombies: boolean) => {
+    const key = pending ? `${pending.level}|${gun}|${zombies}` : '';
     if (key === keys.perk) return;
     keys.perk = key;
     perkPanel.hidden = pending === null;
@@ -151,7 +156,7 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
     const list = document.createElement('div');
     list.className = 'perk-list';
     options.forEach((option, slot) => {
-      const tile = isPerkId(option) ? perkTile(option) : gunTile(option);
+      const tile = isPerkId(option) ? perkTile(option) : gunTile(option, zombies);
       const b = document.createElement('button');
       b.type = 'button';
       b.className = tile.className;
@@ -407,7 +412,7 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
       const gun = selfOf(snap)?.gun;
       perkPanel.classList.toggle('siege', !!snap.run);
       // Build mode takes the number keys and the strip above the hints, so the dock waits until it is done.
-      renderPick(state.phase === 'playing' && !s.building && gun && pending?.level !== s.pickSentFor ? pending : null, gun ?? 'pistol');
+      renderPick(state.phase === 'playing' && !s.building && gun && pending?.level !== s.pickSentFor ? pending : null, gun ?? 'pistol', !!snap.run);
       const selfName = snap.players.find((p) => p.id === snap.self.id)?.name ?? snap.leaderboard.find((r) => r.id === snap.self.id)?.name;
       renderChat(s.chat, muted, selfName, now, !chatInput.hidden);
       renderBanner(snap);

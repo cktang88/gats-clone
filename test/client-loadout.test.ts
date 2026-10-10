@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { WORLD, type ModeId } from '../src/shared/defs.ts';
+import { GUN_IDS, WORLD, zombieBounty, zombieRole, type ModeId } from '../src/shared/defs.ts';
 import { loadoutSlots, progressLine, slotBoxes, TILE } from '../src/client/loadout.ts';
+import { bountyLabel } from '../src/shared/roles.ts';
 import { drawHud, drawnLoadout, drawnPanels, HEALTH, hudScaleFor } from '../src/client/hud.ts';
 import { makeCamera } from '../src/client/camera.ts';
 import { NO_FEEDBACK } from '../src/client/feedback.ts';
@@ -155,4 +156,18 @@ test('the strip never overlaps the scoreboard, kill feed, timer, team banner, mi
       for (const b of boxes) assert.ok(!overlaps(b, cross), `${w}x${h}: strip clear of the health cross`);
     }
   }
+});
+
+test('Zombies: the gun tile is there from the start, with its scrap bounty as a chip and its job against the horde in its card', () => {
+  const [gun, ...rest] = loadoutSlots('shotgun', {}, null, 'Space', true);
+  assert.deepEqual(rest, []);
+  assert.equal(gun?.kind, 'gun');
+  assert.equal(gun?.bounty, bountyLabel('shotgun')!.replace(' scrap', ''));
+  assert.match(gun!.bounty!, /^\+\d+%$/);
+  assert.ok(gun!.desc.includes(zombieRole('shotgun').perk), gun!.desc);
+  const heavy = loadoutSlots('minigun', {}, null, 'Space', true)[0]!;
+  assert.match(heavy.bounty ?? '', /^−\d+%$/, 'the heaviest guns pay a little less');
+  assert.ok(!heavy.kindLabel.includes('hunted'), 'a squad hunts no one');
+  const plain = GUN_IDS.find((g) => zombieBounty(g) === 1)!;
+  assert.equal(loadoutSlots(plain, {}, null, 'Space', true)[0]!.bounty, undefined, 'a gun at the plain price has no chip');
 });

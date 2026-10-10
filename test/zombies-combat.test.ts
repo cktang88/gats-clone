@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUILDINGS, GUNS, ZOM, ZOMBIES, type ZombieKind } from '../src/shared/defs.ts';
+import { BUILDINGS, GUNS, HORDE_GUN_MUL, ZOM, ZOMBIES, zombieBounty, zombieRole, type ZombieKind } from '../src/shared/defs.ts';
+
+/** A player's round reaches the horde at `HORDE_GUN_MUL` of its harm (test/zombies-gunroles.test.ts has the gun roles on top). */
+const ON_HORDE = HORDE_GUN_MUL;
 import { explode } from '../src/shared/sim/combat.ts';
 import { zombieMaxHp } from '../src/shared/sim/run.ts';
 import { createWorld, newId, type World } from '../src/shared/sim/world.ts';
 import { equip, grantPerks, hpOf, press, run, shootOnce, spawnAt, TICK_MS } from './helpers.ts';
+/** Harm to the tenth of a millionth: a product of multipliers is not exact in floating point. */
+const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
+const near = (actual: number, expected: number, message?: string) => (message === undefined ? assert.equal(r6(actual), r6(expected)) : assert.equal(r6(actual), r6(expected), message));
+
 
 /** A quiet night, so only what a test places takes part. Tests line up on the open ground due south of the core, where a zombie walks straight at the shooter. */
 function nightWorld(): World {
@@ -27,14 +34,15 @@ test('shooting a zombie dead pays the shooter its score and kill, and the squad 
   const p = spawnAt(w, X, Y);
   const z = addZombie(w, 'walker', X, Y + 300);
   addZombie(w, 'walker', 100, 100);
-  const shots = Math.ceil(z.hp / GUNS.pistol.damage);
+  const shots = Math.ceil(z.hp / (GUNS.pistol.damage * ON_HORDE));
   const scrap = w.run!.scrap;
   // The walker comes on with a lane and sway of its own, so each shot is aimed at where it is.
   for (let i = 0; i < shots; i++) shootOnce(w, p, Math.atan2(z.y - p.y, z.x - p.x), 300);
   assert.ok(!w.zombies.includes(z), 'the zombie is gone');
   assert.deepEqual(
     { score: p.score, kills: p.kills, scrap: w.run!.scrap - scrap, stats: w.run!.stats.get(p.id)?.kills },
-    { score: Math.round(ZOMBIES.walker.score * ZOM.levelScoreMul), kills: 1, scrap: ZOMBIES.walker.scrap, stats: 1 },
+    // The squad's scrap comes with the pistol's bounty (`zombieBounty`; test/zombies-gunroles.test.ts has the rest).
+    { score: Math.round(ZOMBIES.walker.score * ZOM.levelScoreMul), kills: 1, scrap: Math.round(ZOMBIES.walker.scrap * zombieBounty('pistol') * 100) / 100, stats: 1 },
   );
 });
 
@@ -44,10 +52,10 @@ test('a bullet stops in the first zombie it hits unless the gun pierces', () => 
   const front = addZombie(w, 'brute', X, Y + 200, 1000);
   const back = addZombie(w, 'brute', X, Y + 300, 1000);
   shootOnce(w, p, DOWN);
-  assert.deepEqual([1000 - front.hp, 1000 - back.hp], [GUNS.pistol.damage, 0]);
+  assert.deepEqual([1000 - front.hp, 1000 - back.hp].map(r6), [GUNS.pistol.damage * ON_HORDE, 0].map(r6));
   equip(p, 'railSlug');
   shootOnce(w, p, DOWN);
-  assert.equal(1000 - back.hp, GUNS.railSlug.damage, 'a piercing round reaches the second');
+  near(1000 - back.hp, GUNS.railSlug.damage * ON_HORDE * zombieRole('railSlug').vs.brute!, 'a piercing round reaches the second (a rail hits a brute harder in Zombies)');
 });
 
 test('a plated zombie\'s plate comes off every round, unless the round pierces armor', () => {
@@ -55,12 +63,12 @@ test('a plated zombie\'s plate comes off every round, unless the round pierces a
   const p = spawnAt(w, X, Y);
   const plated = addZombie(w, 'plated', X, Y + 200, 1000);
   shootOnce(w, p, DOWN);
-  assert.equal(1000 - plated.hp, GUNS.pistol.damage - ZOMBIES.plated.plate);
+  near(1000 - plated.hp, (GUNS.pistol.damage - ZOMBIES.plated.plate) * ON_HORDE);
   const piercer = spawnAt(w, X + 300, Y);
   piercer.perks = { 1: 'piercing' };
   const bare = addZombie(w, 'plated', X + 300, Y + 200, 1000);
   shootOnce(w, piercer, DOWN);
-  assert.equal(1000 - bare.hp, GUNS.pistol.damage, 'an armor-piercing round takes no notice of the plate');
+  near(1000 - bare.hp, GUNS.pistol.damage * ON_HORDE, 'an armor-piercing round takes no notice of the plate');
 });
 
 test('a piercing round that ends a tick inside a zombie hits it once', () => {
@@ -69,7 +77,7 @@ test('a piercing round that ends a tick inside a zombie hits it once', () => {
   equip(p, 'railSlug');
   const z = addZombie(w, 'brute', X, Y + 120, 1000);
   shootOnce(w, p, DOWN);
-  assert.equal(1000 - z.hp, GUNS.railSlug.damage);
+  near(1000 - z.hp, GUNS.railSlug.damage * ON_HORDE * zombieRole('railSlug').vs.brute!);
 });
 
 test('the squad shoots over its own walls', () => {
@@ -79,7 +87,7 @@ test('the squad shoots over its own walls', () => {
   w.buildingsVersion++;
   const z = addZombie(w, 'brute', X, Y + 250, 1000);
   shootOnce(w, p, DOWN);
-  assert.equal(1000 - z.hp, GUNS.pistol.damage);
+  near(1000 - z.hp, GUNS.pistol.damage * ON_HORDE);
 });
 
 test('a blast hurts every zombie in its radius, less with distance, and credits its owner', () => {
@@ -127,7 +135,7 @@ test('a human shoots zombies for plain damage: the fourfold-health handicap is o
   const p = spawnAt(w, X, Y, { kind: 'human' });
   const z = addZombie(w, 'brute', X, Y + 300, 1000);
   shootOnce(w, p, DOWN);
-  assert.equal(1000 - z.hp, GUNS.pistol.damage);
+  near(1000 - z.hp, GUNS.pistol.damage * ON_HORDE);
 });
 
 test('in a run only bites hurt the squad: a blast at a player\'s own feet leaves them whole', () => {
@@ -146,6 +154,7 @@ test('a shotgun blast into one zombie reads as one hit marker carrying all its p
   run(w, TICK_MS);
   const marks = w.events.filter((e) => e.e === 'dmg' && e.victim === z.id);
   assert.equal(marks.length, 1);
-  assert.equal(marks[0]!.e === 'dmg' && marks[0]!.amount, 10_000 - z.hp);
-  assert.ok(10_000 - z.hp > GUNS.shotgun.damage, 'more than one pellet landed');
+  // The marker sums each pellet's harm to the tenth, so it may sit a twentieth a pellet off the exact total.
+  assert.ok(marks[0]!.e === 'dmg' && Math.abs(marks[0]!.amount - (10_000 - z.hp)) <= 0.05 * GUNS.shotgun.pellets + 1e-9, `${marks[0]!.e === 'dmg' && marks[0]!.amount} against ${10_000 - z.hp}`);
+  assert.ok(10_000 - z.hp > GUNS.shotgun.damage * ON_HORDE * zombieRole('shotgun').vs.walker!, 'more than one pellet landed');
 });

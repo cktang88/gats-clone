@@ -1,4 +1,4 @@
-import { hordeCount, isBoss, NIGHTS, nightOf, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind, type Burst, type ZombieKind } from '../defs.ts';
+import { hordeCount, isBoss, NIGHTS, nightOf, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, zombieBounty, zombieRole, type BuildingKind, type Burst, type ZombieKind } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
@@ -20,7 +20,7 @@ export const zombieMaxHp = (kind: ZombieKind, night: number, share: number) => Z
 
 function statsFor(run: Run, p: Player): RunStats {
   let s = run.stats.get(p.id);
-  if (!s) run.stats.set(p.id, (s = { name: p.name, kills: 0, revives: 0, built: 0 }));
+  if (!s) run.stats.set(p.id, (s = { name: p.name, kills: 0, revives: 0, built: 0, scrap: 0, dealt: 0 }));
   return s;
 }
 
@@ -36,8 +36,10 @@ function service(w: World, run: Run, p: Player, dtMs: number) {
   const core = MAPS[w.map].siege!.core;
   const target = serviceTarget(p, { ...core, hp: Math.ceil(run.core.hp), maxHp: ZOM.coreHp }, w.buildings.map((b) => ({ ...buildingView(b), b })));
   if (!target) return;
+  // A sidearm leaves the hands free: its holder mends buildings and reloads turrets faster (`ZombieRole.mend`), but the core at the plain rate.
+  const hands = target.on === 'core' ? 1 : zombieRole(p.gun).mend;
   const mend = (it: { hp: number }, max: number, perHp: number, speed = 1) => {
-    const hp = Math.min((ZOM.repairHpPerSec * speed * dtMs) / 1000, max - it.hp, run.scrap / perHp);
+    const hp = Math.min((ZOM.repairHpPerSec * hands * speed * dtMs) / 1000, max - it.hp, run.scrap / perHp);
     it.hp += hp;
     run.scrap -= hp * perHp;
     if (hp > 0) (run.mended ??= new Map()).set(p.id, (run.mended.get(p.id) ?? 0) + hp);
@@ -46,7 +48,7 @@ function service(w: World, run: Run, p: Player, dtMs: number) {
   const b = target.on.b;
   if (target.job === 'repair' || !('ammo' in b)) { mend(b, maxHpOf(b.kind, levelOf(b)), repairScrapPerHp(b.kind, levelOf(b)), b.kind === 'wall' ? wallTier(levelOf(b)).repairMul : 1); return; }
   const def = turretDef(b.kind, levelOf(b));
-  const rounds = Math.min((def.ammo * dtMs) / ZOM.refillMs, def.ammo - b.ammo, run.scrap / def.scrapPerRound);
+  const rounds = Math.min((def.ammo * hands * dtMs) / ZOM.refillMs, def.ammo - b.ammo, run.scrap / def.scrapPerRound);
   b.ammo += rounds;
   run.scrap -= rounds * def.scrapPerRound;
 }
@@ -168,15 +170,19 @@ export function damageZombie(w: World, z: Zombie, amount: number, attacker: Play
   const dealt = Math.min(z.hp, amount);
   z.hp -= amount;
   if (via === 'hit') markHit(w, z, dealt, attacker?.id ?? null);
+  if (attacker && (via === 'hit' || via === 'blast')) statsFor(run, attacker).dealt += dealt;
   if (z.hp > 0) return;
   const def = ZOMBIES[z.kind];
   const shooter = via === 'hit' || via === 'blast' ? null : via;
   w.zombies = w.zombies.filter((o) => o !== z);
-  run.scrap += def.scrap;
-  w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: shooter ? null : attacker?.id ?? null });
+  // A player's own kill pays the bounty of the gun in their hand (`zombieBounty`): a gun slow to kill the horde pays more for each.
+  const by = shooter ? null : attacker;
+  const scrap = Math.round(def.scrap * (by ? zombieBounty(by.gun) : 1) * 100) / 100;
+  run.scrap += scrap;
+  w.events.push({ e: 'zkill', id: z.id, kind: z.kind, x: z.x, y: z.y, by: by?.id ?? null, scrap });
   if (shooter === 'bastion') run.bastionKills++;
   else if (shooter) run.turretKills[shooter][z.kind]++;
-  else if (attacker) { attacker.kills++; statsFor(run, attacker).kills++; }
+  else if (attacker) { attacker.kills++; const s = statsFor(run, attacker); s.kills++; s.scrap += scrap; }
   // Versus levels are scaled up for the medals a kill pays there; the horde pays no medals, so its score is scaled to match.
   if (attacker) addScore(w, attacker, def.score * ZOM.levelScoreMul);
   if (def.burst) burst(w, run, z, def.burst);

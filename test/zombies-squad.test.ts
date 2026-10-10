@@ -116,7 +116,8 @@ test('a downed player nobody revives bleeds out, then gets up at the core when d
 test('holding use beside a damaged wall mends it for scrap, and stops when the scrap runs out', () => {
   const w = nightWorld();
   holdNight(w);
-  const p = spawnAt(w, X, Y);
+  // An assault rifle mends at the plain rate; a sidearm would mend faster (`ZombieRole.mend`).
+  const p = spawnAt(w, X, Y, { loadout: { weapon: 'assault' } });
   const wall = { id: newId(w), kind: 'wall' as const, cx: Math.floor(X / ZOM.cell), cy: Math.floor((Y + 150) / ZOM.cell), hp: 100 };
   w.buildings.push(wall);
   w.buildingsVersion++;
@@ -147,7 +148,7 @@ test('holding use by the worn core mends it for scrap at the core\'s dearer rate
   const w = nightWorld();
   holdNight(w);
   const core = MAPS.outpost.siege!.core;
-  const p = spawnAt(w, core.x, core.y + ZOM.reachPx - 20);
+  const p = spawnAt(w, core.x, core.y + ZOM.reachPx - 20, { loadout: { weapon: 'assault' } });
   w.run!.core.hp = ZOM.coreHp - 500;
   w.run!.scrap = 1000;
   press(w, p, { use: true });
