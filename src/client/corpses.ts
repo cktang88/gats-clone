@@ -192,7 +192,8 @@ export function drawCorpses(ctx: CanvasRenderingContext2D, corpses: readonly Cor
 export type ZombieCorpse = { id: number; x: number; y: number; kind: ZombieKind; born: number; blow: number | null };
 
 /** The most zombie corpses kept in a night, how long the ichor takes to spread, and how long the field takes to fade at dawn. */
-export const ZOMBIE_CORPSE = { cap: 600, poolMs: 900, dawnFadeMs: 2_500 } as const;
+/** `lifeMs`: how long a dead zombie lies before it starts to fade, over `fadeMs`, so a night's dead never pile up into a carpet. */
+export const ZOMBIE_CORPSE = { cap: 600, poolMs: 900, dawnFadeMs: 2_500, lifeMs: 9_000, fadeMs: 1_500 } as const;
 
 /** Zombie corpses only lie at night, so they are drawn over the night shade in tones that read on the dark floor. */
 const ICHOR = 'rgba(96, 138, 44, 0.72)';
@@ -201,10 +202,13 @@ const ICHOR_DARK = 'rgba(58, 88, 26, 0.8)';
 export const addZombieCorpse = (corpses: readonly ZombieCorpse[], c: ZombieCorpse): ZombieCorpse[] => [...corpses, c].slice(-ZOMBIE_CORPSE.cap);
 
 /**
- * Tonight's dead stay while the night lasts and fade together over `dawnFadeMs` once it ends, then the field is cleared.
+ * Each dead zombie lies `lifeMs`, then fades out over `fadeMs`; whatever is left when the night ends fades together over `dawnFadeMs`.
  * Returns the kept list, its alpha, and when the dawn fade began.
  */
 export function zombieField(field: { list: ZombieCorpse[]; dawnAt: number | null }, night: boolean, now: number): { list: ZombieCorpse[]; dawnAt: number | null; alpha: number } {
+  const gone = ZOMBIE_CORPSE.lifeMs + ZOMBIE_CORPSE.fadeMs;
+  const kept = field.list.length && now - field.list[0]!.born >= gone ? field.list.filter((c) => now - c.born < gone) : field.list;
+  field = kept === field.list ? field : { ...field, list: kept };
   if (night) return { list: field.list, dawnAt: null, alpha: 1 };
   if (!field.list.length) return { list: [], dawnAt: null, alpha: 0 };
   const dawnAt = field.dawnAt ?? now;
@@ -223,6 +227,14 @@ const zSeeded = (c: ZombieCorpse, k: number) => {
  */
 export function drawZombieCorpses(ctx: CanvasRenderingContext2D, corpses: readonly ZombieCorpse[], alpha: number, now: number, pxPerUnit = 1) {
   if (!corpses.length || alpha <= 0) return;
+  // The steady dead go in one batch; the few fading out right now each get their own alpha.
+  const fadeFrom = now - ZOMBIE_CORPSE.lifeMs;
+  if (corpses.some((c) => c.born < fadeFrom)) {
+    drawZombieCorpses(ctx, corpses.filter((c) => c.born >= fadeFrom), alpha, now, pxPerUnit);
+    // Drawn as it lay at the moment it began to fade (a frozen `now`, so it is not counted as fading again), at its fading alpha.
+    for (const c of corpses) if (c.born < fadeFrom) drawZombieCorpses(ctx, [c], alpha * Math.max(0, 1 - (fadeFrom - c.born) / ZOMBIE_CORPSE.fadeMs), c.born + ZOMBIE_CORPSE.lifeMs, pxPerUnit);
+    return;
+  }
   const grow = (c: ZombieCorpse) => 0.4 + 0.6 * Math.min(1, Math.max(0, now - c.born) / ZOMBIE_CORPSE.poolMs);
   ctx.globalAlpha = alpha;
   for (const [style, scale] of [[ICHOR, 1], [ICHOR_DARK, 0.6]] as const) {

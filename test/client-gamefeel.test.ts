@@ -352,19 +352,25 @@ test('every corpse drops its gun somewhere different, and a blast flings it furt
   assert.ok(explosiveDeath('Grenade') && explosiveDeath('Boom Slug') && !explosiveDeath('Pistol'));
 });
 
-test('dead zombies stay all night, fade together at dawn, and the field is bounded', () => {
+test('dead zombies fade out ~10 s after they fall, whatever is left fades at dawn, and the field is bounded', () => {
   const z = (id: number): ZombieCorpse => ({ id, x: id * 10, y: 0, kind: 'walker', born: 0, blow: null });
   let list: ZombieCorpse[] = [];
   for (let i = 1; i <= ZOMBIE_CORPSE.cap + 50; i++) list = addZombieCorpse(list, z(i));
   assert.equal(list.length, ZOMBIE_CORPSE.cap, 'a huge night keeps a bounded field');
-  const night = zombieField({ list, dawnAt: null }, true, 600_000);
-  assert.equal(night.alpha, 1, 'still there however late in the night');
+  const night = zombieField({ list, dawnAt: null }, true, 5_000);
+  assert.equal(night.alpha, 1, 'the fresh dead lie at full strength');
   assert.equal(night.list.length, ZOMBIE_CORPSE.cap);
-  const dawn = zombieField(night, false, 1_000_000);
-  assert.ok(dawn.alpha === 1 && dawn.dawnAt === 1_000_000, 'dawn starts the fade');
-  const mid = zombieField(dawn, false, 1_000_000 + ZOMBIE_CORPSE.dawnFadeMs / 2);
+  const fading = zombieField(night, true, ZOMBIE_CORPSE.lifeMs + ZOMBIE_CORPSE.fadeMs / 2);
+  assert.equal(fading.list.length, ZOMBIE_CORPSE.cap, 'still there while they fade out');
+  const melted = zombieField(fading, true, ZOMBIE_CORPSE.lifeMs + ZOMBIE_CORPSE.fadeMs);
+  assert.equal(melted.list.length, 0, 'each dead zombie is gone lifeMs + fadeMs after it fell, even mid-night');
+  const later = zombieField({ list: [...list.slice(0, 3), { ...z(9999), born: 20_000 }], dawnAt: null }, true, 21_000);
+  assert.deepEqual(later.list.map((c) => c.id), [9999], 'old dead go, the newly fallen stay');
+  const dawn = zombieField(night, false, 6_000);
+  assert.ok(dawn.alpha === 1 && dawn.dawnAt === 6_000, 'dawn starts the fade');
+  const mid = zombieField(dawn, false, 6_000 + ZOMBIE_CORPSE.dawnFadeMs / 2);
   assert.ok(mid.alpha > 0.4 && mid.alpha < 0.6, 'fading');
-  const gone = zombieField(mid, false, 1_000_000 + ZOMBIE_CORPSE.dawnFadeMs + 1);
+  const gone = zombieField(mid, false, 6_000 + ZOMBIE_CORPSE.dawnFadeMs + 1);
   assert.deepEqual([gone.list.length, gone.alpha], [0, 0], 'cleared once faded');
 
   const fills: unknown[] = [];
