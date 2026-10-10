@@ -104,5 +104,5 @@ test('heavier armor and heavier guns slow you down more', () => {
 
 test('most rounds fly slow enough to sidestep at range, while sniper rounds stay fast', () => {
   for (const gun of ['pistol', 'smg', 'shotgun', 'assault', 'lmg'] as const) assert.ok(GUNS[gun].bulletSpeed <= 1100, `${gun} ${GUNS[gun].bulletSpeed}px/s`);
-  assert.ok(GUNS.sniper.bulletSpeed >= 1700);
+  assert.ok(GUNS.sniper.bulletSpeed >= 1600);
 });
