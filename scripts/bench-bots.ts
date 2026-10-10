@@ -291,7 +291,7 @@ if (isMain && rangeAt >= 0) {
   }
 }
 
-const ABILITY_KILL_LABEL: Partial<Record<AbilityId, string>> = { grenade: 'Grenade', fragGrenade: 'Frag', gasGrenade: 'Gas', landMine: 'Land mine', knife: 'Knife' };
+const ABILITY_KILL_LABEL: Partial<Record<AbilityId, string>> = { fragGrenade: 'Frag', gasGrenade: 'Gas', claymore: 'Claymore', knife: 'Knife' };
 
 /** Every bot carries `ability` from spawn, so the rule that fires it is measured without waiting for bots to reach tier 3. */
 function abilityArena(ability: AbilityId, seed: number): { uses: number; kills: number; deaths: number } {

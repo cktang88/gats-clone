@@ -152,8 +152,9 @@ export type WallView = { x: number; y: number; w: number; h: number; pts?: reado
 
 /** Whether a round flying along (dx, dy) passes `wall`: only a one-way wall (`out`) lets one through, and only flying out. */
 export const roundPasses = (wall: { out?: readonly [number, number] }, dx: number, dy: number): boolean => !!wall.out && dx * wall.out[0] + dy * wall.out[1] > 0;
-export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud' | 'fireSlick' | 'radar' | 'healPole';
-export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
+export type ThrownKind = 'fragGrenade' | 'gasGrenade' | 'claymore' | 'gasCloud' | 'fireSlick' | 'radar' | 'healPole';
+/** `angle` is a claymore's facing. */
+export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number; angle?: number };
 /** `crew` (sent only when above 0) is how many of the one team alone on the zone stand on it, which sets how fast it moves (`zoneRate`);
  * `contested` (sent only when true) is both teams on it, which holds it still. */
 export type ZoneView = { id: number; x: number; y: number; r: number; owner: Team; capturing: Team; progress: number; crew?: number; contested?: true };

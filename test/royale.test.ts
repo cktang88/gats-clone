@@ -212,7 +212,7 @@ test('a supply drop shows before it lands, and breaking it jumps the breaker to 
 
   shooter.level = 5;
   shooter.score = 600;
-  shooter.perks = { 1: 'extended', 2: 'thickSkin', 3: 'grenade' };
+  shooter.perks = { 1: 'extended', 2: 'thickSkin', 3: 'fragGrenade' };
   shooter.gun = 'executioner';
   if (shooter.life.k === 'alive') shooter.life.hp = 10;
   w.royale!.drops = [{ x: 1300, y: 1000, landsAt: w.now }];

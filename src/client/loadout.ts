@@ -27,7 +27,7 @@ export type LoadoutSlot = {
 const SHORT: Partial<Record<PerkId, string>> = {
   extended: 'Ext. mag', quickReload: 'Q. reload', longRange: 'Range', lightweight: 'Light', piercing: 'AP rounds',
   thickSkin: 'Thick skin', firstAid: 'First aid', steadyHands: 'Steady', secondWind: '2nd wind', demolitions: 'Demo',
-  fastHands: 'Fast hands', fragGrenade: 'Frag', gasGrenade: 'Gas', landMine: 'Mine', radar: 'Radar', healPole: 'Heal',
+  fastHands: 'Fast hands', fragGrenade: 'Frag', gasGrenade: 'Gas', claymore: 'Claymore', radar: 'Radar', healPole: 'Heal',
   ghillie: 'Ghillie', overclock: 'Overclock', adrenaline: 'Adrenaline',
 };
 export const shortLabel = (id: PerkId): string => SHORT[id] ?? PERK_INFO[id].name;

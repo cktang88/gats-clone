@@ -92,7 +92,7 @@ test('a pack that would be wasted is left for whoever needs it: full health, or 
 test('an ammo pack counts the rounds it put back and says when it brought the ability back', () => {
   const w = emptyWorld();
   const me = spawnAt(w, 1000, 1000);
-  me.perks = { ...me.perks, 3: 'grenade' };
+  me.perks = { ...me.perks, 3: 'fragGrenade' };
   const mag = effectiveStats(me).mag;
   if (me.life.k === 'alive') me.life.ammo = 2;
   me.abilityReadyAt = w.now + 9000;
@@ -102,7 +102,7 @@ test('an ammo pack counts the rounds it put back and says when it brought the ab
   // A full magazine, only the ability cooling: it is still worth taking, and the popup says READY with no rounds.
   const w2 = emptyWorld();
   const you = spawnAt(w2, 1000, 1000);
-  you.perks = { ...you.perks, 3: 'grenade' };
+  you.perks = { ...you.perks, 3: 'fragGrenade' };
   you.abilityReadyAt = w2.now + 9000;
   packAt(w2, 'ammo', 1000, 1000, you);
   const g = gains(runEvents(w2, 100), you.id);
@@ -177,7 +177,7 @@ test('an ammo crate opens for a player short of rounds or with the ability cooli
   const w2 = emptyWorld();
   const crate = propAt(w2, 'ammo', 1000, 1000);
   const you = spawnAt(w2, 1000, 1000 - PROPS.ammo.size / 2 - WORLD.playerRadius - 2);
-  you.perks = { ...you.perks, 3: 'grenade' };
+  you.perks = { ...you.perks, 3: 'fragGrenade' };
   you.abilityReadyAt = w2.now + 9000;
   const g = gains(runEvents(w2, TICK_MS * 2), you.id);
   assert.ok(crate.respawnAt !== null);

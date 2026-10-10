@@ -57,7 +57,7 @@ test('the radius names the size of a blast, and what flew or burst nearby names 
   noteThrown(8, 'gasGrenade', 0, 0, 2000);
   startBoom(0, 0, 40, 2000, rng());
   assert.equal(lastBlast().kind, 'gas');
-  noteThrown(9, 'landMine', 500, 500, 2100);
+  noteThrown(9, 'claymore', 500, 500, 2100);
   startBoom(500, 500, 130, 2100, rng());
   assert.equal(lastBlast().kind, 'mine');
 });

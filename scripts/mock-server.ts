@@ -179,7 +179,7 @@ function serve(ws: WebSocket, mode: ModeId) {
         if (ability === 'dash') me.dashUntil = now + 250;
         else {
           fuseEndsAt.set(w.bulletId, now + GRENADE_FUSE_MS);
-          thrown.push({ id: w.bulletId++, kind: ability === 'landMine' ? 'landMine' : ability === 'gasGrenade' ? 'gasGrenade' : ability === 'fragGrenade' ? 'fragGrenade' : 'grenade', x: me.x + Math.cos(input.angle) * Math.min(400, input.aimDist), y: me.y + Math.sin(input.angle) * Math.min(400, input.aimDist), r: 140, owner: myId });
+          thrown.push({ id: w.bulletId++, kind: ability === 'claymore' ? 'claymore' : ability === 'gasGrenade' ? 'gasGrenade' : 'fragGrenade', x: me.x + Math.cos(input.angle) * Math.min(400, input.aimDist), y: me.y + Math.sin(input.angle) * Math.min(400, input.aimDist), r: 140, owner: myId });
         }
       }
     }
@@ -212,7 +212,7 @@ function serve(ws: WebSocket, mode: ModeId) {
     const clouds: ThrownView[] = [];
     thrown = thrown.filter((t) => {
       if (t.kind === 'gasCloud') { t.r -= 0.5; return t.r > 20; }
-      if (t.kind === 'landMine') return true;
+      if (t.kind === 'claymore') return true;
       if (now < (fuseEndsAt.get(t.id) ?? 0)) return true;
       events.push({ e: 'boom', x: t.x, y: t.y, r: t.r });
       if (t.kind === 'gasGrenade') clouds.push({ ...t, id: w.bulletId++, kind: 'gasCloud', r: 160 });

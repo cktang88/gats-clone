@@ -34,7 +34,7 @@ const PERK_MODS: Record<PerkId, PerkMods> = {
   recon: { viewMul: 1.08 },
   overclock: { cooldownMul: 0.7 },
   fastHands: { reloadMul: 0.75 },
-  grenade: {}, fragGrenade: {}, gasGrenade: {}, landMine: {}, knife: {}, engineer: {}, dash: {}, radar: {}, healPole: {},
+  fragGrenade: {}, gasGrenade: {}, claymore: {}, knife: {}, engineer: {}, dash: {}, radar: {}, healPole: {},
 };
 
 /** Tuning for the perks that act on events rather than stats. */

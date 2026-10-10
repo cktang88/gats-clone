@@ -191,7 +191,7 @@ test('TDM grenades spare teammates', () => {
   const a = spawnAt(w, 500, 500, { team: 'red' });
   const mate = spawnAt(w, 700, 480, { team: 'red' });
   const foe = spawnAt(w, 700, 520, { team: 'blue' });
-  grantPerks(w, a, ['extended', 'thickSkin', 'grenade']);
+  grantPerks(w, a, ['extended', 'thickSkin', 'fragGrenade']);
   press(w, a, { ability: true, angle: 0, aimDist: 200 });
   run(w, 2000);
   assert.equal(hpOf(mate), WORLD.baseHp);
@@ -321,11 +321,11 @@ test('enemy land mine is hidden but its owner sees it', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const b = spawnAt(w, 800, 500);
-  grantPerks(w, a, ['extended', 'thickSkin', 'landMine']);
+  grantPerks(w, a, ['extended', 'thickSkin', 'claymore']);
   press(w, a, { ability: true });
   step(w, TICK_MS);
-  assert.equal(snapshotFor(w, a.id).thrown.filter((t) => t.kind === 'landMine').length, 1);
-  assert.equal(snapshotFor(w, b.id).thrown.filter((t) => t.kind === 'landMine').length, 0);
+  assert.equal(snapshotFor(w, a.id).thrown.filter((t) => t.kind === 'claymore').length, 1);
+  assert.equal(snapshotFor(w, b.id).thrown.filter((t) => t.kind === 'claymore').length, 0);
 });
 
 test('snapshot culls out-of-view enemies; firing never puts an enemy on the minimap, only a hunted ping or a Tracker mark does', () => {

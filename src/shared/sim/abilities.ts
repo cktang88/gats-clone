@@ -5,7 +5,7 @@ import { damageZombie } from './run.ts';
 import { DOT_SHARE, dotPulses } from './dot.ts';
 import { burnTargets, knifeTargets } from './targets.ts';
 import { nearestEdge } from '../geom.ts';
-import { circleHitsRect, clamp, dist2, earliestHit, knifeLunge, startDash } from './movement.ts';
+import { circleHitsRect, clamp, dist2, earliestHit, knifeLunge, segmentBlocked, startDash } from './movement.ts';
 import { areFriends, coverRects, friendly, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
 import { effectiveStats } from './stats.ts';
 import type { Team } from '../protocol.ts';
@@ -16,8 +16,37 @@ export const GAS_RADIUS = 140;
 /** A gas cloud's damage a second, the grenade's and the canister's alike. */
 export const GAS_DPS = 14;
 export const GRENADE_FUSE_MS = 900;
-export const BLAST_RADIUS = { grenade: 160, fragGrenade: 90 } as const;
+export const BLAST_RADIUS = { fragGrenade: 90 } as const;
 const THROW_SPEED = 700;
+
+/**
+ * A claymore: set at your feet facing your aim, armed after `armMs`. An enemy (or a zombie) stepping into the cone in front of it
+ * (`reach` px, `cone` radians either side of its facing) with a clear line sets it off: `pellets` balls of shrapnel fly out across
+ * `spread` radians either side of its facing, each `damage` and reaching `range`, so it only hurts what is in front of it and cover
+ * stops the balls. Two at a time; it lasts `lifeMs`.
+ */
+export const CLAYMORE = { armMs: 800, reach: 190, cone: 0.7, pellets: 16, spread: 0.75, damage: 26, range: 320, lifeMs: 60_000, max: 2 } as const;
+
+/** Whether (x, y) is in front of claymore `t`, inside its trigger cone. */
+export function inClaymoreCone(t: { x: number; y: number; angle: number }, x: number, y: number, pad = 0): boolean {
+  const dx = x - t.x, dy = y - t.y, d = Math.hypot(dx, dy);
+  if (d > CLAYMORE.reach + pad || d < 1) return d < 1;
+  let a = Math.atan2(dy, dx) - t.angle;
+  a = Math.atan2(Math.sin(a), Math.cos(a));
+  return Math.abs(a) <= CLAYMORE.cone + Math.asin(Math.min(1, pad / d));
+}
+
+/** A claymore going off: its shrapnel fans out in front of it, credited to its owner. */
+export function blowClaymore(w: World, t: Extract<Thrown, { kind: 'claymore' }>) {
+  w.events.push({ e: 'boom', x: t.x, y: t.y, r: 40 });
+  for (let i = 0; i < CLAYMORE.pellets; i++) {
+    const a = t.angle + ((i + 0.5) / CLAYMORE.pellets - 0.5) * 2 * CLAYMORE.spread;
+    w.bullets.push({
+      id: newId(w), owner: t.owner, team: t.team, x: t.x, y: t.y, vx: Math.cos(a) * 1300, vy: Math.sin(a) * 1300,
+      left: CLAYMORE.range, damage: CLAYMORE.damage, piercing: false, label: 'Claymore', gun: null, turret: null, lobbed: false, penetrate: 0, passed: [], blast: null,
+    });
+  }
+}
 
 /** A radar sensor: lands after `fuseMs` and tags every enemy within `radius` (through walls) on everyone's minimap for `tagMs`. */
 export const RADAR = { fuseMs: 700, radius: 900, tagMs: 30_000 } as const;
@@ -49,7 +78,7 @@ function healPulse(w: World, t: Extract<Thrown, { kind: 'healPole' }>, dtMs: num
   }
 }
 
-function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade' | 'radar', fuseMs = GRENADE_FUSE_MS) {
+function throwGrenade(kind: 'fragGrenade' | 'gasGrenade' | 'radar', fuseMs = GRENADE_FUSE_MS) {
   return (w: World, p: Player) => {
     const travel = clamp(p.input.aimDist, 60, THROW_SPEED * (fuseMs / 1000));
     const speed = travel / (fuseMs / 1000);
@@ -65,7 +94,6 @@ const KNIFE_DAMAGE = 50;
 const MAX_MINES = 2;
 
 export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
-  grenade: throwGrenade('grenade'),
   fragGrenade: throwGrenade('fragGrenade'),
   gasGrenade: throwGrenade('gasGrenade'),
   radar: throwGrenade('radar', RADAR.fuseMs),
@@ -73,10 +101,10 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
     w.thrown.push({ id: newId(w), kind: 'healPole', owner: p.id, team: p.team, x: p.x, y: p.y, bornAt: w.now, expiresAt: w.now + HEAL_POLE.lifeMs });
     return true;
   },
-  landMine: (w, p) => {
-    const mines = w.thrown.filter((t) => t.kind === 'landMine' && t.owner === p.id);
-    if (mines.length >= MAX_MINES) w.thrown = w.thrown.filter((t) => t !== mines[0]);
-    w.thrown.push({ id: newId(w), kind: 'landMine', owner: p.id, team: p.team, x: p.x, y: p.y, armedAt: w.now + 600, expiresAt: w.now + 60000 });
+  claymore: (w, p) => {
+    const mines = w.thrown.filter((t) => t.kind === 'claymore' && t.owner === p.id);
+    if (mines.length >= CLAYMORE.max) w.thrown = w.thrown.filter((t) => t !== mines[0]);
+    w.thrown.push({ id: newId(w), kind: 'claymore', owner: p.id, team: p.team, x: p.x, y: p.y, angle: p.angle, armedAt: w.now + CLAYMORE.armMs, expiresAt: w.now + CLAYMORE.lifeMs });
     return true;
   },
   knife: (w, p) => {
@@ -156,7 +184,6 @@ export function tickThrown(w: World, dt: number) {
     const owner = w.players.get(t.owner) ?? null;
     const by = { attacker: owner, team: t.team };
     switch (t.kind) {
-      case 'grenade':
       case 'fragGrenade':
       case 'gasGrenade':
       case 'radar': {
@@ -166,8 +193,7 @@ export function tickThrown(w: World, dt: number) {
         else if (block) { t.vx = 0; t.vy = 0; }
         else { t.x = nx; t.y = ny; }
         if (w.now < t.explodeAt) { keep.push(t); break; }
-        if (t.kind === 'grenade') explode(w, t.x, t.y, BLAST_RADIUS.grenade, 80, { ...by, label: 'Grenade' });
-        else if (t.kind === 'radar') pulseRadar(w, t);
+        if (t.kind === 'radar') pulseRadar(w, t);
         else if (t.kind === 'fragGrenade') {
           explode(w, t.x, t.y, BLAST_RADIUS.fragGrenade, 40, { ...by, label: 'Frag' });
           for (let i = 0; i < 16; i++) {
@@ -183,12 +209,13 @@ export function tickThrown(w: World, dt: number) {
         }
         break;
       }
-      case 'landMine': {
+      case 'claymore': {
         if (w.now >= t.expiresAt || owner?.life.k !== 'alive') break;
+        const seen = (x: number, y: number) => !segmentBlocked(solidRects(w), t.x, t.y, x - t.x, y - t.y);
         const tripped = w.now >= t.armedAt && ([...w.players.values()].some(
-          (p) => p.life.k === 'alive' && isEnemy(owner, p) && dist2(p.x, p.y, t.x, t.y) < (WORLD.playerRadius + 30) ** 2,
-        ) || w.zombies.some((z) => dist2(z.x, z.y, t.x, t.y) < (ZOMBIES[z.kind].radius + 30) ** 2));
-        if (tripped) explode(w, t.x, t.y, 130, 90, { ...by, label: 'Land mine' });
+          (p) => p.life.k === 'alive' && isEnemy(owner, p) && !areFriends(w, owner.id, p.id) && inClaymoreCone(t, p.x, p.y, WORLD.playerRadius) && seen(p.x, p.y),
+        ) || w.zombies.some((z) => inClaymoreCone(t, z.x, z.y, ZOMBIES[z.kind].radius) && seen(z.x, z.y)));
+        if (tripped) blowClaymore(w, t);
         else keep.push(t);
         break;
       }

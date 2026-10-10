@@ -242,11 +242,11 @@ test('the reticle opens with the spread cone at the cursor distance, within read
 });
 
 test('the death screen names the killer\'s gun and what the life had earned', () => {
-  const life = snap({ me: { level: 5, gun: 'hornet' }, self: { perks: { 1: 'optics', 2: 'shield', 3: 'grenade' } } });
+  const life = snap({ me: { level: 5, gun: 'hornet' }, self: { perks: { 1: 'optics', 2: 'shield', 3: 'fragGrenade' } } });
   assert.deepEqual(deathText(kill(), lossOf(life)), {
     title: 'Eliminated by Atlas',
     cause: 'with Hornet',
-    lost: 'Lost level 6 · Hornet · Optics · Shield · Grenade',
+    lost: 'Lost level 6 · Hornet · Optics · Shield · Frag grenade',
   });
 });
 

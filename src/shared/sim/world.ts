@@ -172,11 +172,12 @@ export type Flight = { x: number; y: number; a: number; dropAt: number; landAt: 
 export type Airdrops = { due: number[]; flight: Flight | null };
 
 export type Thrown =
-  | { id: number; kind: 'grenade' | 'fragGrenade' | 'gasGrenade'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
+  | { id: number; kind: 'fragGrenade' | 'gasGrenade'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
   | { id: number; kind: 'radar'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
   /** A heal pole planted where its owner stood (see `HEAL_POLE`). */
   | { id: number; kind: 'healPole'; owner: number; team: Team; x: number; y: number; bornAt: number; expiresAt: number }
-  | { id: number; kind: 'landMine'; owner: number; team: Team; x: number; y: number; armedAt: number; expiresAt: number }
+  /** A claymore facing `angle` (see `CLAYMORE`). */
+  | { id: number; kind: 'claymore'; owner: number; team: Team; x: number; y: number; angle: number; armedAt: number; expiresAt: number }
   /** A gas cloud: it hurts whoever is in it in pulses (`dotPulses`), on a clock from `bornAt`. */
   | { id: number; kind: 'gasCloud'; owner: number; team: Team; x: number; y: number; bornAt: number; expiresAt: number }
   /** An oil drum's burning slick: it burns whoever stands in it but its spiller (see `PROP_FX.oil`), in pulses from `bornAt` like a gas cloud. */

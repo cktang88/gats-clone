@@ -2,6 +2,7 @@ import { ARMOR_IDS, GUNS, GUN_IDS, PERK_TIERS, PROPS, BARREL, type ArmorId, type
 import { MAPS } from '../maps.ts';
 import { RANGE, TARGETS, targetBody, targetPos, type RangeView, type TargetDef, type TargetView } from '../range.ts';
 import { explode } from './combat.ts';
+import { blowClaymore, inClaymoreCone } from './abilities.ts';
 import { dist2, segmentEntersCapsuleAt } from './movement.ts';
 import { effectiveStats } from './stats.ts';
 import type { Player, World } from './world.ts';
@@ -178,11 +179,11 @@ export function tickRange(w: World): void {
   }
   for (const th of w.thrown) {
     const owner = w.players.get(th.owner) ?? null;
-    if (th.kind === 'landMine' && w.now >= th.armedAt && owner?.life.k === 'alive') {
-      const tripped = r.targets.some((t) => standing(t) && dist2(t.x, t.y, th.x, th.y) < (TARGETS[t.def.kind].r + 30) ** 2);
+    if (th.kind === 'claymore' && w.now >= th.armedAt && owner?.life.k === 'alive') {
+      const tripped = r.targets.some((t) => standing(t) && inClaymoreCone(th, t.x, t.y, TARGETS[t.def.kind].r));
       if (tripped) {
         w.thrown = w.thrown.filter((o) => o !== th);
-        explode(w, th.x, th.y, 130, 90, { attacker: owner, team: th.team, label: 'Land mine' });
+        blowClaymore(w, th);
       }
     }
   }

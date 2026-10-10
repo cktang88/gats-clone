@@ -125,14 +125,14 @@ const throwRange = (s: Situation) => s.threat !== null && s.threat.d >= 150 && s
 
 export const ABILITY_RULES: Record<AbilityId, (s: Situation) => boolean> = {
   knife: (s) => s.threat !== null && s.threat.d <= KNIFE_REACH_PX,
-  grenade: throwRange,
   fragGrenade: throwRange,
   gasGrenade: throwRange,
   // A radar sensor finds an enemy it has lost: thrown toward its lead on him while nobody is in sight.
   radar: (s) => s.threat === null && !!s.lead,
   // A heal pole is planted at its feet once it is hurt and out of the line of fire (not shot at, or in cover or falling back).
   healPole: (s) => (s.hpFrac ?? (s.hurting ? 0 : 1)) < HEAL_POLE_HP_FRAC && (!s.underFire || !!s.sheltered),
-  landMine: (s) => (s.hurting && s.threat !== null) || s.onContestedZone,
+  // A claymore is set facing the enemy (it is aimed) as a trap behind a bot falling back, or on a zone it holds.
+  claymore: (s) => (s.hurting && s.threat !== null) || s.onContestedZone,
   dash: (s) => s.hurting && s.threat !== null,
   engineer: (s) => s.underFire && s.threat !== null && s.threat.d >= 200 && s.threat.d <= 500,
 };

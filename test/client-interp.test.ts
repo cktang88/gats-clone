@@ -218,7 +218,7 @@ test('bullets glide between snapshots by id; thrown grenades and facing stop at 
   const at = (tick: number, x: number, angle: number): Snapshot => ({
     ...snap(tick, [player(1, 0, 0), player(2, 0, 0, angle)]),
     bullets: [{ id: 9, x, y: 0, vx: 900, vy: 0, owner: 2, gun: 'pistol' }],
-    thrown: [{ id: 4, kind: 'grenade', x, y: 0, r: 8, owner: 2 }],
+    thrown: [{ id: 4, kind: 'fragGrenade', x, y: 0, r: 8, owner: 2 }],
   });
   const snaps = [at(1, 0, 0), at(2, 30, 0.6)];
   const mid = sampleAt(snaps, 1.5 * TICK_MS)!;
