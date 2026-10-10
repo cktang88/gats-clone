@@ -5,8 +5,10 @@ import { damageZombie } from './run.ts';
 import { DOT_SHARE, dotPulses } from './dot.ts';
 import { burnTargets, knifeTargets } from './targets.ts';
 import { nearestEdge } from '../geom.ts';
-import { circleHitsRect, clamp, dist2, earliestHit, knifeLunge, segmentBlocked, startDash } from './movement.ts';
-import { coverRects, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
+import { circleHitsRect, clamp, dist2, earliestHit, knifeLunge, startDash } from './movement.ts';
+import { areFriends, coverRects, friendly, isEnemy, newId, solidRects, type Player, type Thrown, type Wall, type World } from './world.ts';
+import { effectiveStats } from './stats.ts';
+import type { Team } from '../protocol.ts';
 
 const BUILT_WALL_MS = 12000;
 export const GAS_RADIUS = 140;
@@ -16,39 +18,37 @@ export const GRENADE_FUSE_MS = 900;
 export const BLAST_RADIUS = { grenade: 160, fragGrenade: 90 } as const;
 const THROW_SPEED = 700;
 
-/** A flashbang: blinds up to `maxMs` anyone within `radius` with a clear line, less with distance and when facing away. */
-export const FLASH = { fuseMs: 700, radius: 360, maxMs: 3000, farMul: 0.2, awayMul: 0.35, whiteMs: 1500 } as const;
-/** A smoke grenade: a cloud of `radius` that blooms over `bloomMs`, lasts `lifeMs` and thins over its last `thinMs`; inside it you see `sightPx`. */
-export const SMOKE = { fuseMs: 800, radius: 180, lifeMs: 10000, bloomMs: 700, thinMs: 2500, sightPx: 110, driftPx: 7 } as const;
+/** A radar sensor: lands after `fuseMs` and tags every enemy within `radius` (through walls) on everyone's minimap for `tagMs`. */
+export const RADAR = { fuseMs: 700, radius: 900, tagMs: 30_000 } as const;
+/** A heal pole: planted at your feet, it heals you, your teammates and your friends within `radius` by `hps` a second, in pulses, for `lifeMs`. Health only: it never mends armor, which only a fresh life, an armor pack or a supply drop fills. */
+export const HEAL_POLE = { radius: 150, hps: 18, lifeMs: 8000 } as const;
 
-/** 0..1 how blinded `p` is: full while more than `FLASH.whiteMs` of it remains, then fading out. */
-export function flashAmount(p: Player, now: number): number {
-  if (!p.flash || p.life.k !== 'alive') return 0;
-  return Math.min(1, Math.max(0, p.flash.until - now) / FLASH.whiteMs);
-}
+/** Whether `p` is on the other side from a sensor thrown by `owner` for `team`: not its thrower, a teammate or a friend. */
+const radarFoe = (w: World, owner: number, team: Team, p: Player) => p.id !== owner && !friendly(team, p) && !areFriends(w, owner, p.id);
 
-/** How long a burst at (x, y) blinds `p`, in ms: 0 outside `FLASH.radius` or with a wall between. */
-export function flashMs(w: World, p: Player, x: number, y: number): number {
-  const d = Math.hypot(p.x - x, p.y - y);
-  if (d > FLASH.radius) return 0;
-  if (segmentBlocked(solidRects(w), x, y, p.x - x, p.y - y)) return 0;
-  const toward = d < 1 ? p.angle : Math.atan2(y - p.y, x - p.x);
-  const facing = FLASH.awayMul + (1 - FLASH.awayMul) * (1 + Math.cos(toward - p.angle)) / 2;
-  return FLASH.maxMs * (1 - (1 - FLASH.farMul) * (d / FLASH.radius)) * facing;
-}
-
-function flashPlayers(w: World, x: number, y: number) {
+function pulseRadar(w: World, t: { owner: number; team: Team; x: number; y: number }) {
+  let n = 0;
   for (const p of w.players.values()) {
-    if (p.life.k !== 'alive') continue;
-    const ms = flashMs(w, p, x, y);
-    if (ms <= 0) continue;
-    const until = Math.max(p.flash?.until ?? 0, w.now + ms);
-    p.flash = { until, ms: until - w.now };
+    if (p.life.k !== 'alive' || !radarFoe(w, t.owner, t.team, p) || dist2(p.x, p.y, t.x, t.y) > RADAR.radius ** 2) continue;
+    p.taggedUntil = w.now + RADAR.tagMs;
+    n++;
   }
-  w.events.push({ e: 'flashburst', x, y, r: FLASH.radius });
+  w.events.push({ e: 'radar', x: t.x, y: t.y, r: RADAR.radius, owner: t.owner, n });
 }
 
-function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade' | 'flashbang' | 'smokeGrenade', fuseMs = GRENADE_FUSE_MS) {
+/** A heal pole's pulse: its owner, their teammates and their friends standing within reach heal `DOT_MS` worth of it. */
+function healPulse(w: World, t: Extract<Thrown, { kind: 'healPole' }>, dtMs: number) {
+  const pulses = dotPulses(t.bornAt, w.now, dtMs, t.expiresAt);
+  if (pulses === 0) return;
+  const amount = HEAL_POLE.hps * DOT_SHARE * pulses, r2 = HEAL_POLE.radius ** 2;
+  for (const p of w.players.values()) {
+    if (p.life.k !== 'alive' || dist2(p.x, p.y, t.x, t.y) > r2) continue;
+    if (p.id !== t.owner && !friendly(t.team, p) && !areFriends(w, t.owner, p.id)) continue;
+    p.life.hp = Math.min(effectiveStats(p).maxHp, p.life.hp + amount);
+  }
+}
+
+function throwGrenade(kind: 'grenade' | 'fragGrenade' | 'gasGrenade' | 'radar', fuseMs = GRENADE_FUSE_MS) {
   return (w: World, p: Player) => {
     const travel = clamp(p.input.aimDist, 60, THROW_SPEED * (fuseMs / 1000));
     const speed = travel / (fuseMs / 1000);
@@ -67,8 +67,11 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
   grenade: throwGrenade('grenade'),
   fragGrenade: throwGrenade('fragGrenade'),
   gasGrenade: throwGrenade('gasGrenade'),
-  flashbang: throwGrenade('flashbang', FLASH.fuseMs),
-  smokeGrenade: throwGrenade('smokeGrenade', SMOKE.fuseMs),
+  radar: throwGrenade('radar', RADAR.fuseMs),
+  healPole: (w, p) => {
+    w.thrown.push({ id: newId(w), kind: 'healPole', owner: p.id, team: p.team, x: p.x, y: p.y, bornAt: w.now, expiresAt: w.now + HEAL_POLE.lifeMs });
+    return true;
+  },
   landMine: (w, p) => {
     const mines = w.thrown.filter((t) => t.kind === 'landMine' && t.owner === p.id);
     if (mines.length >= MAX_MINES) w.thrown = w.thrown.filter((t) => t !== mines[0]);
@@ -94,7 +97,9 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
     const cx = p.x + Math.cos(p.angle) * 80, cy = p.y + Math.sin(p.angle) * 80;
     const acrossX = Math.abs(Math.cos(p.angle)) < Math.abs(Math.sin(p.angle));
     const [ww, hh] = acrossX ? [140, 24] : [24, 140];
-    const wall: Wall = { x: cx - ww / 2, y: cy - hh / 2, w: ww, h: hh, built: true, expiresAt: w.now + BUILT_WALL_MS };
+    // A shield: its owner's side shoots out through it, and nothing shoots back in (`roundPasses`).
+    const out: [number, number] = acrossX ? [0, Math.sign(Math.sin(p.angle)) || 1] : [Math.sign(Math.cos(p.angle)) || 1, 0];
+    const wall: Wall = { x: cx - ww / 2, y: cy - hh / 2, w: ww, h: hh, built: true, expiresAt: w.now + BUILT_WALL_MS, out };
     const blocked = [...w.players.values()].some((o) => o.life.k === 'alive' && circleHitsRect(o.x, o.y, WORLD.playerRadius, wall));
     if (blocked) return false;
     w.walls.push(wall);
@@ -153,8 +158,7 @@ export function tickThrown(w: World, dt: number) {
       case 'grenade':
       case 'fragGrenade':
       case 'gasGrenade':
-      case 'flashbang':
-      case 'smokeGrenade': {
+      case 'radar': {
         const nx = t.x + t.vx * dt, ny = t.y + t.vy * dt;
         const block = earliestHit(coverRects(w), t.x, t.y, nx - t.x, ny - t.y);
         if (block?.b.pts) bounceOff(t, block.b.pts, block.t, nx - t.x, ny - t.y);
@@ -162,11 +166,8 @@ export function tickThrown(w: World, dt: number) {
         else { t.x = nx; t.y = ny; }
         if (w.now < t.explodeAt) { keep.push(t); break; }
         if (t.kind === 'grenade') explode(w, t.x, t.y, BLAST_RADIUS.grenade, 80, { ...by, label: 'Grenade' });
-        else if (t.kind === 'flashbang') flashPlayers(w, t.x, t.y);
-        else if (t.kind === 'smokeGrenade') {
-          const a = t.id * 2.399, drift = SMOKE.driftPx * (0.6 + 0.4 * Math.sin(t.id * 1.7));
-          keep.push({ id: t.id, kind: 'smokeCloud', owner: t.owner, team: t.team, x: t.x, y: t.y, vx: Math.cos(a) * drift, vy: Math.sin(a) * drift, bornAt: w.now, expiresAt: w.now + SMOKE.lifeMs });
-        } else if (t.kind === 'fragGrenade') {
+        else if (t.kind === 'radar') pulseRadar(w, t);
+        else if (t.kind === 'fragGrenade') {
           explode(w, t.x, t.y, BLAST_RADIUS.fragGrenade, 40, { ...by, label: 'Frag' });
           for (let i = 0; i < 16; i++) {
             const a = (i / 16) * Math.PI * 2;
@@ -190,11 +191,9 @@ export function tickThrown(w: World, dt: number) {
         else keep.push(t);
         break;
       }
-      case 'smokeCloud': {
-        if (w.now >= t.expiresAt) break;
-        const nx = t.x + t.vx * dt, ny = t.y + t.vy * dt;
-        if (!segmentBlocked(coverRects(w), t.x, t.y, nx - t.x, ny - t.y)) { t.x = nx; t.y = ny; }
-        keep.push(t);
+      case 'healPole': {
+        healPulse(w, t, dt * 1000);
+        if (w.now < t.expiresAt) keep.push(t);
         break;
       }
       case 'gasCloud':

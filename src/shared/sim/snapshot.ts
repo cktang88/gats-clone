@@ -5,9 +5,8 @@ import type {
 import { rankRows, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { lookReach, lookSides, NO_LOOK, type LookSides } from '../lookahead.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
-import { flashAmount, GAS_RADIUS, SMOKE } from './abilities.ts';
+import { GAS_RADIUS, HEAL_POLE } from './abilities.ts';
 import { doorViews } from './doors.ts';
-import { sightBlocked, smokeDisks, smokeRadius } from './vision.ts';
 import { heardShots } from './hearing.ts';
 import { empMul, propState } from './props.ts';
 import { armorByte, packViews } from './packs.ts';
@@ -71,6 +70,7 @@ function selfView(w: World, p: Player): SelfView {
   const ability = abilityOf(p);
   return {
     id: p.id,
+    ...(life.k === 'alive' && w.now < p.taggedUntil && { tagged: Math.ceil((p.taggedUntil - w.now) / 1000) }),
     ammo: life.k === 'alive' ? life.ammo : 0,
     mag: stats.mag,
     speed: stats.speed * empMul(w, p) * rushMul(w, p),
@@ -98,7 +98,6 @@ function selfView(w: World, p: Player): SelfView {
     viewRadius: stats.viewRadius,
     suppression: life.k === 'alive' ? Math.round(life.suppression * 100) / 100 : 0,
     fired: p.fired,
-    ...(flashAmount(p, w.now) > 0 && { flash: Math.round(flashAmount(p, w.now) * 100) / 100 }),
     streak: p.lifeKills,
     nemesis: p.nemesis,
   };
@@ -129,7 +128,7 @@ const airdropView = (w: World): AirdropView | null => {
   return f && { x: Math.round(f.x), y: Math.round(f.y), a: Math.round(f.a * 100) / 100, dropAt: Math.round(f.dropAt), landAt: Math.round(f.landAt) };
 };
 
-const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS, fireSlick: PROP_FX.oil.radius, flashbang: 10, smokeGrenade: 10, smokeCloud: SMOKE.radius };
+const THROWN_RADIUS: Record<ThrownKind, number> = { grenade: 10, fragGrenade: 10, gasGrenade: 10, landMine: 14, gasCloud: GAS_RADIUS, fireSlick: PROP_FX.oil.radius, radar: 10, healPole: HEAL_POLE.radius };
 
 /**
  * How far `me`'s camera may lean toward their aim this tick (lookahead.ts): the full lean along their angle while they are alive and
@@ -142,7 +141,7 @@ export function interestLook(w: World, me: Player): LookSides {
 
 /**
  * `look` widens the interest rectangle past the aimed edges (the room holds it per client with `holdLook`), so an enemy that only the
- * camera's aim look-ahead brings on screen is sent; smoke and hiding still cull it. Bots and the replay see by the centred view.
+ * camera's aim look-ahead brings on screen is sent; hiding still culls it. Bots and the replay see by the centred view.
  */
 export function snapshotFor(w: World, id: number, events: readonly GameEvent[] = w.events, aspect: number = DEFAULT_VIEW_ASPECT, look: LookSides = NO_LOOK): Snapshot {
   const me = w.players.get(id);
@@ -156,21 +155,17 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     return dx <= halfW + look.r + pad && -dx <= halfW + look.l + pad && dy <= halfH + look.d + pad && -dy <= halfH + look.u + pad;
   };
 
-  // Smoke stops sight, not bullets: an enemy whose line from the eye crosses a cloud is not sent at all, so nothing on the wire sees through it.
-  const smoke = smokeDisks(w.thrown, w.now);
   const players: PlayerView[] = [];
   for (const p of w.players.values()) {
     if (p.id !== me.id) {
       if (p.life.k === 'dead' || !inView(p.x, p.y, WORLD.playerRadius)) continue;
       const seesHidden = !isEnemy(me, p) || stats.thermal || dist2(p.x, p.y, me.x, me.y) < HIDDEN_REVEAL_DIST ** 2;
       if (isHidden(w, p) && !seesHidden) continue;
-      if (smoke.length && isEnemy(me, p) && sightBlocked(smoke, eye.x, eye.y, p.x, p.y)) continue;
     }
     players.push(playerView(w, p, me));
   }
   const bullets: BulletView[] = w.bullets
     .filter((b) => (b.turret === null || b.turret === 'bastion') && inView(b.x, b.y, 100))
-    .filter((b) => b.owner === me.id || !smoke.length || !sightBlocked(smoke, eye.x, eye.y, b.x, b.y))
     .map((b) => ({ id: b.id, x: b.x, y: b.y, vx: b.vx, vy: b.vy, owner: b.owner, gun: b.gun }));
   const crates: CrateView[] = w.crates
     .filter((c) => c.respawnAt === null && inView(c.x, c.y, c.size))
@@ -182,7 +177,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
       const owner = w.players.get(t.owner);
       return !!owner && !isEnemy(me, owner);
     })
-    .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: t.kind === 'smokeCloud' ? Math.round(smokeRadius(w.now, t.bornAt, t.expiresAt)) : THROWN_RADIUS[t.kind], owner: t.owner }));
+    .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner }));
   const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress, ...(z.crew > 0 && { crew: z.crew }), ...(z.contested && { contested: true as const }) }));
   const minimap: MinimapMark[] = [];
   for (const p of w.players.values()) {
@@ -194,10 +189,13 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     // Enemies are not on the minimap just for firing: only a Tracker mark or a hunted ping shows one (teammates and friends always show).
     } else if (areFriends(w, me.id, p.id)) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, friend: true });
     else if (sameTeam(me, p)) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
+    // A radar tag shows the tagged player to everyone not on their side, wherever they go, until it runs out.
+    else if (w.now < p.taggedUntil) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, tagged: true });
   }
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
   // A medal, and what a pickup gave, is news only to the player who earned it.
   const visibleEvents = events.filter((e) => e.e === 'kill' || e.e === 'airdrop' || e.e === 'hunted' || e.e === 'life' || e.e === 'wiped' || (e.e === 'medal' && e.id === me.id) || (e.e === 'gain' && e.id === me.id)
+    || (e.e === 'radar' && inView(e.x, e.y, e.r))
     || (e.e !== 'medal' && e.e !== 'gain' && inView(e.x, e.y, 300) && !(e.e === 'dmg' && e.kind === 'zombie' && e.attacker !== me.id)));
 
   return {

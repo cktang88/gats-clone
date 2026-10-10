@@ -2,7 +2,6 @@ import { GUNS, WORLD, type GunId } from '../../shared/defs.ts';
 import { BOT_VIEW_ASPECT, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents, type GameEvent, type Snapshot } from '../../shared/protocol.ts';
 import { lookReach, type LookSides } from '../../shared/lookahead.ts';
 import { canRespawn, respawn, setInput } from '../../shared/sim.ts';
-import { flashAmount } from '../../shared/sim/abilities.ts';
 import { build, upgrade } from '../../shared/sim/run.ts';
 import { interestLook, snapshotFor } from '../../shared/sim/snapshot.ts';
 import { abilityOf, choosePick, effectiveStats } from '../../shared/sim/stats.ts';
@@ -10,7 +9,7 @@ import { segmentBlocked, segmentEntersRectAt } from '../../shared/sim/movement.t
 import { crateRect, IDLE_INPUT, isEnemy, type Player, type World } from '../../shared/sim/world.ts';
 import { botThink, randomLoadout, type BotDecision, type BotMemory } from '../bots.ts';
 import { arenaFor, type BotArena } from './arena.ts';
-import { BLIND_AT, botSight, freshAwareness, inBotSight } from './awareness.ts';
+import { botSight, freshAwareness, inBotSight } from './awareness.ts';
 import { freshMotor, motorTick, motorWake } from './motor.ts';
 import { SLOW_GUN_MS } from './evade.ts';
 
@@ -28,7 +27,7 @@ export type BotTickOptions = {
  * - its motor, every tick: walking its route, turning its gun toward what it looks at by the tick's time, tracking its enemy and firing
  *   once on him, running a dodge leg (`motorTick`); cheap, and read straight off the world;
  * - a tactical think, `TACTICAL_TICKS` apart (5 a second): what it sees and hears (a snapshot, `perceive`), who it fights, whether
- *   to dodge, and the reactions (an enemy in sight, a losing fight, a dry gun, a flash);
+ *   to dodge, and the reactions (an enemy in sight, a losing fight, a dry gun);
  * - a strategic think, every `PLAN_EVERY`th tactical one (under twice a second): the plan itself, where to go and which cover, and routes.
  * Something that needs it now wakes it early: a hit or a shot fired at it by someone new, an enemy coming into its view, the enemy it
  * fights gone, a timed leg or peek ending, being stuck, arriving, the door on its way opening or shutting, a zone changing hands. A bot no
@@ -180,8 +179,7 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
       const d = botThink(snap, arena, mem, rand, tiered ? { strategic, lastPlan: mem.beat?.planned } : {});
       if (tiered && p) {
         const view = snap.self.viewRadius, sight = botSight(view, p.gun, p.angle);
-        const blinded = Math.round(flashAmount(p, w.now) * 100) / 100 > BLIND_AT;
-        d.mem = { ...d.mem, beat: { thought: w.tick, planned: strategic ? w.tick : mem.beat?.planned ?? w.tick, seen: enemiesInView(w, p, sight), inSight: blinded ? [] : enemiesInSight(w, arena, p, sight), zones, view } };
+        d.mem = { ...d.mem, beat: { thought: w.tick, planned: strategic ? w.tick : mem.beat?.planned ?? w.tick, seen: enemiesInView(w, p, sight), inSight: enemiesInSight(w, arena, p, sight), zones, view } };
       }
       finish(d, snap);
     };
@@ -201,21 +199,19 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
     let wake: Wake = !mem.beat || !mem.intent ? 'strategic' : phase === 0 ? 'strategic' : phase % (TACTICAL_TICKS * slow) === 0 ? 'tactical' : null;
     let beat = mem.beat;
     if (wake !== 'strategic' && beat) {
-      // As the snapshot rounds it, so the think it wakes sees the same flash.
-      const blind = Math.round(flashAmount(p, w.now) * 100) / 100 > BLIND_AT;
       const now = motorWake(mem.motor, p, w.tick, arena, doorOpen, slow === 1);
       // Its sight box follows its gun as it turns between thinks: an enemy it turns onto is news, as one walking into its view is.
       const sight = botSight(beat.view, p.gun, p.angle);
       const inView = slow === 1 ? enemiesInView(w, p, sight) : beat.seen;
-      if (now === 'strategic' || zones !== beat.zones || (mem.intent?.k === 'blinded' && !blind)) wake = 'strategic';
-      else if (now || blind !== (mem.intent?.k === 'blinded') || lost(mem) || (slow === 1 && (fired(id, mem) || inView > beat.seen || (!blind && newSighting(w, arena, p, sight, beat.inSight ?? [])))) || news(p, mem)) wake ??= 'tactical';
+      if (now === 'strategic' || zones !== beat.zones) wake = 'strategic';
+      else if (now || lost(mem) || (slow === 1 && (fired(id, mem) || inView > beat.seen || newSighting(w, arena, p, sight, beat.inSight ?? []))) || news(p, mem)) wake ??= 'tactical';
       // One leaving its view (or falling) lowers the count, so the next to come into it is news too, not only one past the count it last thought on.
       if (inView < beat.seen) beat = { ...beat, seen: inView };
     }
     if (wake) { think(wake); continue; }
     const ability = abilityOf(p);
     const { input, motor } = motorTick(mem.motor, {
-      me: p, ammo: p.life.ammo, reloading: p.life.reloadUntil !== null, abilityReady: ability !== null && p.abilityReadyAt <= w.now, flash: flashAmount(p, w.now), settleLeftMs: p.life.settleLeft, find,
+      me: p, ammo: p.life.ammo, reloading: p.life.reloadUntil !== null, abilityReady: ability !== null && p.abilityReadyAt <= w.now, settleLeftMs: p.life.settleLeft, find,
     }, arena, w.tick, rand);
     finish({ input, pick: null, mem: { ...mem, beat, motor } }, null);
   }

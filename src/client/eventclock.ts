@@ -31,7 +31,7 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
       });
     }
     case 'shot':
-    case 'flashburst':
+    case 'radar':
     case 'medal':
     case 'hunted':
     case 'life':

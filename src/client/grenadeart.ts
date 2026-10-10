@@ -1,7 +1,7 @@
 import type { ThrownView } from '../shared/protocol.ts';
 import { GRENADE_FUSE_MS } from '../shared/sim/abilities.ts';
 import { clamp01, easeOut, noteThrown, SMOKE_WIND, seeded } from './blastfx.ts';
-import { drawFlashSmokeBody, isFlashSmoke } from './flashsmoke.ts';
+import { drawGadgetBody, isGadget } from './gadgetart.ts';
 import { setLight } from './lighting.ts';
 import { INK, PALETTE } from './palette.ts';
 import { reducedMotion } from './screenfx.ts';
@@ -124,7 +124,7 @@ const METAL = { base: '#8a909a', lit: '#c7c9cc', shade: '#5a6068' };
 export function drawThrownBody(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
   if (t.kind === 'landMine') return drawMine(ctx, t, now);
   if (t.kind === 'gasCloud' || t.kind === 'fireSlick') return;
-  if (isFlashSmoke(t.kind)) return drawFlashSmokeBody(ctx, t, now);
+  if (isGadget(t.kind)) return drawGadgetBody(ctx, t, now);
   const tr = trackOf(t, now), age = now - tr.t0, u = clamp01(age / GRENADE_FUSE_MS);
   // A body that has stopped (cover) is on the floor from the start.
   const f = flightAt(age, tr.peak, tr.seed);

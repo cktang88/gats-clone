@@ -1,6 +1,6 @@
 import { armorBlock, BOT_DAMAGE_TO_HUMAN, GUNS, KNOCK, KILL_REWARD, MEDAL_RULES, MEDALS, MULTI_MEDALS, ROYALE, rulesOf, STREAK, STREAK_MEDALS, SUPPRESSION, WEAPON_MEDALS, WORLD, ZOMBIES, type GunId, type MedalId } from '../defs.ts';
 import { blastDoors } from './doors.ts';
-import { INTERP_DELAY_MS, type Team } from '../protocol.ts';
+import { INTERP_DELAY_MS, roundPasses, type Team } from '../protocol.ts';
 import { flightSec, flownAfter } from './ballistics.ts';
 import { MODES } from './modes.ts';
 import { angleDiff, clamp, dist2, segmentBlocked, segmentEntersCircleAt, segmentEntersRectAt, segmentHits } from './movement.ts';
@@ -299,7 +299,7 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
   w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
   if (!attacker) return;
   addScore(w, attacker, w.royale ? ROYALE.crateScore : WORLD.crateScore);
-  if (c.drop) { if (w.royale) openDrop(w, attacker); else openAirdrop(w, attacker, c); }
+  if (c.drop) { if (w.royale) openDrop(w, attacker, { x: c.x + h, y: c.y + h }); else openAirdrop(w, attacker, c); }
 }
 
 /** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */
@@ -409,7 +409,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
   const fell = (x: number, y: number) => (b.gun ? falloffMul(b.gun, from + Math.hypot(x - b.x, y - b.y)) : 1);
   const candidates: BulletHit[] = [
     // Only the walls the step enters, in wall order: the same hits, ties and all, as testing every wall.
-    ...segmentHits(view.walls, b.x, b.y, dx, dy, 'nb').map(({ t, b: wall }) => ({ t, victim: null, apply: (x: number, y: number) => {
+    ...segmentHits(view.walls, b.x, b.y, dx, dy, 'nb').filter(({ b: wall }) => !roundPasses(wall, dx, dy)).map(({ t, b: wall }) => ({ t, victim: null, apply: (x: number, y: number) => {
       w.events.push({ e: 'impact', x, y });
       // A door-breaker's round blows the swing door it strikes open (see `GunRules.breach`).
       if (wall.door && b.gun && rulesOf(GUNS[b.gun]).breach) blastDoors(w, x, y, BREACH_PX);

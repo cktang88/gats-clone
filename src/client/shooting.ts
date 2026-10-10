@@ -1,7 +1,7 @@
 import { GUNS, WORLD, type GunId } from '../shared/defs.ts';
 import { doorsOf } from './predict.ts';
 import { leavesFromViews } from '../shared/sim/doors.ts';
-import type { Snapshot } from '../shared/protocol.ts';
+import { roundPasses, type Snapshot } from '../shared/protocol.ts';
 import { rangeFor, silencedFor } from '../shared/sim/stats.ts';
 import { noteLateShot, noteRejectedShot } from './devprobe.ts';
 import { gunFxOf, muzzleFlash } from './gunfx.ts';
@@ -37,7 +37,8 @@ export function createShooting(page: Page) {
     const muzzle = muzzleTip(at.x, at.y, angle, shot.gun, WORLD.playerRadius);
     // Drawn from the gun's muzzle, but flying from where the server's round starts, so it is where the server's is at every age.
     const lead = Math.max(0, heldMuzzleReach(shot.gun, WORLD.playerRadius, angle) - MUZZLE_PX);
-    const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, [...s.walls, ...leavesFromViews(doorsOf(s), seen.doors)], shot.owner), now, nextLocalRoundId, undefined, lead);
+    const walls = s.walls.filter((wall) => !roundPasses(wall, Math.cos(angle), Math.sin(angle)));
+    const rounds = fireRounds(shot, muzzle, angle, roundScene(seen, [...walls, ...leavesFromViews(doorsOf(s), seen.doors)], shot.owner), now, nextLocalRoundId, undefined, lead);
     nextLocalRoundId -= rounds.length;
     s.rounds.push(...rounds);
     // The flash effect still times the shooter's recoil kick; gunfx draws the flash and ejects the casing.
@@ -76,7 +77,8 @@ export function createShooting(page: Page) {
 
   /** Your shot drawn ahead of the input that fires it, respread to the spread that input fires it with (`spread`, as the trigger stepped it). */
   function respreadShot(s: Session, shot: PredictedShot, spread: number) {
-    const solids = roundScene({ players: [], crates: newestSnap(s.snaps)?.crates ?? [] }, [...s.walls, ...leavesFromViews(doorsOf(s), newestSnap(s.snaps)?.doors)], s.myId).solids;
+    const walls = shot.angle === undefined ? s.walls : s.walls.filter((wall) => !roundPasses(wall, Math.cos(shot.angle!), Math.sin(shot.angle!)));
+    const solids = roundScene({ players: [], crates: newestSnap(s.snaps)?.crates ?? [] }, [...walls, ...leavesFromViews(doorsOf(s), newestSnap(s.snaps)?.doors)], s.myId).solids;
     s.rounds = s.rounds.map((r) => (shot.rounds.includes(r.id) ? respread(r, spread, solids) : r));
   }
 

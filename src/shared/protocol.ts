@@ -147,8 +147,12 @@ export const planeAt = (f: Pick<AirdropView, 'x' | 'y' | 'a' | 'dropAt'>, t: num
 };
 export type CrateView = { id: number; x: number; y: number; hp: number; size: number; drop?: true };
 /** A wall as it goes on the wire. A polygon part also carries `pts` (flat, convex; see `Rect`) and `pid`, its polygon's index in the map's `polys`. */
-export type WallView = { x: number; y: number; w: number; h: number; pts?: readonly number[]; nb?: true; ns?: true; pid?: number } & ({ built: false; material: WallMaterial } | { built: true });
-export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud' | 'fireSlick' | 'flashbang' | 'smokeGrenade' | 'smokeCloud';
+/** `out` marks a one-way wall (the Shield ability): rounds flying along it (a positive dot with it) pass, rounds flying against it stop. */
+export type WallView = { x: number; y: number; w: number; h: number; pts?: readonly number[]; nb?: true; ns?: true; pid?: number; out?: readonly [number, number] } & ({ built: false; material: WallMaterial } | { built: true });
+
+/** Whether a round flying along (dx, dy) passes `wall`: only a one-way wall (`out`) lets one through, and only flying out. */
+export const roundPasses = (wall: { out?: readonly [number, number] }, dx: number, dy: number): boolean => !!wall.out && dx * wall.out[0] + dy * wall.out[1] > 0;
+export type ThrownKind = 'grenade' | 'fragGrenade' | 'gasGrenade' | 'landMine' | 'gasCloud' | 'fireSlick' | 'radar' | 'healPole';
 export type ThrownView = { id: number; kind: ThrownKind; x: number; y: number; r: number; owner: number };
 /** `crew` (sent only when above 0) is how many of the one team alone on the zone stand on it, which sets how fast it moves (`zoneRate`);
  * `contested` (sent only when true) is both teams on it, which holds it still. */
@@ -179,6 +183,8 @@ export type RunView = {
 
 export type SelfView = {
   id: number; ammo: number; mag: number; reloading: boolean;
+  /** Seconds left (rounded up) on an enemy radar's tag, which has you on everyone's minimap; absent when untagged. */
+  tagged?: number;
   /** 0..1 through the current reload, 0 when not reloading. */
   reloadFrac: number;
   /** Move speed without a dash, for predicting the local player's movement. */
@@ -201,8 +207,6 @@ export type SelfView = {
   suppression: number;
   /** Shots you have fired, ever, as of the input acknowledged: the page numbers the shots it draws ahead from it (`spreadPick`). */
   fired?: number;
-  /** 0..1, how blinded you are by a flashbang: 1 is a full whiteout, easing to 0 as it wears off (absent when clear). */
-  flash?: number;
   /** Kills this life, and the player who last killed you until you take your revenge. */
   streak: number; nemesis: number | null;
 };
@@ -225,8 +229,8 @@ export type GameEvent =
   /** Range only: target number `i` of the layout fell (`by` the shooter who dropped it) or stood up again, at (`x`, `y`). */
   | { e: 'target'; i: number; k: 'down' | 'up'; by: number | null; x: number; y: number }
   | { e: 'boom'; x: number; y: number; r: number }
-  /** A flashbang burst: everyone near looks away. */
-  | { e: 'flashburst'; x: number; y: number; r: number }
+  /** A radar sensor pulsed at (x, y) over `r`, tagging `n` enemies of `owner` on everyone's minimap. */
+  | { e: 'radar'; x: number; y: number; r: number; owner: number; n: number }
   /** `n` is the shooter's shot number (`Player.fired`), which picks where in the spread each pellet flies (`spreadPick`). */
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId; n?: number }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number }
@@ -244,14 +248,15 @@ export type GameEvent =
   /** A Last Squad squad has nobody left standing; `place` is where it finished. */
   | { e: 'wiped'; team: ColorId; place: number }
   /** A supply plane is `inbound` for (`x`, `y`); its crate `landed`; or `by` cracked it open and took a golden gun (`gold`) or a resupply. */
-  | { e: 'airdrop'; k: 'inbound' | 'landed' | 'taken'; x: number; y: number; by?: string; gold?: boolean }
+  /** `level`: a Last Squad supply drop that also gave its opener a level. */
+  | { e: 'airdrop'; k: 'inbound' | 'landed' | 'taken'; x: number; y: number; by?: string; gold?: boolean; level?: boolean }
   /** A prop (`PROPS`) did its thing: `pop` (shattered, burst, spilled), `launch` a tank at heading `a`, `arc` a generator shorting, `emp` its pulse of radius `r`, `pick` a pack taken, `relight` a lamp. `c` is the colour a paint can splatters. */
   | { e: 'prop'; kind: PropKind; k: 'pop' | 'launch' | 'arc' | 'emp' | 'pick' | 'relight'; x: number; y: number; a?: number; r?: number; c?: ColorId }
   /**
    * Player `id` took something: `hp` health, `armor` armor points and `ammo` rounds actually gained (what was wasted is not counted), `ability` ready again,
    * `gold` a golden gun. `from` is where it came from. News only to that player, who sees it pop up over their own soldier.
    */
-  | { e: 'gain'; id: number; from: GainSource; hp?: number; ammo?: number; ability?: true; gold?: true; armor?: number }
+  | { e: 'gain'; id: number; from: GainSource; hp?: number; ammo?: number; ability?: true; gold?: true; level?: true; armor?: number }
   /** An armor pack at (`x`, `y`) was taken (`pick`). */
   | { e: 'pack'; k: 'pick'; x: number; y: number };
 
@@ -288,8 +293,8 @@ export type RoyaleView = {
 };
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
-/** `marked` is a Tracker mark on an enemy you hurt; `friend` is one of your friends (see `World.friends`), shown wherever they are. */
-export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null; marked?: true; friend?: true };
+/** `marked` is a Tracker mark on an enemy you hurt; `friend` is one of your friends (see `World.friends`), shown wherever they are; `tagged` an enemy a radar sensor caught (`RADAR`). */
+export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null; marked?: true; friend?: true; tagged?: true };
 
 /** `kills` and `deaths` count this round only and every mode ranks on them; `score` is the current life's, which a death resets. */
 /** `human` marks a person (absent for a bot): only people can be friended. */

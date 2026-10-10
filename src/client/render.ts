@@ -20,7 +20,7 @@ import { drawGains } from './pickups.ts';
 import { drawZoneFloor, drawZoneOverlay, zonesOf } from './zoneart.ts';
 import { drawRangeFloor, drawTargets, layoutOf } from './targetart.ts';
 import { drawReachFloor, drawReachOverlay, reachOf } from './rangeline.ts';
-import { drawBarrels, drawArenaLight, drawBeacon, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
+import { drawBarrels, drawArenaLight, drawBeacon, drawDropLabels, drawShields, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
 import { drawHeldGun, heldHands, muzzleTip } from './gunart.ts';
 import { cosLook, RARITY_INK } from './cosmeticlook.ts';
 import { nameInk } from './nametag.ts';
@@ -59,7 +59,7 @@ import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGa
 import { trackDash } from './blastfx.ts';
 import { boltScene, dropCarried, reloadScene, selfReload, stepBolt, stepReload, type ReloadFrame } from './reloadanim.ts';
 import { reloadFoley } from './reloadsfx.ts';
-import { drawFlashSmokeBody, drawFlashSmokeFx, isFlashSmoke } from './flashsmoke.ts';
+import { drawGadgetBody, drawGadgetFx, isGadget } from './gadgetart.ts';
 import { applyPose, bodyPose, drawGunGlints, drawMotionAbove, drawMotionBelow, drawShieldShimmer, noteStride, observeMotion } from './motionfx.ts';
 
 const TAU = Math.PI * 2;
@@ -138,7 +138,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   if (snap.run && wrecks.list.length) drawWrecks(ctx, wrecks.list, view, now, k);
 
   const crates = snap.crates.map(crateSolid).filter((c) => solidInView(view, c));
-  drawLooseShadows(ctx, [...crates, ...wallSolids(s.walls.filter((w) => w.built)).filter((w) => solidInView(view, w))]);
+  drawLooseShadows(ctx, [...crates, ...wallSolids(s.walls.filter((w) => w.built && !w.out)).filter((w) => solidInView(view, w))]);
   drawCasings(ctx, s.particles, now);
   observeMotion(snap, s.myId, now, colorOf);
 
@@ -150,9 +150,10 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     ...zombies.map(([, kind, x, y]) => ({ x, y, r: ZOMBIES[ZOMBIE_KINDS[kind]].radius })),
   ], k);
 
-  const walls = wallSolids(s.walls).filter((w) => solidInView(view, w));
+  const walls = wallSolids(s.walls.filter((w) => !w.out)).filter((w) => solidInView(view, w));
   const standing = (siege === 'static' ? [] : siege).filter((b) => solidInView(view, b));
   drawSolids(ctx, [...curbSolids(s.worldSize).filter((c) => solidInView(view, c)), ...walls, ...standing, ...crates]);
+  drawShields(ctx, s.walls.filter((w) => w.out && inView(view, w.x, w.y, w.w, w.h)), now);
   // Polygon walls, doors and roofs (docs/maps/GEOMETRY.md) come from the map itself; door state comes from the snapshot.
   const geoMap = mapOf(snap.match.map);
   const geo: GeoInfo | null = geoMap && (geoMap.polys?.length || geoMap.doors?.length || geoMap.roofs?.length) ? { now, view, dark, map: geoMap } : null;
@@ -177,6 +178,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawRadios(ctx, now, view, dark, reducedMotion());
   if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
   drawBeacon(ctx, snap.airdrop, airClock, now, view);
+  drawDropLabels(ctx, snap.crates, !!snap.royale, now, view);
   drawPlaneShadow(ctx, snap.airdrop, airClock, view);
   if (snap.buildings && snap.run) {
     drawSiegeTops(ctx, snap.buildings.filter((b) => standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now, k);
@@ -262,7 +264,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   for (const t of snap.thrown) if (t.kind === 'gasCloud') drawThrown(ctx, t, now);
   drawEffects(ctx, s.effects.filter((e) => e.kind !== 'flash' && e.kind !== 'boom' && e.kind !== 'slash'), now);
   drawBlastFx(ctx, now, view);
-  drawFlashSmokeFx(ctx, snap, s.myId, now, view);
+  drawGadgetFx(ctx, snap, now);
   drawArenaLight(ctx, snap, now, view);
   drawPropTops(ctx, snap, now, view);
   drawParachute(ctx, snap.airdrop, airClock, now, view);
@@ -317,7 +319,7 @@ function drawThrown(ctx: CanvasRenderingContext2D, t: ThrownView, now: number) {
   if (t.kind === 'gasCloud') return drawGasCloud(ctx, t, now);
   if (t.kind === 'fireSlick') return drawFireSlick(ctx, t, now);
   if (t.kind === 'grenade' || t.kind === 'fragGrenade') drawBlastRing(ctx, t.x, t.y, BLAST_RADIUS[t.kind], now);
-  if (isFlashSmoke(t.kind)) return drawFlashSmokeBody(ctx, t, now);
+  if (isGadget(t.kind)) return drawGadgetBody(ctx, t, now);
   drawThrownBody(ctx, t, now);
 }
 

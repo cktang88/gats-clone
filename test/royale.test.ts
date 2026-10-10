@@ -286,3 +286,16 @@ test('a knocked player who leaves has the life paid, as a standing one does', ()
   removePlayer(w, p.id);
   assert.deepEqual(w.lifeRecords.filter((r) => r.id === p.id).map((r) => [r.score, r.died]), [[250, false]]);
 });
+
+test('cracking a supply drop says what it gave: a level and a resupply on the opener\'s chips, and who cracked it in the feed', async () => {
+  const { openDrop } = await import('../src/shared/sim/royale.ts');
+  const w = emptyWorld('BR');
+  const p = spawnAt(w, 1000, 1000, { team: 'blue', name: 'Opener' });
+  if (p.life.k === 'alive') { p.life.hp = 20; p.life.ammo = 1; }
+  w.events = [];
+  openDrop(w, p, { x: 1300, y: 1000 });
+  const gain = w.events.find((e) => e.e === 'gain');
+  assert.ok(gain && gain.e === 'gain' && gain.level && (gain.hp ?? 0) > 0 && (gain.ammo ?? 0) > 0, JSON.stringify(gain));
+  assert.ok(hpOf(p) > 20, 'healed as well as levelled');
+  assert.deepEqual(w.events.find((e) => e.e === 'airdrop'), { e: 'airdrop', k: 'taken', x: 1300, y: 1000, by: 'Opener', level: true });
+});

@@ -177,17 +177,6 @@ test('server interest: an enemy only the look-ahead brings on screen is sent, on
   assert.deepEqual(interestLook(w, me), NO_LOOK, 'no lean for the dead');
 });
 
-test('server interest: smoke still culls an enemy the look-ahead would reveal', () => {
-  const w = emptyWorld();
-  const me = spawnAt(w, 2000, 2000, { loadout: { weapon: 'assault' } });
-  const R = effectiveStats(me).viewRadius, reach = lookReach(R, me.gun);
-  const target = spawnAt(w, me.x + R + VIEW_PRELOAD_MARGIN + reach / 2, me.y);
-  me.angle = 0;
-  assert.ok(snapshotFor(w, me.id, [], 16 / 9, interestLook(w, me)).players.some((p) => p.id === target.id));
-  w.thrown.push({ id: 900, kind: 'smokeCloud', owner: me.id, team: null, x: me.x + 400, y: me.y, vx: 0, vy: 0, bornAt: w.now - 2000, expiresAt: w.now + 8000 });
-  assert.ok(!snapshotFor(w, me.id, [], 16 / 9, interestLook(w, me)).players.some((p) => p.id === target.id), 'behind smoke: not sent');
-});
-
 test('the held widening always covers a camera easing away from an old lean, at any frame and tick rate', () => {
   const reach = 150;
   let held = holdLook(null, lookSides(0, reach), 0);

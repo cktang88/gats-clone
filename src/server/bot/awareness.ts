@@ -4,8 +4,6 @@ import { inSightBox, lookReach, lookSides, NO_LOOK, sightBox, type LookSides } f
 import type { Rect } from '../../shared/sim/movement.ts';
 import { SHARPNESS, TICK_MS } from './aim.ts';
 import type { BotArena } from './arena.ts';
-import { FLASH } from '../../shared/sim/abilities.ts';
-import { sightBlocked, type Smoke } from '../../shared/sim/vision.ts';
 import { BOT_EARSHOT_PX, BOT_HEARING, earDist } from '../../shared/sim/hearing.ts';
 import { clearShot, dist, type Point } from './nav.ts';
 
@@ -21,14 +19,12 @@ export type Awareness = {
   heard: readonly Lead[];
   mates: readonly { id: number; x: number; y: number }[];
   hitTick: number;
-  /** Flashbangs this bot has had in sight, and when each first came into view, so it can "notice" one after a reaction delay. */
-  nades?: readonly { id: number; tick: number }[];
   shotAt?: ShotAt | null;
   /** Who last hit it, and when: the one it turns on first (see `shooters`). */
   hitBy?: { owner: number; tick: number } | null;
 };
 
-export const freshAwareness = (): Awareness => ({ contacts: [], heard: [], mates: [], hitTick: -Infinity, nades: [] });
+export const freshAwareness = (): Awareness => ({ contacts: [], heard: [], mates: [], hitTick: -Infinity });
 
 export type Threat = { p: PlayerView; d: number };
 
@@ -46,27 +42,10 @@ export type Perception = {
   zones: readonly ZoneView[];
   solids: readonly Rect[];
   allies: readonly Point[];
-  /** How flashed the bot is, from the same server flash state a human's screen shows (0 clear, 1 whiteout). */
-  flash: number;
-  /** Smoke clouds in sight, as `snap.thrown` shows them. */
-  smokes: readonly Smoke[];
-  /** A flashbang it has noticed in the air and has a line to, which it should look away from. */
-  incomingFlash: Point | null;
   /** An enemy round fired at this bot lately (`SHOT_AT_MS`), seen or not: the line it should get off. */
   shotAt?: ShotAt | null;
   /** Enemies in sight that hit it or fired its way lately (`SHOOTER_MS`): the ones it answers first, ahead of the one it was fighting. */
   shooters?: readonly number[];
-};
-
-/** At this much flash a bot sees nothing at all: no new sightings, no minimap, no ears. Below it vision is back but its aim is still ruined. */
-export const BLIND_AT = 0.2;
-const NOTICE_ODDS = 0.6;
-const NOTICE_MS = 250;
-
-/** Whether this bot spots this throw at all: hashed from the grenade and the bot, so it leaves the random stream alone. A thrower always knows. */
-const noticesThrow = (id: number, me: number) => {
-  const v = Math.sin(id * 12.9898 + me * 78.233) * 43758.5453;
-  return v - Math.floor(v) < NOTICE_ODDS;
 };
 
 const FORGET_MS = 8000;
@@ -123,8 +102,8 @@ export const aimsAtLead = (lead: Point | null, me: Point): boolean => !!lead && 
 /**
  * Where an enemy it cannot see is shooting at it from, while that is off its screen: a round fired its way lately (`SHOOTER_MS`) by someone
  * not among the enemies in sight, from outside its sight box. A person reads that off the tracers crossing his screen and the gunfire's
- * stereo and turns to look; so does a bot (motor.ts), which brings him into its view, where he is answered first (`focus`). Behind a wall or
- * smoke inside its box there is nothing to turn to, so it fights on.
+ * stereo and turns to look; so does a bot (motor.ts), which brings him into its view, where he is answered first (`focus`). Behind a wall
+ * inside its box there is nothing to turn to, so it fights on.
  */
 export function unseenShooter(v: Perception): Point | null {
   const s = v.shotAt;
@@ -138,11 +117,8 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   const sight = botSight(snap.self.viewRadius, me.gun, me.angle, me.alive);
   const enemy = (p: PlayerView) => p.id !== me.id && (me.team === null || p.team !== me.team);
   const inSight = (p: PlayerView) => enemy(p) && !p.spawnShield && inBotSight(sight, me, p) && clearShot(solids, me, p);
-  // A flashed bot is blind: whatever the snapshot holds, it takes in no new sighting. Only stale memory (`prev.contacts`) is left.
-  const flash = snap.self.flash ?? 0;
-  const blind = flash > BLIND_AT;
-  const standing = blind ? [] : snap.players.filter((p) => p.alive && inSight(p));
-  const visible = (standing.length || !snap.royale || blind ? standing : snap.players.filter((p) => p.downed && inSight(p))).map((p) => ({ p, d: dist(p, me) }))
+  const standing = snap.players.filter((p) => p.alive && inSight(p));
+  const visible = (standing.length || !snap.royale ? standing : snap.players.filter((p) => p.downed && inSight(p))).map((p) => ({ p, d: dist(p, me) }))
     .sort((a, b) => danger(b.p) - danger(a.p) || a.d - b.d);
 
   const seen = new Set(visible.map((t) => t.p.id));
@@ -162,14 +138,14 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
     const team = teamOf.get(owner);
     return team !== undefined ? team !== me.team : !mateMarks.some((m) => dist(m, at) < MATE_MARK_PX);
   };
-  // Gunfire is heard, not seen: a rough place (`snap.heard`, blurred by distance) within a bot's earshot (`BOT_HEARING`, wider than a person's), never a minimap dot. A flashed bot is deaf.
-  const heardNow: Lead[] = blind ? [] : (snap.heard ?? []).map((h) => ({ x: h.x, y: h.y, tick, hunted: false }));
+  // Gunfire is heard, not seen: a rough place (`snap.heard`, blurred by distance) within a bot's earshot (`BOT_HEARING`, wider than a person's), never a minimap dot.
+  const heardNow: Lead[] = (snap.heard ?? []).map((h) => ({ x: h.x, y: h.y, tick, hunted: false }));
   let hitTick = prev.hitTick;
   let hitBy = prev.hitBy && (tick - prev.hitBy.tick) * TICK_MS < SHOOTER_MS ? prev.hitBy : null;
   let shotAt = prev.shotAt && (tick - prev.shotAt.tick) * TICK_MS < SHOT_AT_MS ? prev.shotAt : null;
   for (const e of snap.events) {
     // Rounds fired its way: it hears where they came from, exactly enough to read the line to get off (where to search is the rough `heardNow` above).
-    if (e.e === 'shot' && !blind && hostile(e.owner, e) && (!e.silenced || earDist(e.x - me.x, e.y - me.y) <= BOT_HEARING.silencedPx)) {
+    if (e.e === 'shot' && hostile(e.owner, e) && (!e.silenced || earDist(e.x - me.x, e.y - me.y) <= BOT_HEARING.silencedPx)) {
       const d = dist(e, me);
       const off = Math.atan2(me.y - e.y, me.x - e.x) - e.angle;
       if (d <= GUNS[e.gun].range && Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) < Math.atan2(WORLD.playerRadius * SHOT_AT_BODIES, d)) shotAt = { x: e.x, y: e.y, tick, owner: e.owner, gun: e.gun };
@@ -189,24 +165,21 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   const threats = shooting.size ? [...visible].sort((a, b) => shoots(b.p) - shoots(a.p)) : visible;
   const shooters = threats.filter((t) => shooting.has(t.p.id)).map((t) => t.p.id);
   const heard = [...heardNow, ...prev.heard.filter((h) => (tick - h.tick) * TICK_MS < HEARD_MS && !heardNow.some((n) => dist(n, h) < HEARD_SAME_PX))];
-  const marks: Lead[] = blind ? [] : snap.minimap
+  // Enemy marks on the minimap (a Tracker mark, a hunted ping, a radar tag) are leads like heard gunfire.
+  const marks: Lead[] = snap.minimap
     .filter((m) => me.team === null || m.team !== me.team)
     .map((m) => ({ x: m.x, y: m.y, tick, hunted: m.pingAge !== null }));
   const leads = [...marks, ...heard];
   const nearest = (xs: readonly Lead[]) => xs.reduce<Lead | null>((best, l) => (best && dist(best, me) <= dist(l, me) ? best : l), null);
   const lead = nearest(leads.filter((l) => l.hunted)) ?? nearest(leads);
 
-  const flashes = snap.thrown.filter((t) => t.kind === 'flashbang' && dist(t, me) <= FLASH.radius + 120 && clearShot(solids, me, t));
-  const nades = flashes.map((t) => ({ id: t.id, tick: prev.nades?.find((n) => n.id === t.id)?.tick ?? tick }));
-  const noticed = flashes.find((t) => (t.owner === me.id || noticesThrow(t.id, me.id)) && (tick - (nades.find((n) => n.id === t.id)?.tick ?? tick)) * TICK_MS >= (t.owner === me.id ? 0 : NOTICE_MS));
   const lastSeen = live.filter((c) => !seen.has(c.id)).reduce<Contact | null>((best, c) => (best && best.seenTick >= c.seenTick ? best : c), null);
   return {
-    awareness: { contacts: live, heard, mates, hitTick, nades, shotAt, hitBy },
+    awareness: { contacts: live, heard, mates, hitTick, shotAt, hitBy },
     view: {
       tick, me, self: snap.self, weapon: GUNS[me.gun].base, hpFrac: me.hp / me.maxHp, team: me.team,
       threats, lastSeen, lead, underFire: (tick - hitTick) * TICK_MS <= UNDER_FIRE_MS || snap.self.suppression >= SUPPRESSED_UNDER_FIRE, zones: snap.zones, solids, allies: mates,
-      flash, incomingFlash: noticed ? { x: noticed.x, y: noticed.y } : null, shotAt, ...(shooters.length && { shooters }),
-      smokes: snap.thrown.filter((t) => t.kind === 'smokeCloud').map((t) => ({ x: t.x, y: t.y, r: t.r })),
+      shotAt, ...(shooters.length && { shooters }),
     },
   };
 }

@@ -23,7 +23,7 @@ const PERK_SHORT: Record<PerkId, string> = {
   optics: 'Optics', thermal: 'Thermal', ghillie: 'Ghillie', piercing: 'Piercing', extended: 'Ext. mag',
   grip: 'Grip', silencer: 'Silencer', lightweight: 'Light', longRange: 'Range', quickReload: 'Reload', choke: 'Choke', shield: 'Shield', thickSkin: 'Thick skin',
   firstAid: 'First aid', grenade: 'Grenade', fragGrenade: 'Frag', gasGrenade: 'Gas', landMine: 'Mine', knife: 'Knife',
-  engineer: 'Engineer', dash: 'Dash', flashbang: 'Flash', smokeGrenade: 'Smoke',
+  engineer: 'Shield', dash: 'Dash', radar: 'Radar', healPole: 'Heal pole',
   marathon: 'Marathon', steadyHands: 'Steady', secondWind: '2nd wind', adrenaline: 'Rush', bloodlust: 'Bloodlust', recon: 'Recon', ninja: 'Ninja',
   overclock: 'Overclock', demolitions: 'Demo', fastHands: 'Hands', tracker: 'Tracker', brace: 'Brace',
 };
