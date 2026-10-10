@@ -5,7 +5,7 @@ import { circleBlocked, circleHitsRect, segmentBlocked, type Rect } from '../../
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { aimAndTrigger, aimSigma, bearingSpin, drift, engage, freshAim, HANDS, intercept, MUZZLE_PX, SHARPNESS, TICK_MS, type Engagement, type Look } from './aim.ts';
 import type { BotArena } from './arena.ts';
-import { findPath, isOpen, walkable, withSolids, type NavGrid, type Point } from './nav.ts';
+import { findPath, walkable, withSolids, type NavGrid, type Point } from './nav.ts';
 import { ABILITY_RULES, HURTING_HP_FRAC, type Situation } from './motor.ts';
 
 export const DEAD_ZONE = 30;
@@ -217,10 +217,10 @@ function wayTo(arena: BotArena, core: { x: number; y: number }, buildings: reado
     SQUAD_NAV.set(arena, cached);
   }
   let path = findPath(cached.nav, me, to, MAX_EXPANSIONS);
-  // A bot may stand closer to the core or a building than the grid's cells allow (`NAV_SLACK` rounds them out to whole cells), and a route from a shut cell starts at
-  // whichever open cell is nearest, which can lie behind it: the bot would turn round for it, step back into the open, and set off forward again.
-  // So the way runs from where the bot stands, past the legs it can walk straight by.
-  if (path && !isOpen(cached.nav, me)) {
+  // A route starts at the centre of the bot's own cell, or, when the bot stands closer to the core or a building than the grid's cells allow
+  // (`NAV_SLACK` rounds them out to whole cells), at whichever open cell is nearest. Either can lie behind it: the bot would turn round for a step
+  // and set off forward again, a shuttle past every building corner. So the way runs from where the bot stands, past the legs it can walk straight by.
+  if (path) {
     const solids = squadSolids(core, buildings);
     let i = 0;
     while (i + 1 < path.length && clearWalk(arena.nav, solids, me, path[i + 1]!)) i++;
