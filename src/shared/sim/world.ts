@@ -130,8 +130,6 @@ export type Bullet = {
   lobbed: boolean;
   /** Players it can still pass through, and the ones it already has. */
   penetrate: number; passed: number[];
-  /** Zombies only: the zombies it may still pass through before `penetrate` counts (`ZombieRole.pierce`), set at its first zombie. */
-  zpierce?: number;
   /** The tick a player's round was fired on, which groups a shotgun's pellets into one blast. */
   volley?: number;
   /** Players this round already suppressed in passing, so each feels it once. */

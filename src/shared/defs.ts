@@ -819,39 +819,37 @@ export const isBoss = (kind: ZombieKind) => ZOMBIES[kind].pack === 1;
  * Zombies only: what a gun does to the horde beyond its numbers, so each class has a job against it that matches its job in versus. Nothing here is
  * read outside a zombies run, and none of it touches a player. A player's own round, blast or kill is judged by the gun in their hand:
  * - `vs`: its harm to a kind is multiplied by this (a sniper's to the heavies, a pistol's and an SMG's to runners).
- * - `pierce`: how many zombies each round passes through, on top of the bodies the gun's `penetrate` already lets it pass.
  * - `plate`: the share of a zombie's plate that comes off each of its rounds (an assault rifle's steady rounds strip half of it).
  * - `slow`: each hit holds the zombie to `mul` of its pace for `ms` (an LMG's suppression; a shotgun's stagger, stronger and shorter); the strongest hold wins.
  *   Brutes and the Colossus, which take no shove (`KNOCK.zombie`), shrug holds off too.
  * - `shove`: scales the knockback its hits give a zombie (`KNOCK.zombie`).
  * - `blast`: scales its blast's harm to the horde; `blastPlated` what of that a plated zombie or the Colossus takes (their plate turns shrapnel).
  * - `mend`: how much faster than anyone else its holder repairs buildings and reloads turrets with use (a sidearm leaves the hands free); the core mends at the plain rate.
- * - `oneShot`: kinds any of its rounds kills outright, at any range and on any night, through every body it pierces (a bolt-action's round through a file of walkers).
+ * A round passes through zombies exactly as it passes through players (the gun's own `penetrate`), the same as in every other mode.
  * `perk` is the one line the loadout step and the HUD show for it.
  */
 export type ZombieRole = {
-  perk: string; vs: Partial<Record<ZombieKind, number>>; pierce: number; plate: number; slow: { mul: number; ms: number } | null; shove: number;
-  blast: number; blastPlated: number; mend: number; oneShot: readonly ZombieKind[];
+  perk: string; vs: Partial<Record<ZombieKind, number>>; plate: number; slow: { mul: number; ms: number } | null; shove: number;
+  blast: number; blastPlated: number; mend: number;
 };
-const ZROLE_BASE: Omit<ZombieRole, 'perk'> = { vs: {}, pierce: 0, plate: 1, slow: null, shove: 1, blast: 1, blastPlated: 1, mend: 1, oneShot: [] };
+const ZROLE_BASE: Omit<ZombieRole, 'perk'> = { vs: {}, plate: 1, slow: null, shove: 1, blast: 1, blastPlated: 1, mend: 1 };
 const HEAVIES = { brute: 1.3, plated: 1.3, colossus: 1.3 } as const;
 export const ZOMBIE_CLASS_ROLES: Record<WeaponId, ZombieRole> = {
   pistol: { ...ZROLE_BASE, perk: 'Field mechanic: repairs and reloads 60% faster, x1.5 vs runners', vs: { runner: 1.5 }, mend: 1.6 },
   smg: { ...ZROLE_BASE, perk: 'Runner hunter: x1.75 vs runners, repairs and reloads 30% faster', vs: { runner: 1.75 }, mend: 1.3 },
   shotgun: { ...ZROLE_BASE, perk: 'Crowd breaker: staggers and shoves packs, x1.8 vs walkers and runners', vs: { walker: 1.8, runner: 1.8 }, slow: { mul: 0.35, ms: 700 }, shove: 2 },
   assault: { ...ZROLE_BASE, perk: 'Long-range anchor: x1.8 vs bloaters, rounds ignore half of plating', plate: 0.5, vs: { bloater: 1.8 } },
-  sniper: { ...ZROLE_BASE, perk: 'Lane breaker: pierces 6, one-shots walkers and runners, x1.3 vs heavies', pierce: 6, vs: HEAVIES, oneShot: ['walker', 'runner'] },
+  sniper: { ...ZROLE_BASE, perk: 'Heavy hitter: x1.3 vs brutes, plated, bosses', vs: HEAVIES },
   lmg: { ...ZROLE_BASE, perk: 'Suppressor: hits slow zombies to 70%', slow: { mul: 0.7, ms: 450 } },
 };
-/** Evolutions whose job against the horde differs from their class's: the rails and piercing guns, and the explosive guns. */
+/** Evolutions whose job against the horde differs from their class's: the rails, the marksman rifles and the explosive guns. */
 const ZOMBIE_GUN_ROLES: Partial<Record<GunId, ZombieRole>> = {
-  railSlug: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'Rail: pierces 3 zombies, x1.4 vs brutes, plated, bosses', pierce: 3, vs: { brute: 1.4, plated: 1.4, colossus: 1.4 }, oneShot: [] },
-  executioner: { ...ZOMBIE_CLASS_ROLES.pistol, perk: 'Pierces 2 zombies, x1.3 vs brutes, plated, bosses', pierce: 2, vs: { brute: 1.3, plated: 1.3, colossus: 1.3 } },
+  railSlug: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'Rail: x1.4 vs brutes, plated, bosses', vs: { brute: 1.4, plated: 1.4, colossus: 1.4 } },
+  executioner: { ...ZOMBIE_CLASS_ROLES.pistol, perk: 'x1.3 vs brutes, plated, bosses', vs: { brute: 1.3, plated: 1.3, colossus: 1.3 } },
   // The quick-firing marksman rifles already pour rounds in: the heavies take a smaller bonus from them than from a bolt's one big round.
-  semiAuto: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'Pierces 3 zombies, x1.2 vs brutes, plated, bosses', pierce: 3, vs: { brute: 1.2, plated: 1.2, colossus: 1.2 }, oneShot: [] },
-  ghost: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'Pierces 3 zombies, x1.2 vs brutes, plated, bosses', pierce: 3, vs: { brute: 1.2, plated: 1.2, colossus: 1.2 }, oneShot: [] },
-  repeater: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'Pierces 3 zombies, x1.2 vs brutes, plated, bosses', pierce: 3, vs: { brute: 1.2, plated: 1.2, colossus: 1.2 }, oneShot: [] },
-  ripper: { ...ZOMBIE_CLASS_ROLES.smg, perk: 'Pierces 2 zombies, x1.5 vs runners', pierce: 2 },
+  semiAuto: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'x1.2 vs brutes, plated, bosses', vs: { brute: 1.2, plated: 1.2, colossus: 1.2 } },
+  ghost: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'x1.2 vs brutes, plated, bosses', vs: { brute: 1.2, plated: 1.2, colossus: 1.2 } },
+  repeater: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'x1.2 vs brutes, plated, bosses', vs: { brute: 1.2, plated: 1.2, colossus: 1.2 } },
   boomSlug: { ...ZROLE_BASE, perk: 'Blasts packs (x1.3); plated shrug off half', blast: 1.3, blastPlated: 0.5 },
   grenadier: { ...ZROLE_BASE, perk: 'Blasts packs (x1.3); plated shrug off half', blast: 1.3, blastPlated: 0.5 },
   artillery: { ...ZROLE_BASE, perk: 'Blasts packs (x1.3); plated shrug off half', blast: 1.3, blastPlated: 0.5 },

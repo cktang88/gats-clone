@@ -83,42 +83,20 @@ test('a kill pays the zombie\'s scrap times the killer\'s gun bounty, in the ban
   assert.equal(t.run!.scrap - before, ZOMBIES.walker.scrap);
 });
 
-test('a sniper round pierces a line of zombies; a pistol round stops in the first', () => {
-  const w = nightWorld();
-  const p = spawnAt(w, X, Y);
-  const line = [0, 1, 2, 3, 4].map((i) => addZombie(w, 'walker', X, Y + 120 + i * 45, 1000));
-  shootOnce(w, p, DOWN);
-  assert.deepEqual(line.map((z) => 1000 - z.hp).map(r6), [GUNS.pistol.damage * HORDE_GUN_MUL, 0, 0, 0, 0].map(r6));
-  const v = nightWorld();
-  const s = spawnAt(v, X, Y);
-  equip(s, 'sniper');
-  // Walkers die to the bolt's round outright, so each one it reached is gone or hurt; the one after the last it may pass is untouched.
-  const row = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => stand(addZombie(v, 'walker', X, Y + 120 + i * 45, 1000)));
-  // A bolt-action is pinpoint once planted and steady, so it stands a moment first.
-  press(v, s, { angle: DOWN });
-  run(v, 600);
-  shootOnce(v, s, DOWN, 600);
-  const pierce = zombieRole('sniper').pierce;
-  assert.ok(pierce >= 5, `a bolt-action pierces ${pierce}`);
-  assert.deepEqual(row.map((z) => z.hp < 1000), row.map((_, i) => i <= pierce), `the round passes ${pierce} and stops in the next`);
-});
-
-test('a bolt-action one-shots every walker and runner in its lane, far out on the Tide', () => {
-  const w = nightWorld();
-  w.run!.night = 10;
-  const s = spawnAt(w, X, Y);
-  equip(s, 'sniper');
-  const lane = [0, 1, 2, 3, 4, 5, 6].map((i) => stand(addZombie(w, i % 2 ? 'runner' : 'walker', X, Y + 300 + i * 40, zombieMaxHp(i % 2 ? 'runner' : 'walker', 10, 1))));
-  press(w, s, { angle: DOWN });
-  run(w, 600);
-  shootOnce(w, s, DOWN, 900);
-  assert.deepEqual(lane.map((z) => w.zombies.includes(z)), lane.map(() => false), 'one round, seven dead, out to 540 px');
-  const semi = nightWorld();
-  const q = spawnAt(semi, X, Y);
-  equip(q, 'repeater');
-  const z = addZombie(semi, 'walker', X, Y + 200, 5000);
-  shootOnce(semi, q, DOWN, 400);
-  assert.ok(z.hp > 0, 'a quick-firing marksman rifle earns no one-shot');
+test('a round passes through zombies exactly as it passes through players: a bolt-action stops in the first, the Piercer goes through its three', () => {
+  const through = (gun: GunId) => {
+    const w = nightWorld();
+    const p = spawnAt(w, X, Y);
+    equip(p, gun);
+    const row = [0, 1, 2, 3, 4, 5].map((i) => stand(addZombie(w, 'walker', X, Y + 120 + i * 45, 5000)));
+    press(w, p, { angle: DOWN });
+    run(w, 600);
+    shootOnce(w, p, DOWN, 600);
+    return row.filter((z) => z.hp < 5000).length;
+  };
+  for (const gun of ['pistol', 'sniper', 'longshot', 'semiAuto', 'railSlug', 'executioner', 'ripper', 'piercer'] as const) {
+    assert.equal(through(gun), 1 + (GUNS[gun].penetrate ?? 0), `${gun} hits its first zombie and as many more as it pierces players`);
+  }
 });
 
 test('kinds take each class\'s multiplier, plating comes off by the role, and blasts lose half to plate', () => {

@@ -12,7 +12,7 @@ import { damageProp, propMedals, propsInBlast } from './props.ts';
 import { blastTargets, targetHits } from './targets.ts';
 import { damageZombie } from './run.ts';
 import { blastShove, bulletShove, shovePlayer, shoveZombie } from './knock.ts';
-import { blastOnZombie, holdZombie, roundOnZombie, zombiePierce, zombieShove } from './zomroles.ts';
+import { blastOnZombie, holdZombie, roundOnZombie, zombieShove } from './zomroles.ts';
 import { addScore, effectiveStats, falloffMul, hasPerk, isHunted, PERK_RULES } from './stats.ts';
 import { areFriends, barrelRect, crateRect, friendly, propRect, propSolid, type Bullet, type Crate, type Player, type Pose, type Shooter, type Wall, type World } from './world.ts';
 
@@ -363,7 +363,7 @@ export function explode(w: World, x: number, y: number, radius: number, maxDamag
   }
 }
 
-type BulletHit = { t: number | null; victim: { id: number } | null; apply: (x: number, y: number) => void; /** The victim is a zombie. */ zombie?: true };
+type BulletHit = { t: number | null; victim: { id: number } | null; apply: (x: number, y: number) => void };
 
 /** Backs the blast off the surface it struck, so the wall it hit does not shelter the side the bullet came from. */
 const BLAST_STANDOFF = 2;
@@ -440,7 +440,7 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
     ...w.zombies
       .filter((z) => !b.passed.includes(z.id) && Math.abs(z.x - b.x - dx / 2) <= Math.abs(dx) / 2 + ZOMBIES[z.kind].radius && Math.abs(z.y - b.y - dy / 2) <= Math.abs(dy) / 2 + ZOMBIES[z.kind].radius)
       .map((z) => ({
-        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z, zombie: true as const,
+        t: segmentEntersCircleAt(b.x, b.y, dx, dy, z.x, z.y, ZOMBIES[z.kind].radius), victim: z,
         apply: (x: number, y: number) => {
           // A turret's round has no gun; a player's round is judged by its gun's job against the horde (`ZombieRole`).
           damageZombie(w, z, roundOnZombie(z, b.gun, b.damage * fell(x, y), b.piercing), owner, b.turret ?? 'hit');
@@ -454,8 +454,6 @@ function moveBullet(w: World, b: Bullet, dt: number, view: View): boolean {
     const x = b.x + dx * hit.t, y = b.y + dy * hit.t;
     if (!hit.victim || b.penetrate === 0) suppressAlong(w, b, dx * hit.t, dy * hit.t, view);
     hit.apply(x, y);
-    // A round that pierces the horde passes its first zombies without spending the bodies its gun may pass (only zombies ever set `zpierce`).
-    if (hit.zombie && (b.zpierce ??= zombiePierce(b.gun)) > 0) { b.zpierce--; b.passed.push(hit.victim!.id); continue; }
     if (!hit.victim || b.penetrate === 0) return stopBullet(w, b, x, y, owner, view);
     b.penetrate--;
     b.passed.push(hit.victim.id);
