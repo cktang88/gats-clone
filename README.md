@@ -419,6 +419,15 @@ Every human has an account-level profile (a signed-in account's, or a guest's un
   - **What's new** is `src/client/changelog.ts`. When a change ships that players will notice, add a short plain line at the top of the newest day (or a new day above it), and keep the list to about 20 lines by dropping the oldest.
   - `src/client/config.ts` holds `DISCORD_URL`, the community invite; the bottom bar's Discord link stays hidden while it is empty. Feedback links (menu, death card, pause menu) mail `halberd8@gmail.com` with the mode, map, screen and browser filled in (`contact.ts`).
 
+## Performance
+`node scripts/bench-tick.ts [mode] [maps] [humans] [players] [seconds]` runs a full room in one process the way `room.ts` ticks it and prints ms per tick split into bot think, step, snapshot build and encode, with snapshot bytes per player. The October 2026 pass, 1 person and 17 bots on airbase, wasteland and embassy (4-core box, other loads running, so medians):
+
+- **Step**: about 1.1 to 0.7 ms a tick. Swing doors read their shut leaves from a cache (built once per door, with a box to skip far bodies), and who is alive or walking is read once for all doors. `coverRects` and `solidRects` are kept per world and handed out again while walls, crates, barrels, props and buildings are unchanged, rather than a fresh 150 to 700-wall copy for every player's move. `w.walls` keeps its array while no wall expires. A rewound shot uses the walls array its history frames share, rather than a deduplicated copy.
+- **Encode**: about 0.13 to 0.08 ms per player a tick. Numbers are rounded into a copy that plain `JSON.stringify` writes (a replacer function is three times slower). Sticky fields are compared with what was last sent in place, rather than stringified every tick. The output is the same to the byte (`test/wire-encoder.test.ts`).
+- **Whole tick**: median about 2.0 to 1.5 ms with 1 person (about 6% to 4.5% of a core), and 3.0 to 2.0 ms with 8. A room with no humans does not tick (4 empty rooms are under 1% of a core in all).
+- **Bytes**: about 1.1 KB a snapshot, 33-40 KB/s per player. `SKIRMISH_DEFLATE=1` turns on permessage-deflate, which brings that to 4-6 KB/s for about 1% of a core per player. It is off by default: when the event loop is saturated (the e2e test's 8x speed), sockets waiting on zlib build a backlog, and the stall rule cuts them off. `measure-bandwidth.ts` prints the bytes that cross the socket.
+- **Client**: `PROFILE=<file> DPR=3 node .claude/skills/verify/scripts/frametime.ts "$RUN" 15 852 393` also records a CPU profile and logs the main thread's top self time and GC pauses. In headless Chrome without a GPU, most frame time is raster. In JS, the CPU fallback for the night light (`drawNightFx`, whose two full-view composites stand in for the WebGL lighting pass) and blurred loose shadows lead. Snapshot decode is about 0.1%, and GC runs 1 to 2.5 short pauses a second. `matchMedia` queries made several times a frame (about 3.4 ms/s) are now made once.
+
 ## Verify
 
 ```bash
