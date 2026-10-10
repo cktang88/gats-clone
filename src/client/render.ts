@@ -20,7 +20,7 @@ import { drawGains } from './pickups.ts';
 import { drawZoneFloor, drawZoneOverlay, zonesOf } from './zoneart.ts';
 import { drawRangeFloor, drawTargets, layoutOf } from './targetart.ts';
 import { drawReachFloor, drawReachOverlay, reachOf } from './rangeline.ts';
-import { drawBarrels, drawArenaLight, drawBeacon, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
+import { drawBarrels, drawArenaLight, drawBeacon, drawDropLabels, drawGoldShine, drawParachute, drawPlaneShadow } from './arenafx.ts';
 import { drawHeldGun, heldHands, muzzleTip } from './gunart.ts';
 import { cosLook, RARITY_INK } from './cosmeticlook.ts';
 import { nameInk } from './nametag.ts';
@@ -177,6 +177,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawRadios(ctx, now, view, dark, reducedMotion());
   if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
   drawBeacon(ctx, snap.airdrop, airClock, now, view);
+  drawDropLabels(ctx, snap.crates, !!snap.royale, now, view);
   drawPlaneShadow(ctx, snap.airdrop, airClock, view);
   if (snap.buildings && snap.run) {
     drawSiegeTops(ctx, snap.buildings.filter((b) => standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now, k);

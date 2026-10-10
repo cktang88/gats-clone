@@ -565,11 +565,52 @@ export function drawAirdropMap(ctx: CanvasRenderingContext2D, air: AirdropView |
   ctx.restore();
 }
 
+/**
+ * A plate over every standing supply crate that says what it is and what breaking it gives, so a gold box is never a mystery:
+ * a Last Squad drop gives a level and a full resupply, an airdrop a golden gun or a resupply.
+ */
+export function drawDropLabels(ctx: CanvasRenderingContext2D, crates: readonly { x: number; y: number; size: number; drop?: true }[], royale: boolean, now: number, view: View) {
+  const sub = royale ? 'Shoot it open: level up + resupply' : 'Shoot it open: golden gun or resupply';
+  for (const c of crates) {
+    if (!c.drop) continue;
+    const x = c.x + c.size / 2, y = c.y - 12 - 2 * Math.sin(now / 400);
+    if (!visible(view, x, y, 200)) continue;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '900 19px "Barlow Condensed", system-ui, sans-serif';
+    const head = 'SUPPLY DROP';
+    const w1 = ctx.measureText(head).width;
+    ctx.font = '700 14px "Barlow Condensed", system-ui, sans-serif';
+    const w2 = ctx.measureText(sub).width;
+    const w = Math.max(w1, w2) + 20, h = 44;
+    ctx.fillStyle = 'rgba(28, 31, 38, 0.88)';
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x - w / 2, y - h, w, h, 6);
+    ctx.fill();
+    ctx.stroke();
+    // A little tail down to the crate.
+    ctx.fillStyle = GOLD;
+    ctx.beginPath();
+    ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y); ctx.lineTo(x, y + 7); ctx.closePath();
+    ctx.fill();
+    ctx.font = '900 19px "Barlow Condensed", system-ui, sans-serif';
+    ctx.fillStyle = GOLD;
+    ctx.fillText(head, x, y - h + 15);
+    ctx.font = '700 14px "Barlow Condensed", system-ui, sans-serif';
+    ctx.fillStyle = '#ece6d6';
+    ctx.fillText(sub, x, y - h + 32);
+    ctx.restore();
+  }
+}
+
 /** The kill feed's line for an airdrop event, and what colour its marker takes. */
 export function airdropLine(ev: Extract<Snapshot['events'][number], { e: 'airdrop' }>): { text: string; color: string } | null {
   switch (ev.k) {
     case 'inbound': return { text: 'Supply drop inbound', color: SIGNAL };
     case 'landed': return { text: 'Supply drop has landed', color: SIGNAL };
-    case 'taken': return { text: `${ev.by ?? 'Someone'} ${ev.gold ? 'took the golden gun' : 'took the supplies'}`, color: GOLD };
+    case 'taken': return { text: `${ev.by ?? 'Someone'} ${ev.gold ? 'took the golden gun' : ev.level ? 'cracked a supply drop: level up' : 'took the supplies'}`, color: GOLD };
   }
 }

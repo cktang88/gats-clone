@@ -14,7 +14,7 @@ import { INK, shade } from './palette.ts';
 
 // ---------------------------------------------------------------------------------------------------------------- gain popups
 
-export type GainKind = 'hp' | 'ammo' | 'ability' | 'gold';
+export type GainKind = 'hp' | 'ammo' | 'ability' | 'gold' | 'level';
 export type GainIn = Partial<Record<GainKind, number>>;
 export type GainChip = { kind: GainKind; amount: number; touched: number; from: number };
 export type GainRow = { chips: GainChip[]; born: number; touched: number; push: number; pushFrom: number; pushedAt: number };
@@ -27,8 +27,8 @@ export const GAIN = { mergeMs: 350, holdMs: 950, fadeMs: 420, rise: 26, gap: 30,
 export const GAIN_LIFE_MS = GAIN.holdMs + GAIN.fadeMs;
 
 /** Each kind's icon colour (art bible: heal mint, lamp amber, spark, reward gold). */
-export const GAIN_COLOR: Record<GainKind, string> = { hp: '#8ff0c4', ammo: '#ffb347', ability: '#ffd27a', gold: '#ffd34d' };
-const ORDER: readonly GainKind[] = ['hp', 'ammo', 'ability', 'gold'];
+export const GAIN_COLOR: Record<GainKind, string> = { hp: '#8ff0c4', ammo: '#ffb347', ability: '#ffd27a', gold: '#ffd34d', level: '#ffd34d' };
+const ORDER: readonly GainKind[] = ['level', 'hp', 'ammo', 'ability', 'gold'];
 
 /** Your gains in a snapshot's events, one per `gain` event; an event that gave nothing is dropped. */
 export function gainsOf(events: readonly GameEvent[], myId: number): GainIn[] {
@@ -40,6 +40,7 @@ export function gainsOf(events: readonly GameEvent[], myId: number): GainIn[] {
     if (e.ammo && e.ammo > 0) g.ammo = e.ammo;
     if (e.ability) g.ability = 1;
     if (e.gold) g.gold = 1;
+    if (e.level) g.level = 1;
     if (Object.keys(g).length) out.push(g);
   }
   return out;
@@ -83,7 +84,7 @@ export const rowAlpha = (r: GainRow, now: number): number => {
 /** World px above the soldier's anchor the row sits: the rise of its life plus the lift newer rows gave it. */
 export const rowLift = (r: GainRow, now: number, reduced = false): number => pushOf(r, now) + (reduced ? 0.4 : 1) * GAIN.rise * easeOut((now - r.born) / GAIN_LIFE_MS);
 
-export const chipLabel = (c: Pick<GainChip, 'kind' | 'amount'>): string => (c.kind === 'ability' ? 'READY' : c.kind === 'gold' ? 'GOLDEN GUN' : `+${Math.round(c.amount)}`);
+export const chipLabel = (c: Pick<GainChip, 'kind' | 'amount'>): string => (c.kind === 'ability' ? 'READY' : c.kind === 'gold' ? 'GOLDEN GUN' : c.kind === 'level' ? 'LEVEL UP' : `+${Math.round(c.amount)}`);
 
 const FONT = '"Barlow Condensed", system-ui, sans-serif';
 const TEXT = 16, ICON = 16, PAD = 6, H = 24, CHIP_GAP = 6;

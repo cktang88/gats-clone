@@ -298,7 +298,7 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
   w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
   if (!attacker) return;
   addScore(w, attacker, w.royale ? ROYALE.crateScore : WORLD.crateScore);
-  if (c.drop) { if (w.royale) openDrop(w, attacker); else openAirdrop(w, attacker, c); }
+  if (c.drop) { if (w.royale) openDrop(w, attacker, { x: c.x + h, y: c.y + h }); else openAirdrop(w, attacker, c); }
 }
 
 /** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */
