@@ -1,11 +1,11 @@
 import { ARMORS, BARREL, byTurret, PROP_FX, PROP_KINDS, LOOT, ROYALE, STREAK, TOWER, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
-  AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, CacheView, FloorGunView, MatchView, MinimapMark, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
+  AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, CacheView, FloorGunView, FloorPlateView, MatchView, MinimapMark, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { lookReach, lookSides, NO_LOOK, type LookSides } from '../lookahead.ts';
 import { MAP_NOTICE_MS, MAPS, nextMap } from '../maps.ts';
-import { GAS_RADIUS, HEAL_POLE } from './abilities.ts';
+import { GAS_RADIUS, HEAL_POLE, spotsClaymore } from './abilities.ts';
 import { doorViews } from './doors.ts';
 import { heardShots } from './hearing.ts';
 import { empMul, propState } from './props.ts';
@@ -31,7 +31,7 @@ function isHidden(w: World, p: Player): boolean {
 }
 
 /** Hunted as `me` sees it: an enemy holding a stage-2 gun, or me holding one. A teammate's never reads as a threat. */
-const huntedFor = (w: World, me: Player, p: Player) => isHunted(w, p) && (p.id === me.id || isEnemy(me, p));
+const huntedFor = (w: World, me: Player, p: Player) => isHunted(w, p) && (p.id === me.id || (isEnemy(me, p) && !areFriends(w, me.id, p.id)));
 
 /** `[elapsedMs, totalMs]` through a reload that ends at `until`, whole ms, clamped into the reload. */
 export function reloadClock(until: number, now: number, total: number): [number, number] {
@@ -175,7 +175,9 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     .filter((t) => {
       if (t.kind !== 'claymore' || t.owner === me.id || stats.thermal) return true;
       const owner = w.players.get(t.owner);
-      return !!owner && !isEnemy(me, owner);
+      if (owner && !isEnemy(me, owner)) return true;
+      // An enemy's claymore shows only to a viewer looking right at it from near enough (`spotsClaymore`).
+      return spotsClaymore(eye.x, eye.y, eye.angle, t);
     })
     .map((t) => ({ id: t.id, kind: t.kind, x: t.x, y: t.y, r: THROWN_RADIUS[t.kind], owner: t.owner, ...(t.kind === 'claymore' && { angle: Math.round(t.angle * 100) / 100 }) }));
   const zones: ZoneView[] = w.zones.map((z) => ({ id: z.id, x: z.x, y: z.y, r: z.r, owner: z.owner, capturing: z.capturing, progress: z.progress, ...(z.crew > 0 && { crew: z.crew }), ...(z.contested && { contested: true as const }) }));
@@ -228,9 +230,10 @@ function royaleView(w: World, r: Royale, me: Player): RoyaleView {
     result: resultFor(w, r, me),
     caches: r.caches.map((c): CacheView => [
       c.id, Math.round(c.x), Math.round(c.y), c.tier, c.open ? 1 : 0,
-      !c.open && c.by != null ? Math.round(Math.min(1, (w.now - (c.since ?? w.now)) / LOOT.openMs) * 50) / 50 : 0, c.gun ? 1 : 0,
+      !c.open && c.by != null ? Math.round(Math.min(1, (w.now - (c.since ?? w.now)) / LOOT.openMs) * 50) : 0, c.gun ? 1 : 0,
     ]),
     guns: r.guns.map((g): FloorGunView => [g.id, Math.round(g.x), Math.round(g.y), g.gun]),
+    plates: r.plates.map((a): FloorPlateView => [a.id, Math.round(a.x), Math.round(a.y)]),
     towers: r.towers.map((t) => ({
       x: Math.round(t.x), y: Math.round(t.y), readyAt: w.now < t.readyAt ? t.readyAt : 0,
       ...(t.holder !== null && { holder: t.holder, progress: Math.round(Math.min(1, (w.now - t.since) / TOWER.holdMs) * 20) / 20 }),

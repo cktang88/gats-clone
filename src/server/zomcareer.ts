@@ -19,8 +19,8 @@ export type ZomWatch = {
   run: Run | null;
   /** True once the core has taken harm this night. */
   hurt: boolean;
-  /** The core's harm and survivors as last seen, to tell a bite (any harm moves one or the other). */
-  harm: number; survivors: number; phase: string;
+  /** All the core had taken as last seen (`Run.bitten`), to tell a bite: survivors also go on reinforcements, so they cannot. */
+  bitten: number; phase: string;
   /** Each Colossus alive, by id, with the players who have landed a hit of their own on it. */
   colossi: Map<number, Set<number>>;
   /** Mended health already counted from `run.mended`, by player. */
@@ -29,7 +29,7 @@ export type ZomWatch = {
   owed: Map<number, { rounds: number; repaired: number }>;
 };
 
-export const newZomWatch = (): ZomWatch => ({ run: null, hurt: false, harm: 0, survivors: 0, phase: '', colossi: new Map(), mendSeen: new Map(), owed: new Map() });
+export const newZomWatch = (): ZomWatch => ({ run: null, hurt: false, bitten: 0, phase: '', colossi: new Map(), mendSeen: new Map(), owed: new Map() });
 
 function add(out: Map<number, ZomDelta>, id: number, stat: ZomStat, n = 1) {
   let d = out.get(id);
@@ -62,14 +62,14 @@ export function watchZombies(z: ZomWatch, w: World, events: readonly GameEvent[]
   if (!run) return out;
   if (run !== z.run) {
     z.run = run; z.hurt = false; z.colossi.clear(); z.mendSeen.clear();
-    z.harm = run.harm; z.survivors = run.survivors; z.phase = run.phase.k;
+    z.bitten = run.bitten; z.phase = run.phase.k;
   }
   const turned = z.phase !== run.phase.k;
   if (run.phase.k === 'night') {
     if (turned) z.hurt = false;
-    else if (run.harm !== z.harm || run.survivors !== z.survivors) z.hurt = true;
+    else if (run.bitten !== z.bitten) z.hurt = true;
   }
-  z.harm = run.harm; z.survivors = run.survivors;
+  z.bitten = run.bitten;
   z.phase = run.phase.k;
   for (const zb of w.zombies) if (zb.kind === 'colossus' && !z.colossi.has(zb.id)) z.colossi.set(zb.id, new Set());
   for (const e of events) {

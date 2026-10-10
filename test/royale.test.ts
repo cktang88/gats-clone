@@ -293,14 +293,39 @@ test('weapon cases hold guns of their tier: a class gun, a first evolution, a fi
   assert.equal(LOOT.count, 48);
 });
 
-test('the dead drop an evolved gun for whoever kills them; a class gun stays with the body', () => {
+test('the dead drop their gun and an armor plate, so every kill pays', () => {
   const w = brWorld();
   const shooter = solo(w, 1000, 1000);
   const victim = solo(w, 1200, 1000);
   victim.gun = 'handCannon';
   shootUntilDead(w, shooter, victim);
-  assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['handCannon']);
+  assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['handCannon'], 'the gun they held');
+  assert.equal(w.royale!.plates.length, 1, 'and a plate');
   const plain = solo(w, 1200, 1300);
   shootUntilDead(w, shooter, plain, Math.atan2(300, 200));
-  assert.equal(w.royale!.guns.length, 1, 'no class gun is dropped');
+  assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['handCannon', 'pistol'], 'a class gun drops too');
+  assert.equal(w.royale!.plates.length, 2);
 });
+
+test('a plate on the floor puts one plate back in a worn vest, never past full, and does nothing without a vest', () => {
+  const w = brWorld();
+  const p = solo(w, 1000, 1000);
+  const r = w.royale!;
+  r.plates = [{ id: 1, x: 1010, y: 1000 }];
+  run(w, 200);
+  assert.equal(r.plates.length, 1, 'no vest: the plate stays');
+  p.loadout = { ...p.loadout, armor: 'heavy' };
+  if (p.life.k === 'alive') p.life.armor = 20;
+  const events = collect(w, TICK_MS * 2);
+  assert.ok(p.life.k === 'alive' && p.life.armor === 20 + LOOT.platePoints, 'one plate back');
+  assert.equal(r.plates.length, 0);
+  assert.ok(events.some((e) => e.e === 'gain' && e.from === 'body' && e.armor === LOOT.platePoints));
+  if (p.life.k === 'alive') p.life.armor = 70;
+  r.plates = [{ id: 2, x: 1010, y: 1000 }];
+  run(w, 100);
+  assert.ok(p.life.k === 'alive' && p.life.armor === 72, 'never past full');
+  r.plates = [{ id: 3, x: 1010, y: 1000 }];
+  run(w, 100);
+  assert.equal(r.plates.length, 1, 'a full vest leaves it');
+});
+

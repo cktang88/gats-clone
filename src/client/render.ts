@@ -1,3 +1,4 @@
+import { syncTakeButton } from './takebutton.ts';
 import { COLORS, GUNS, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
 import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
 import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView } from '../shared/protocol.ts';
@@ -55,7 +56,7 @@ import { drawCorpses, drawZombieCorpses, liveCorpses, zombieField } from './corp
 import { flinchOf, flinchOffset } from './flinch.ts';
 import { drawFloor as drawGunFloor, drawTop as drawGunTop, gunFxOf, noteMap as noteGunMap } from './gunfx.ts';
 import { drawDropsWorld, drawRingWorld } from './royale.ts';
-import { drawCacheFloor, drawCacheOverlay, drawCaches, drawFloorGuns, drawTowerFloor, drawTowerFx, drawTowerOverlay, drawTowers, towersNeedClock } from './lootart.ts';
+import { drawCacheFloor, drawCacheOverlay, drawCaches, drawFloorGuns, drawFloorPlates, drawTowerFloor, drawTowerFx, drawTowerOverlay, drawTowers, towersNeedClock } from './lootart.ts';
 import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
 import { trackDash } from './blastfx.ts';
 import { boltScene, dropCarried, reloadScene, selfReload, stepBolt, stepReload, type ReloadFrame } from './reloadanim.ts';
@@ -183,7 +184,9 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawBarrels(ctx, snap, now, view);
   drawProps(ctx, snap, now, view);
   if (royale?.caches?.length) drawCaches(ctx, royale.caches, now, view);
-  if (royale?.guns?.length) drawFloorGuns(ctx, royale.guns, mine && mine.alive ? mine : null, now, view);
+  if (royale?.plates?.length) drawFloorPlates(ctx, royale.plates, mine && mine.alive ? mine : null, now, view);
+  const takeable = royale?.guns?.length ? drawFloorGuns(ctx, royale.guns, mine && mine.alive ? mine : null, now, view) : null;
+  syncTakeButton(takeable ? GUNS[takeable].name : null);
   drawRadios(ctx, now, view, dark, reducedMotion());
   if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
   drawBeacon(ctx, snap.airdrop, airClock, now, view);

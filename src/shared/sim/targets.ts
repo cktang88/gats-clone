@@ -1,4 +1,4 @@
-import { ARMOR_IDS, GUNS, GUN_IDS, PERK_TIERS, PROPS, BARREL, type ArmorId, type GunId, type PerkId, type Tier } from '../defs.ts';
+import { ARMOR_IDS, ARMORS, GUNS, GUN_IDS, PERK_TIERS, PROPS, BARREL, type ArmorId, type GunId, type PerkId, type Tier } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { RANGE, TARGETS, targetBody, targetPos, type RangeView, type TargetDef, type TargetView } from '../range.ts';
 import { explode } from './combat.ts';
@@ -239,6 +239,7 @@ export function setRangeLoadout(w: World, p: Player, l: RangeLoadout): boolean {
   const stats = effectiveStats(p);
   const life = p.life;
   life.hp = stats.maxHp;
+  life.armor = ARMORS[p.loadout.armor].points;
   life.ammo = stats.mag;
   life.reloadUntil = null;
   life.burstLeft = 0;

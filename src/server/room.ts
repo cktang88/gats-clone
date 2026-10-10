@@ -2,7 +2,7 @@ import type { WebSocket } from 'ws';
 import type { Player } from '../shared/sim/world.ts';
 import { CAREER_PAY, CAREER_TIERS, GUN_IDS, GUNS, MAX_LEVEL, NIGHTS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
 import { MAPS, rotationMap, type MapId } from '../shared/maps.ts';
-import { parseClientMsg, type ClientMsg, type FriendAction, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
+import { FRIEND_INVITE_SHOWN_MS, parseClientMsg, type ClientMsg, type FriendAction, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
 import { benchUntilNextMatch, enterRoyale, placeOf, redeploysOpen, seatFor, takeSeat } from '../shared/sim/royale.ts';
@@ -406,8 +406,12 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     }
   }
 
-  /** Friend invites waiting for an answer: whom each is to, and from whom. Friendships themselves live in the world (`World.friends`). */
-  const invites = new Map<number, Set<number>>();
+  /**
+   * Friend invites waiting for an answer: whom each is to, from whom, and when it was sent. One unanswered for `FRIEND_INVITE_SHOWN_MS`
+   * is gone (its plate left the invitee's screen then), so it can be sent again. Friendships themselves live in the world (`World.friends`).
+   */
+  const invites = new Map<number, Map<number, number>>();
+  const asked = (to: number, from: number) => Date.now() - (invites.get(to)?.get(from) ?? -Infinity) < FRIEND_INVITE_SHOWN_MS;
   const lastInviteAt = new Map<number, number>();
   const clientOf = (id: number) => joined().find((c) => c.playerId === id) ?? null;
   const sendFriends = (id: number) => { const c = clientOf(id); if (c) send(c.ws, { t: 'friends', ids: friendsOf(world, id) }); };
@@ -418,6 +422,9 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   function sameSide(stay: Player, move: Player) {
     if ((mode !== 'TDM' && mode !== 'DOM') || practice || stay.team === null || move.team === stay.team) return;
     move.team = stay.team;
+    // What the mover set down or fired is theirs on their new side: a claymore, cloud or pole of theirs no longer serves the old one.
+    for (const t of world.thrown) if (t.owner === move.id) t.team = stay.team;
+    for (const b of world.bullets) if (b.owner === move.id) b.team = stay.team;
     friendNote(move.id, `You joined ${stay.name}'s team.`);
     balanceBots();
   }
@@ -432,18 +439,18 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         if (!them || them.kind !== 'human' || !clientOf(other)) { friendNote(id, 'Only players can be friends.'); return; }
         if (areFriends(world, id, other)) return;
         // They asked first: inviting them back is a yes.
-        if (invites.get(id)?.has(other)) { friendMsg(client, 'accept', other); return; }
+        if (asked(id, other)) { friendMsg(client, 'accept', other); return; }
         const now = Date.now();
         if (now - (lastInviteAt.get(id) ?? -Infinity) < FRIEND_INVITE_MS) { friendNote(id, 'Slow down'); return; }
         lastInviteAt.set(id, now);
-        if (invites.get(other)?.has(id)) { friendNote(id, `Already asked ${them.name}.`); return; }
-        invites.set(other, (invites.get(other) ?? new Set()).add(id));
+        if (asked(other, id)) { friendNote(id, `Already asked ${them.name}.`); return; }
+        invites.set(other, (invites.get(other) ?? new Map()).set(id, now));
         send(clientOf(other)!.ws, { t: 'friendInvite', from: id, name: me.name });
         friendNote(id, `Friend invite sent to ${them.name}.`);
         return;
       }
       case 'accept': {
-        if (!invites.get(id)?.has(other)) return;
+        if (!asked(id, other)) return;
         dropInvite(id, other);
         dropInvite(other, id);
         if (!them) return;
@@ -456,7 +463,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
         return;
       }
       case 'decline':
-        if (!invites.get(id)?.has(other)) return;
+        if (!asked(id, other)) return;
         dropInvite(id, other);
         if (them) friendNote(other, `${me.name} declined your friend invite.`);
         return;

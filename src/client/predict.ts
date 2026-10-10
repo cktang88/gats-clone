@@ -1,4 +1,4 @@
-import { ZOM } from '../shared/defs.ts';
+import { BARREL, ZOM } from '../shared/defs.ts';
 import type { InputState, Snapshot, WallView } from '../shared/protocol.ts';
 import { cellRect, coreRectAt } from '../shared/sim/build.ts';
 import { propViewRect } from '../shared/sim/propview.ts';
@@ -38,12 +38,14 @@ const SMOOTH_MS = 60;
 export const doorsOf = (s: { mapId?: MapId }): readonly MapDoor[] | undefined => (s.mapId ? MAPS[s.mapId]?.doors : undefined);
 
 /** What stops the local player, as the server's solidRects: cover, and in a zombies run the squad's walls and the core. */
-export const solidsOf = (walls: readonly WallView[], snap: Pick<Snapshot, 'crates' | 'buildings' | 'run' | 'props' | 'doors'> | null, doors?: readonly MapDoor[]): Rect[] => [
+export const solidsOf = (walls: readonly WallView[], snap: Pick<Snapshot, 'crates' | 'buildings' | 'run' | 'props' | 'doors' | 'barrels'> | null, doors?: readonly MapDoor[]): Rect[] => [
   ...walls,
   // Door leaves, rebuilt from the map's doors and the snapshot's door state exactly as the server holds them.
   ...leavesFromViews(doors, snap?.doors),
   ...(snap?.crates ?? []).map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size })),
   ...(snap?.props ?? []).flatMap((q) => propViewRect(q) ?? []),
+  // A standing barrel (lit or not) stops a body, as `barrelRect`.
+  ...(snap?.barrels ?? []).map(([, x, y]) => ({ x: x - BARREL.size / 2, y: y - BARREL.size / 2, w: BARREL.size, h: BARREL.size })),
   // A spike strip lies on the floor and is walked over.
   ...(snap?.buildings ?? []).filter((b) => b.kind !== 'spikes').map((b) => cellRect(b.cx, b.cy)),
   ...(snap?.run ? [coreRectAt(snap.run.core)] : []),
@@ -56,7 +58,7 @@ export function selfMotion(snap: Snapshot): { at: Motion | null; speed: Pace } {
   return { at: me && (me.alive || crawling) ? { x: me.x, y: me.y, dash: snap.self.dash, ...(!crawling && snap.self.knock && { knock: snap.self.knock }) } : null, speed: crawling ? snap.self.speed * ZOM.crawlMul : { walk: snap.self.speed, sprint: snap.self.sprintSpeed ?? snap.self.speed } };
 }
 
-export function predictAbility(pred: Prediction, input: InputState, latest: Snapshot): PredictedAbility | null {
+export function predictAbility(pred: Prediction, input: InputState, latest: Snapshot, friends: ReadonlySet<number> = new Set()): PredictedAbility | null {
   const { self } = latest;
   const busy = !!pred.afterNewest?.dash || pred.pending.some((p) => p.ability);
   if (!input.ability || !self.alive || latest.match.winner !== null || self.abilityReadyIn > 0 || busy) return null;
@@ -64,7 +66,8 @@ export function predictAbility(pred: Prediction, input: InputState, latest: Snap
     case 'dash': return { k: 'dash' };
     case 'knife': {
       const team = latest.players.find((p) => p.id === self.id)?.team ?? null;
-      return { k: 'knife', enemies: latest.players.filter((p) => p.alive && p.id !== self.id && (team === null || p.team !== team)) };
+      // Friends are never knifed (the server passes over them), so the lunge is not predicted to stop at one.
+      return { k: 'knife', enemies: latest.players.filter((p) => p.alive && p.id !== self.id && (team === null || p.team !== team) && !friends.has(p.id)) };
     }
     default: return null;
   }

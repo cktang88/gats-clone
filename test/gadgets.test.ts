@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ABILITIES, HEAL_POLE, RADAR } from '../src/shared/sim/abilities.ts';
+import { ABILITIES, CLAYMORE, HEAL_POLE, RADAR } from '../src/shared/sim/abilities.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { befriend } from '../src/shared/sim/world.ts';
 import { roundPasses } from '../src/shared/protocol.ts';
@@ -74,4 +74,28 @@ test('the shield is one-way: its owner shoots out through it, and nothing shoots
   assert.ok(hp(foe) < foeFull, 'the owner\'s round goes out through the shield');
   shootOnce(w, foe, Math.PI);
   assert.equal(hp(owner), ownerFull, 'the foe\'s round stops at the shield');
+});
+
+test('an enemy claymore reaches a viewer only when they look right at it from near enough; its own side always sees it', () => {
+  const w = emptyWorld('TDM');
+  const owner = spawnAt(w, 3000, 3000, { team: 'red' });
+  const mate = spawnAt(w, 1300, 1400, { team: 'red' });
+  const foe = spawnAt(w, 1000, 1000, { team: 'blue' });
+  w.thrown.push({ id: 9001, kind: 'claymore', owner: owner.id, team: 'red', x: 1300, y: 1000, angle: Math.PI, armedAt: 0, expiresAt: w.now + 60_000 });
+  const sees = (p: P) => snapshotFor(w, p.id).thrown.some((t) => t.kind === 'claymore');
+  const look = (a: number) => { foe.angle = a; };
+  look(0);
+  assert.ok(sees(foe), 'looking straight at it, 300 px off');
+  look(Math.PI / 4 - 0.05);
+  assert.ok(sees(foe), 'just inside a 90 degree view');
+  look(Math.PI / 2);
+  assert.ok(!sees(foe), 'looking aside, it is not sent');
+  look(Math.PI);
+  assert.ok(!sees(foe), 'nor with their back to it');
+  look(0);
+  foe.x = 1300 - CLAYMORE.seePx - 30;
+  assert.ok(!sees(foe), 'nor from further than it can be made out');
+  assert.ok(CLAYMORE.seePx - CLAYMORE.reach - 14 > 0.4 * 255 * 1.65, 'spotted early enough to stop even at a sprint');
+  mate.angle = Math.PI / 2;
+  assert.ok(sees(mate), 'a teammate sees it wherever they look');
 });

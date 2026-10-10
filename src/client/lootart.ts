@@ -1,6 +1,7 @@
+import { takeKey } from './takebutton.ts';
 import { LOOT, TOWER, type LootTier } from '../shared/defs.ts';
-import type { CacheView, FloorGunView, Snapshot, TowerView } from '../shared/protocol.ts';
-import { GUNS, WORLD } from '../shared/defs.ts';
+import type { CacheView, FloorGunView, FloorPlateView, Snapshot, TowerView } from '../shared/protocol.ts';
+import { GUNS, WORLD, type GunId } from '../shared/defs.ts';
 import { drawDroppedGun } from './gunart.ts';
 import { setLight } from './lighting.ts';
 import { INK, shade, tint } from './palette.ts';
@@ -388,7 +389,7 @@ export const towersNeedClock = (towers: readonly TowerView[] | undefined) => !!t
 export function drawCacheOverlay(ctx: CanvasRenderingContext2D, caches: readonly CacheView[], view: View) {
   for (const [, x, y, tier, opened, opening] of caches) {
     if (opened || !opening || !visible(view, x, y, LOOT.size * 3)) continue;
-    const p = Math.max(0, Math.min(1, opening)), r = LOOT.size * 1.25;
+    const p = Math.max(0, Math.min(1, opening / 50)), r = LOOT.size * 1.25;
     const color = LOOT_LOOK[tier].glow;
     ctx.save();
     ctx.lineCap = 'round';
@@ -412,10 +413,12 @@ const GUN_STAGE_LOOK = [LOOT_LOOK[0].glow, LOOT_LOOK[1].glow, LOOT_LOOK[2].glow]
 
 /**
  * Guns lying on the floor (from weapon cases, swapped out, or dropped by the dead): each on a soft pool of its stage's colour, turning
- * slowly; within `nameAt` of you its name shows on a plate, and within reach to take it, `[E] TAKE`.
+ * slowly; within `nameAt` of you its name shows on a plate, and within reach to take it, `[E] TAKE` (`TAP TAKE` on a touch screen).
+ * Returns the gun within reach, nearest first, if any (for the phone's TAKE button).
  */
-export function drawFloorGuns(ctx: CanvasRenderingContext2D, guns: readonly FloorGunView[], me: { x: number; y: number } | null, now: number, view: View) {
+export function drawFloorGuns(ctx: CanvasRenderingContext2D, guns: readonly FloorGunView[], me: { x: number; y: number } | null, now: number, view: View): GunId | null {
   const reach = LOOT.takePx + WORLD.playerRadius, nameAt = 240;
+  let inReach: GunId | null = null, best = Infinity;
   for (const [id, x, y, gun] of guns) {
     if (!visible(view, x, y, 80)) continue;
     const stage = GUNS[gun].stage, color = GUN_STAGE_LOOK[stage];
@@ -433,8 +436,38 @@ export function drawFloorGuns(ctx: CanvasRenderingContext2D, guns: readonly Floo
     ctx.restore();
     if (!me) continue;
     const d = Math.hypot(me.x - x, me.y - y);
+    if (d <= reach && d < best) { inReach = gun; best = d; }
     if (d > nameAt) continue;
-    plate(ctx, d <= reach ? `[E] TAKE ${GUNS[gun].name.toUpperCase()}` : GUNS[gun].name, x, y - 30, color, d <= reach ? 1 : 0.8);
+    plate(ctx, d <= reach ? `${takeKey} TAKE ${GUNS[gun].name.toUpperCase()}` : GUNS[gun].name, x, y - 30, color, d <= reach ? 1 : 0.8);
+  }
+  return inReach;
+}
+
+const PLATE = '#9fc4ff';
+
+/** Armor plates dropped by the dead: a small steel plate glinting blue, named up close. One puts a plate's worth back in a vest short of full. */
+export function drawFloorPlates(ctx: CanvasRenderingContext2D, plates: readonly FloorPlateView[], me: { x: number; y: number } | null, now: number, view: View) {
+  for (const [id, x, y] of plates) {
+    if (!visible(view, x, y, 60)) continue;
+    ctx.save();
+    ctx.fillStyle = 'rgba(10, 12, 18, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(x + 3, y + 8, 12, 4, 0, 0, TAU);
+    ctx.fill();
+    // A curved trauma plate: a shield-like slab, steel with a blue glint along its top.
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = INK;
+    ctx.fillStyle = '#7d8693';
+    ctx.beginPath();
+    ctx.moveTo(x - 9, y - 8); ctx.lineTo(x + 9, y - 8); ctx.lineTo(x + 9, y + 2); ctx.quadraticCurveTo(x, y + 10, x - 9, y + 2); ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha *= 0.6 + 0.4 * breath(now, id);
+    ctx.fillStyle = PLATE;
+    ctx.fillRect(x - 7, y - 6, 14, 3);
+    ctx.restore();
+    if (me && Math.hypot(me.x - x, me.y - y) < 180) plate(ctx, `ARMOR PLATE +${LOOT.platePoints}`, x, y - 20, PLATE, 0.85);
   }
 }
 

@@ -94,6 +94,15 @@ function towerPost(t: TowerView, me: PlayerView, circle: Circle, arena: BotArena
 
 type Errand = { k: 'drop' | 'loot' | 'gun' | 'roam'; at: Point } | { k: 'tower'; at: Point; facing: Point };
 
+/** An armor plate on the floor, while it wears a vest short of full, inside the circle and within `GUN_REACH_PX`: the nearest such (walking over it takes it). */
+export function wantedPlate(royale: RoyaleView, me: PlayerView, circle: Circle): Point | null {
+  if (me.armorTier === 'none' || me.ap === undefined) return null;
+  const near = (royale.plates ?? []).filter((a) => inside({ x: a[1], y: a[2] }, circle, EDGE_PX) && dist(me, { x: a[1], y: a[2] }) < GUN_REACH_PX);
+  if (!near.length) return null;
+  const a = near.reduce((p, q) => (dist(me, { x: q[1], y: q[2] }) < dist(me, { x: p[1], y: p[2] }) ? q : p));
+  return { x: a[1], y: a[2] };
+}
+
 /** How far a bot walks for a better gun lying on the floor. */
 const GUN_REACH_PX = 900;
 /** A gun on the floor at a higher stage than the one in hand, inside the circle and in reach: the nearest such. */
@@ -110,6 +119,8 @@ function errandFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: C
   if (drop) return { k: 'drop', at: { x: drop.x, y: drop.y } };
   const gun = betterGun(royale, me, circle);
   if (gun) return { k: 'gun', at: gun };
+  const plate = wantedPlate(royale, me, circle);
+  if (plate) return { k: 'gun', at: plate };
   const tower = towerTarget(royale, me, circle, now);
   if (tower) { const post = towerPost(tower, me, circle, arena); return { k: 'tower', at: post.spot, facing: post.facing }; }
   const cache = lootTarget(snap, royale, me, circle);

@@ -24,8 +24,21 @@ const THROW_SPEED = 700;
  * (`reach` px, `cone` radians either side of its facing) with a clear line sets it off: `pellets` balls of shrapnel fly out across
  * `spread` radians either side of its facing, each `damage` and reaching `range`, so it only hurts what is in front of it and cover
  * stops the balls. Two at a time; it lasts `lifeMs`.
+ *
+ * Hidden: the server sends an enemy's claymore only to a viewer looking at it, within `seeFov` radians either side of their aim and
+ * `seePx` of them (`spotsClaymore`), people and bots alike. That is far enough past the trigger cone to stop or step aside even at a
+ * sprint, so one is always avoidable, but whoever runs in looking elsewhere stumbles on it.
  */
-export const CLAYMORE = { armMs: 800, reach: 190, cone: 0.7, pellets: 16, spread: 0.75, damage: 26, range: 320, lifeMs: 60_000, max: 2 } as const;
+export const CLAYMORE = { armMs: 800, reach: 190, cone: 0.7, pellets: 16, spread: 0.75, damage: 26, range: 320, lifeMs: 60_000, max: 2, seePx: 430, seeFov: Math.PI / 4 } as const;
+
+/** Whether a viewer at (x, y) aiming along `angle` spots a claymore at `t`: in their 90 degree view cone and within `CLAYMORE.seePx`. */
+export function spotsClaymore(x: number, y: number, angle: number, t: { x: number; y: number }): boolean {
+  const dx = t.x - x, dy = t.y - y, d = Math.hypot(dx, dy);
+  if (d > CLAYMORE.seePx) return false;
+  if (d < WORLD.playerRadius * 2) return true;
+  const off = Math.atan2(dy, dx) - angle;
+  return Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) <= CLAYMORE.seeFov;
+}
 
 /** Whether (x, y) is in front of claymore `t`, inside its trigger cone. */
 export function inClaymoreCone(t: { x: number; y: number; angle: number }, x: number, y: number, pad = 0): boolean {
@@ -109,7 +122,7 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
   },
   knife: (w, p) => {
     const targets = [
-      ...[...w.players.values()].filter((v) => v.life.k === 'alive' && isEnemy(p, v)).map((v) => ({
+      ...[...w.players.values()].filter((v) => v.life.k === 'alive' && isEnemy(p, v) && !areFriends(w, p.id, v.id)).map((v) => ({
         x: v.x, y: v.y, strike: () => damagePlayer(w, v, KNIFE_DAMAGE, { attacker: p, team: p.team, label: 'Knife', piercing: true, via: 'knife', fromX: p.x, fromY: p.y }),
       })),
       ...w.zombies.map((z) => ({ x: z.x, y: z.y, strike: () => damageZombie(w, z, KNIFE_DAMAGE, p) })),

@@ -59,22 +59,6 @@ export function tickTraps(w: World, dtMs: number, on: TrapWatch | null) {
   }
 }
 
-/** The health of every wall that shrugs off part of a bite (`WALL_TIERS`' `armor`), from before the horde bites. Null with none standing. */
-export function armorWatch(w: World): Map<Building, number> | null {
-  let found: Map<Building, number> | null = null;
-  for (const b of w.buildings) {
-    if (b.kind !== 'wall' || wallTier(levelOf(b)).armor <= 0) continue;
-    (found ??= new Map()).set(b, b.hp);
-  }
-  return found;
-}
-
-/** Hands back the share of what the horde took off an armoured wall that its tier turns aside. */
-export function tickArmor(w: World, was: Map<Building, number> | null) {
-  if (!was) return;
-  for (const [b, hp] of was) if (b.hp < hp && b.hp > 0 && w.buildings.includes(b)) b.hp += (hp - b.hp) * wallTier(levelOf(b)).armor;
-}
-
 const centerOf = (b: { cx: number; cy: number }) => ({ x: (b.cx + 0.5) * ZOM.cell, y: (b.cy + 0.5) * ZOM.cell });
 
 /**

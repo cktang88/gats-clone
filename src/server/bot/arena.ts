@@ -7,7 +7,7 @@ import type { WallView } from '../../shared/protocol.ts';
 import { segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { barrelRect, crateRect, createWorld, propRect, propSolid, type Crate, type Wall, type World } from '../../shared/sim/world.ts';
 import { coverIndex, type CoverIndex } from './cover.ts';
-import { addField, isOpen, navGrid, nearestOpenPoint, withSolids, type NavGrid, type Point } from './nav.ts';
+import { addField, isOpen, navGrid, nearestOpenPoint, shotWalls, withSolids, type NavGrid, type Point } from './nav.ts';
 
 export type BotArena = {
   size: number;
@@ -128,6 +128,9 @@ const dropsKey = (w: World) => dropsStanding(w).map((c) => c.id).join();
 const sameRects = (a: readonly Rect[], b: readonly Rect[]) =>
   a.length === b.length && a.every((r, i) => { const o = b[i]!; return r === o || (r.x === o.x && r.y === o.y && r.w === o.w && r.h === o.h && r.pts === o.pts); });
 
+/** Walls that block a bot's sight: not those marked see-through (`ns`), nor a one-way Shield, which anyone sees through. */
+const seeThrough = (wall: Wall) => !wall.ns && !wall.out;
+
 export function arenaFor(w: World): BotArena {
   const cached = ARENAS.get(w);
   const version = w.wallsVersion + w.doorsVersion;
@@ -135,7 +138,7 @@ export function arenaFor(w: World): BotArena {
   if (cached && cached.arena.version === version && cached.drops === drops) return cached.arena;
   if (cached && cached.wallsVersion === w.wallsVersion && cached.drops === drops) {
     // Only a door leaf moved: the same grid, cover and solids, with the leaves where they are now.
-    const arena = { ...cached.arena, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter((wall) => !wall.ns), replans: { tick: -1, left: 0 }, ...swingLeaves(w) };
+    const arena = { ...cached.arena, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter(seeThrough), replans: { tick: -1, left: 0 }, ...swingLeaves(w) };
     ARENAS.set(w, { ...cached, arena });
     return arena;
   }
@@ -148,7 +151,7 @@ export function arenaFor(w: World): BotArena {
   // A door swinging changes the version every tick it moves, but not the nav grid (doors are not in it): keep the one built for the same solids.
   const nav = cached && cached.layout === layout && sameRects(cached.solids, solids) ? cached.arena.nav : solids.length ? withSolids(layout.nav, solids, WORLD.playerRadius) : layout.nav;
   const arena: BotArena = {
-    size, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter((wall) => !wall.ns), barrels, cover: layout.cover, replans: { tick: -1, left: 0 }, doors: mapDoors(w.map), nav, ...swingLeaves(w),
+    size, version, walls: w.walls.filter((wall) => !wall.nb), sightWalls: w.walls.filter(seeThrough), barrels, cover: layout.cover, replans: { tick: -1, left: 0 }, doors: mapDoors(w.map), nav, ...swingLeaves(w),
   };
   ARENAS.set(w, { arena, layout, solids, wallsVersion: w.wallsVersion, drops });
   return arena;
@@ -226,7 +229,7 @@ export function openSpot(a: BotArena, rand: () => number, near?: { at: Point; r:
  * `'sight'` what stops the eye (glass and other see-through walls do not). Crates and barrels are not counted; add them with `extra`.
  */
 export function losClear(arena: BotArena, a: Point, b: Point, kind: 'shot' | 'sight' = 'shot', extra: readonly Rect[] = []): boolean {
-  const walls = kind === 'shot' ? arena.walls : arena.sightWalls;
+  const walls = kind === 'shot' ? shotWalls(arena.walls, b.x - a.x, b.y - a.y) : arena.sightWalls;
   return !segmentBlocked(walls, a.x, a.y, b.x - a.x, b.y - a.y) && !segmentBlocked(extra, a.x, a.y, b.x - a.x, b.y - a.y);
 }
 

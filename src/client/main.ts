@@ -10,6 +10,7 @@ import { LOOK_AHEAD, lookReach } from '../shared/lookahead.ts';
 import { createAudio } from './audio.ts';
 import { musicDuck, musicProbe, musicStart, musicUpdate, setSoundMuted, toggleMusicMuted } from './music.ts';
 import { mountRadioButton, onRoomRadio, radioPress, radioUpdate } from './radio.ts';
+import { mountTakeButton } from './takebutton.ts';
 import { noteGains } from './pickups.ts';
 import { killOf, lossOf, selfOf } from './derive.ts';
 import { walks } from '../shared/sim/movement.ts';
@@ -590,7 +591,7 @@ function sendInputTick() {
   // A hidden tab's timer is throttled to about 1 Hz: sending neutral inputs keeps the player alive, but predicting a step for each would drift far from the server.
   if (hidden) return;
   const latest = newestSnap(s.snaps);
-  const ability = latest ? predictAbility(s.predict, input, latest) : null;
+  const ability = latest ? predictAbility(s.predict, input, latest, friendsUi.ids()) : null;
   s.predict = predictInput(s.predict, { seq: s.seq, input, dtMs: INPUT_MS, ability }, solidsOf(s.walls, latest, doorsOf(s)), latest ? selfMotion(latest).speed : 0, performance.now(), s.worldSize);
 }
 
@@ -1243,6 +1244,7 @@ emoteButton.addEventListener('pointerdown', (e) => { e.preventDefault(); wheel.t
 hudEl.append(emoteButton);
 /** A phone's way to tap a radio's prompt. */
 mountRadioButton(hudEl, () => radioPress(state, performance.now(), sendRadio));
+mountTakeButton(hudEl, () => { if (state.phase === 'playing') held.add('use'); }, () => held.delete('use'));
 /** On the account's join anniversary your soldier wears a party hat (and `?party` shows it for a look). */
 async function checkAnniversary(account: string | null) {
   if (params.has('party')) { setParty(true); return; }

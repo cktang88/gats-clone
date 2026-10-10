@@ -294,13 +294,17 @@ function damageCrate(w: World, c: Crate, amount: number, attacker: Player | null
   c.hp -= amount;
   const h = c.size / 2;
   w.events.push({ e: 'dmg', attacker: attacker?.id ?? null, victim: c.id, amount: round1(dealt), x: c.x + h, y: c.y + h, kind: 'crate' });
+  // A supply drop opens only for a living player: one broken by the round or blast of someone already dead (or no one) would be
+  // wasted on them, so it holds at its last point for the next.
+  if (c.drop && attacker?.life.k !== 'alive') c.hp = Math.max(c.hp, 1);
   if (c.hp > 0) return;
   c.respawnAt = w.royale || c.drop ? Infinity : w.now + CRATE_RESPAWN_MS;
   w.wallsVersion++;
   w.events.push({ e: 'boom', x: c.x + h, y: c.y + h, r: c.size });
   if (!attacker) return;
-  addScore(w, attacker, w.royale ? ROYALE.crateScore : WORLD.crateScore);
+  // A supply drop's own pay is the skip to the next level pick; a crate's score on top could carry the opener a level further first.
   if (c.drop) { if (w.royale) openDrop(w, attacker, { x: c.x + h, y: c.y + h }); else openAirdrop(w, attacker, c); }
+  else addScore(w, attacker, w.royale ? ROYALE.crateScore : WORLD.crateScore);
 }
 
 /** What a moving bullet or blast is judged against: live positions, or the rewound world a lagged shooter saw. */

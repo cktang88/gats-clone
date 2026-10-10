@@ -3,7 +3,7 @@ import { damagePlayer } from './combat.ts';
 import { clamp, decayKnock, dist2, rectsOverlap, segmentBlocked, slide, type Rect } from './movement.ts';
 import { aiOf, BOID, buildGrid, LURE, personality, steer, type ZAi } from './boids.ts';
 import { MAPS } from '../maps.ts';
-import { cellRect } from './build.ts';
+import { cellRect, levelOf, wallTier } from './build.ts';
 import { paceOf } from './zomroles.ts';
 import { coreRect, coverRects, solidRects, type Building, type Player, type Run, type World, type Zombie } from './world.ts';
 
@@ -114,6 +114,7 @@ export const distToRect = (x: number, y: number, r: Rect) => Math.sqrt(dist2(x, 
 
 export function hurtCore(run: Run, amount: number) {
   run.core.hp = Math.max(0, run.core.hp - amount);
+  run.bitten += amount;
   run.harm += amount;
   const lost = Math.min(run.survivors, Math.floor(run.harm / ZOM.survivorHp));
   run.harm -= lost * ZOM.survivorHp;
@@ -278,7 +279,7 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
       wall = next === null ? undefined : wallAt.get(next);
       ai.tgt = wall ? 'wall' : 'core';
       if (wall) {
-        if (distToRect(z.x, z.y, cellRect(wall.cx, wall.cy)) <= reach) { const b = wall; bite = () => biteBuilding(w, b, damage * def.buildingDamageMul); return null; }
+        if (distToRect(z.x, z.y, cellRect(wall.cx, wall.cy)) <= reach) { const b = wall; bite = () => biteBuilding(w, b, damage * def.buildingDamageMul * (b.kind === 'wall' ? 1 - wallTier(levelOf(b)).armor : 1)); return null; }
       }
       if (next === null) {
         // Standing in a cell cover clips: head for the cheapest open cell within two of it, else straight on.

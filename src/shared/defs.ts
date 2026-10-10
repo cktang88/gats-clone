@@ -399,7 +399,7 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   brace: { name: 'Brace', desc: 'Take 60% less knockback and deal 15% more' },
   fragGrenade: { name: 'Frag grenade', desc: 'Explodes into shrapnel' },
   gasGrenade: { name: 'Gas grenade', desc: 'Lingering damage cloud' },
-  claymore: { name: 'Claymore', desc: 'A hidden trap facing your aim: anyone stepping in front of it eats a fan of shrapnel. Two at a time' },
+  claymore: { name: 'Claymore', desc: 'A trap facing your aim: anyone stepping in front of it eats a fan of shrapnel. Enemies only spot it looking right at it up close. Two at a time' },
   knife: { name: 'Knife', desc: 'Lunge melee strike' },
   engineer: { name: 'Shield', desc: 'A one-way energy wall where you aim, 10s: you shoot out through it, nothing shoots in' },
   dash: { name: 'Dash', desc: 'Burst of speed' },
@@ -1093,6 +1093,8 @@ export const LOOT = {
   weaponShare: 0.3,
   /** How close to stand to a gun on the floor to take it with E, and the least time between two takes; at most `maxGuns` lie about at once. */
   takePx: 46, takeCooldownMs: 600, maxGuns: 40,
+  /** The armor points one plate dropped by the dead puts back (a light vest's whole pool), up to the vest's full; it does nothing without a vest. */
+  platePoints: 16,
   tiers: [
     { name: 'Common', weight: 0.64, score: 90, heal: 0, armorUp: 0, pick: false },
     { name: 'Rare', weight: 0.29, score: 220, heal: 45, armorUp: 1, pick: false },

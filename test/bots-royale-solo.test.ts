@@ -96,3 +96,30 @@ test('a bot walks to a better gun lying on the floor and takes it, leaving its o
   assert.ok(Number.isFinite(took), `took the gun (has ${bot.gun})`);
   assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['pistol'], 'its old gun lies where it stood');
 });
+
+test('a bot whose vest is worn walks over to an armor plate a dead player left, and fills up', () => {
+  const w = soloWorld();
+  const bot = spawnAt(w, 1200, 1200, { kind: 'bot' });
+  bot.loadout = { ...bot.loadout, armor: 'medium' };
+  if (bot.life.k === 'alive') bot.life.armor = 10;
+  w.royale!.plates = [{ id: 900_020, x: 1550, y: 1350 }];
+  const mems = new Map([[bot.id, newBotMemory(() => 0.5)]]);
+  assert.ok(Number.isFinite(drive(w, mems, 15_000, () => w.royale!.plates.length === 0)), 'took the plate');
+  assert.ok(bot.life.k === 'alive' && bot.life.armor === 10 + LOOT.platePoints, `armor ${bot.life.k === 'alive' ? bot.life.armor : 0}`);
+});
+
+test('a bot that spots an enemy claymore on its way walks round it, and takes what it was after unhurt', () => {
+  const w = soloWorld();
+  const bot = spawnAt(w, 1200, 1200, { kind: 'bot' });
+  bot.loadout = { ...bot.loadout, armor: 'medium' };
+  if (bot.life.k === 'alive') bot.life.armor = 10;
+  const owner = spawnAt(w, 4200, 4200);
+  w.royale!.plates = [{ id: 900_030, x: 1800, y: 1200 }];
+  // Square across its way, facing it.
+  w.thrown.push({ id: 900_031, kind: 'claymore', owner: owner.id, team: null, x: 1560, y: 1200, angle: Math.PI, armedAt: 0, expiresAt: w.now + 60_000 });
+  const hp = bot.life.k === 'alive' ? bot.life.hp : 0;
+  const mems = new Map([[bot.id, newBotMemory(() => 0.5)]]);
+  assert.ok(Number.isFinite(drive(w, mems, 20_000, () => w.royale!.plates.length === 0 || bot.life.k !== 'alive')), 'got there');
+  assert.ok(w.thrown.some((t) => t.kind === 'claymore'), 'the claymore never went off');
+  assert.ok(bot.life.k === 'alive' && bot.life.hp >= hp, 'unhurt');
+});

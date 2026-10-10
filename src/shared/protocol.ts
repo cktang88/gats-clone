@@ -273,7 +273,7 @@ export type GameEvent =
   | { e: 'pack'; k: 'pick'; x: number; y: number };
 
 /** Where a `gain` came from: a health or ammo pack, a supply plane's crate, a Last Squad drop, an armor pack. */
-export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop' | 'armor' | 'loot';
+export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop' | 'armor' | 'loot' | 'body';
 
 export type Circle = { x: number; y: number; r: number };
 /**
@@ -290,8 +290,10 @@ export const ringAt = (ring: RingView, now: number): Circle => {
 };
 /** Where a Last Standing match ended for you: `place` of `of` players, your kills and the caches you opened. */
 export type RoyaleResult = { place: number; of: number; kills: number; loot: number };
-/** A loot cache: `[id, x, y, tier, opened, opening, weapon]`: opened 1 once someone has; `opening` (0..1) how far whoever stands at it is through opening it; `weapon` 1 for a weapon case. */
+/** A loot cache: `[id, x, y, tier, opened, opening, weapon]`: opened 1 once someone has; `opening` (0..50, whole fiftieths: the wire rounds an array's fractions to tenths) how far whoever stands at it is through opening it; `weapon` 1 for a weapon case. */
 export type CacheView = [id: number, x: number, y: number, tier: LootTier, opened: 0 | 1, opening: number, weapon: 0 | 1];
+/** An armor plate dropped by the dead: `[id, x, y]`. */
+export type FloorPlateView = [id: number, x: number, y: number];
 /** A gun lying on the floor: `[id, x, y, gun]`. */
 export type FloorGunView = [id: number, x: number, y: number, gun: GunId];
 /** A recon tower: ready again at server time `readyAt` (0 when ready), and how far (0..1) its holder is through taking it (absent when nobody is). */
@@ -306,7 +308,7 @@ export type RoyaleView = {
   round: number;
   ring: RingView; redeploys: boolean; alive: number; total: number; redeployAt: number | null;
   drops: { x: number; y: number; landsAt: number }[]; watch: number | null; result: RoyaleResult | null;
-  caches: CacheView[]; towers: TowerView[]; guns: FloorGunView[];
+  caches: CacheView[]; towers: TowerView[]; guns: FloorGunView[]; plates: FloorPlateView[];
 };
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
@@ -314,6 +316,9 @@ export type RoyaleView = {
 export type MinimapMark = { x: number; y: number; team: Team; pingAge: number | null; marked?: true; friend?: true; tagged?: true };
 
 /** `kills` and `deaths` count this round only and every mode ranks on them; `score` is the current life's, which a death resets. */
+/** How long a friend invite waits for an answer: its plate goes from the invitee's screen then, and the server forgets it. */
+export const FRIEND_INVITE_SHOWN_MS = 20_000;
+
 /** `human` marks a person (absent for a bot): only people can be friended. */
 export type LeaderRow = { id: number; name: string; score: number; kills: number; deaths: number; team: Team; human?: true };
 /** Most round kills first, then fewest deaths. The FFA timer crowns whoever this puts first, so the leaderboard and the winner agree. */
