@@ -963,26 +963,26 @@ export const BUILDINGS: { wall: BuildingDef & { turret: null } } & Record<Turret
   post: { name: 'Repair post', cost: 100, hp: 800, turret: null },
   spikes: { name: 'Spike strip', cost: 10, hp: 450, turret: null },
   tesla: {
-    name: 'Tesla coil', cost: 200, hp: 1100,
-    turret: { prefers: 'walker', range: 230, fireMs: 1000, damage: 50, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 36, scrapPerRound: 1, muzzle: 0, bullet: { r: 2, color: '#8fd3ff' }, lobbed: null, arc: { jumps: 4, reach: 120, falloff: 0.85 } },
+    name: 'Tesla coil', cost: 140, hp: 900,
+    turret: { prefers: 'walker', range: 230, fireMs: 1000, damage: 30, pellets: 1, bulletSpeed: 0, spread: 0, ammo: 36, scrapPerRound: 0.6, muzzle: 0, bullet: { r: 2, color: '#8fd3ff' }, lobbed: null, arc: { jumps: 4, reach: 120, falloff: 0.85 } },
   },
   sentry: {
     name: 'Sentry', cost: 60, hp: 1000,
     turret: { prefers: 'walker', range: 420, fireMs: 140, damage: 14, pellets: 1, bulletSpeed: 2000, spread: 0.06, ammo: 120, scrapPerRound: 0.15, muzzle: 28, bullet: { r: 1.8, color: '#a88600' }, lobbed: null },
   },
   cannon: {
-    name: 'Cannon', cost: 150, hp: 1500,
-    turret: { prefers: 'brute', range: 560, fireMs: 2000, damage: 300, pellets: 1, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 1.5, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' }, lobbed: null },
+    name: 'Cannon', cost: 100, hp: 1100,
+    turret: { prefers: 'brute', range: 560, fireMs: 2000, damage: 200, pellets: 1, bulletSpeed: 2600, spread: 0.01, ammo: 10, scrapPerRound: 1, muzzle: 33, bullet: { r: 4.2, color: '#3b3f4a' }, lobbed: null },
   },
   scatter: {
-    name: 'Scatter', cost: 90, hp: 1200,
+    name: 'Scatter', cost: 80, hp: 1100,
     turret: { prefers: 'runner', range: 260, fireMs: 650, damage: 10, pellets: 7, bulletSpeed: 1600, spread: 0.22, ammo: 40, scrapPerRound: 0.5, muzzle: 24, bullet: { r: 1.6, color: '#2f9e8f' }, lobbed: null },
   },
   mortar: {
-    name: 'Mortar', cost: 250, hp: 1000,
+    name: 'Mortar', cost: 120, hp: 600,
     turret: {
-      prefers: 'plated', range: 750, fireMs: 2600, damage: 0, pellets: 1, bulletSpeed: 700, spread: 0.04, ammo: 8, scrapPerRound: 4, muzzle: 18, bullet: { r: 5, color: '#4a3f35' },
-      lobbed: { radius: 120, damage: 80 },
+      prefers: 'plated', range: 750, fireMs: 2600, damage: 0, pellets: 1, bulletSpeed: 700, spread: 0.04, ammo: 8, scrapPerRound: 2.5, muzzle: 18, bullet: { r: 5, color: '#4a3f35' },
+      lobbed: { radius: 120, damage: 26 },
     },
   },
 };

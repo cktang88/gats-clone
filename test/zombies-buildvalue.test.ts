@@ -19,7 +19,7 @@ test('every turret, wall tier and utility is the best of its kind somewhere, and
   has('Sentry', 'cheap');
   has('Scatter', 'vsRunner');
   has('Cannon', 'vsBrute');
-  has('Mortar', 'vsPlated');
+  has('Mortar', 'vsBloater');
   has('Mortar', 'range');
   has('Tesla coil', 'vsMix');
   has('Barricade', 'cheap');
@@ -34,7 +34,7 @@ test('every turret, wall tier and utility is the best of its kind somewhere, and
 
 test('a step up pays at least what a second level-I copy would where the turret is built for, and a maxed turret is not twice the buy of a fresh one', () => {
   // Each turret against what it is for: the cheap sentry and the coil against the night's own mix, the rest against their kind.
-  const niche: Record<TurretKind, ZombieKind[] | undefined> = { sentry: undefined, scatter: ['runner'], cannon: ['brute'], mortar: ['plated'], tesla: undefined };
+  const niche: Record<TurretKind, ZombieKind[] | undefined> = { sentry: undefined, scatter: ['runner'], cannon: ['brute'], mortar: ['bloater'], tesla: undefined };
   for (const [kind, kinds] of Object.entries(niche) as [TurretKind, ZombieKind[] | undefined][]) {
     const roi = upgradeRoi(kind, { kinds, nights: kinds ? [5] : [3, 5, 7], ms: 60_000 });
     const say = `${kind}: copy ${roi.copy.toFixed(1)}, steps ${roi.steps.map((s) => s.toFixed(1)).join(' ')}, levels ${roi.levels.map((s) => s.toFixed(1)).join(' ')}`;

@@ -193,10 +193,12 @@ test('beside a human, squad bots mend the core once it is in danger at night, an
   const dry = { id: newId(w), kind: 'sentry' as const, cx: 33, cy: 30, hp: BUILDINGS.sentry.hp, owner: -1, ammo: 0, nextFireAt: 0 };
   w.buildings.push(dry);
   w.buildingsVersion++;
-  w.run!.scrap = 200;
+  // A bank at the bots' reserve (enough for the priciest building) keeps them from spending it on anything but a dry turret.
+  const bank = Math.max(...Object.values(BUILDINGS).map((b) => b.cost));
+  w.run!.scrap = bank;
   besideIdleHuman(w, 8000, () => { w.run!.core.hp = Math.min(w.run!.core.hp, ZOM.coreHp * 0.6); });
   assert.ok(dry.ammo >= 1, `the dry sentry got rounds, ${dry.ammo.toFixed(1)}`);
-  const spent = 200 - w.run!.scrap;
+  const spent = bank - w.run!.scrap;
   assert.ok(spent < 20, `and the bank barely moved for the core above half, ${spent.toFixed(1)} spent`);
 
   const dire = nightWorld();
