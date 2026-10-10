@@ -1,5 +1,5 @@
 import { LOOT, TOWER, type LootTier } from '../shared/defs.ts';
-import type { CacheView, FloorArmorView, FloorGunView, Snapshot, TowerView } from '../shared/protocol.ts';
+import type { CacheView, FloorGunView, FloorPlateView, Snapshot, TowerView } from '../shared/protocol.ts';
 import { GUNS, WORLD } from '../shared/defs.ts';
 import { drawDroppedGun } from './gunart.ts';
 import { setLight } from './lighting.ts';
@@ -438,33 +438,31 @@ export function drawFloorGuns(ctx: CanvasRenderingContext2D, guns: readonly Floo
   }
 }
 
-const ARMOR_LOOK: Record<string, string> = { light: '#d6dde4', medium: '#8fb3ff', heavy: '#ffb347' };
+const PLATE = '#9fc4ff';
 
-/** Armor dropped by the dead: a small box with a vest stencilled on it in its tier's colour, and its tier named when you are close. */
-export function drawFloorArmors(ctx: CanvasRenderingContext2D, armors: readonly FloorArmorView[], me: { x: number; y: number } | null, now: number, view: View) {
-  for (const [id, x, y, tier] of armors) {
+/** Armor plates dropped by the dead: a small steel plate glinting blue, named up close. One puts a plate's worth back in a vest short of full. */
+export function drawFloorPlates(ctx: CanvasRenderingContext2D, plates: readonly FloorPlateView[], me: { x: number; y: number } | null, now: number, view: View) {
+  for (const [id, x, y] of plates) {
     if (!visible(view, x, y, 60)) continue;
-    const color = ARMOR_LOOK[tier] ?? '#d6dde4';
     ctx.save();
     ctx.fillStyle = 'rgba(10, 12, 18, 0.35)';
     ctx.beginPath();
-    ctx.ellipse(x + 3, y + 10, 15, 5, 0, 0, TAU);
+    ctx.ellipse(x + 3, y + 8, 12, 4, 0, 0, TAU);
     ctx.fill();
+    // A curved trauma plate: a shield-like slab, steel with a blue glint along its top.
     ctx.lineJoin = 'round';
     ctx.lineWidth = 2;
     ctx.strokeStyle = INK;
-    ctx.fillStyle = '#4f5661';
-    ctx.fillRect(x - 13, y - 9, 26, 18);
-    ctx.strokeRect(x - 13, y - 9, 26, 18);
-    // A vest: shoulders, a neck cut and a plate, in the tier's colour, gently glowing.
-    ctx.fillStyle = color;
-    ctx.globalAlpha *= 0.75 + 0.25 * breath(now, id);
+    ctx.fillStyle = '#7d8693';
     ctx.beginPath();
-    ctx.moveTo(x - 7, y - 6); ctx.lineTo(x - 2.5, y - 6); ctx.lineTo(x, y - 3); ctx.lineTo(x + 2.5, y - 6); ctx.lineTo(x + 7, y - 6);
-    ctx.lineTo(x + 7, y + 6); ctx.lineTo(x - 7, y + 6); ctx.closePath();
+    ctx.moveTo(x - 9, y - 8); ctx.lineTo(x + 9, y - 8); ctx.lineTo(x + 9, y + 2); ctx.quadraticCurveTo(x, y + 10, x - 9, y + 2); ctx.closePath();
     ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha *= 0.6 + 0.4 * breath(now, id);
+    ctx.fillStyle = PLATE;
+    ctx.fillRect(x - 7, y - 6, 14, 3);
     ctx.restore();
-    if (me && Math.hypot(me.x - x, me.y - y) < 200) plate(ctx, `${tier.toUpperCase()} ARMOR`, x, y - 24, color, 0.85);
+    if (me && Math.hypot(me.x - x, me.y - y) < 180) plate(ctx, `ARMOR PLATE +${LOOT.platePoints}`, x, y - 20, PLATE, 0.85);
   }
 }
 

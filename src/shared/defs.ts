@@ -1093,6 +1093,8 @@ export const LOOT = {
   weaponShare: 0.3,
   /** How close to stand to a gun on the floor to take it with E, and the least time between two takes; at most `maxGuns` lie about at once. */
   takePx: 46, takeCooldownMs: 600, maxGuns: 40,
+  /** The armor points one plate dropped by the dead puts back (a light vest's whole pool), up to the vest's full; it does nothing without a vest. */
+  platePoints: 16,
   tiers: [
     { name: 'Common', weight: 0.64, score: 90, heal: 0, armorUp: 0, pick: false },
     { name: 'Rare', weight: 0.29, score: 220, heal: 45, armorUp: 1, pick: false },

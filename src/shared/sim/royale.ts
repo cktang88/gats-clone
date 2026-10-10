@@ -96,7 +96,7 @@ export function newRoyale(w: World): Royale {
     startedAt: w.now,
     ring: { k: 'waiting', phase: 0, circle, next, shrinkAt: w.now + RING[0]!.waitMs },
     // A new match on a new map (the map changes after the round has started) takes in everyone standing.
-    entrants: [...w.players.values()].filter((p) => p.life.k === 'alive').map((p) => p.id), out: [], caches, towers, guns: [], armors: [], tookAt: new Map(), redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(),
+    entrants: [...w.players.values()].filter((p) => p.life.k === 'alive').map((p) => p.id), out: [], caches, towers, guns: [], plates: [], tookAt: new Map(), redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(),
   };
   scheduleDrop(w, r, next);
   return r;
@@ -120,13 +120,12 @@ function dropGun(w: World, r: Royale, gun: GunId, x: number, y: number) {
 }
 
 function perish(w: World, r: Royale, p: Player, by: Player | null) {
-  // The dead drop their gun and a box of armor (their own tier, light at least), so every kill pays: walk over the armor, E for the gun.
+  // The dead drop their gun and an armor plate, so every kill pays: walk over the plate, E for the gun.
   if (p.life.k !== 'dead') {
-    // Gun below the body, armor above, far enough apart that their name plates never overlap.
+    // Gun below the body, plate above, far enough apart that their name plates never overlap.
     dropGun(w, r, p.gun, p.x, p.y + 18);
-    const tier = p.loadout.armor === 'none' ? 'light' : p.loadout.armor;
-    r.armors.push({ id: newId(w), x: p.x, y: p.y - 24, tier });
-    if (r.armors.length > LOOT.maxGuns) r.armors.shift();
+    r.plates.push({ id: newId(w), x: p.x, y: p.y - 24 });
+    if (r.plates.length > LOOT.maxGuns) r.plates.shift();
   }
   die(w, p, Infinity);
   if (by && by.id !== p.id) r.killers.set(p.id, by.id);
@@ -351,21 +350,19 @@ function tickGuns(w: World, r: Royale) {
   }
 }
 
-/** Armor on the floor is taken by the first living player to walk over it whom it would put in a better tier, or whose plates it would fill. */
-function tickArmors(w: World, r: Royale) {
-  if (!r.armors.length) return;
+/** A plate on the floor goes to the first living player to walk over it who wears a vest short of full: `LOOT.platePoints` back, up to full. */
+function tickPlates(w: World, r: Royale) {
+  if (!r.plates.length) return;
   const reach = (LOOT.takePx + WORLD.playerRadius) ** 2;
-  r.armors = r.armors.filter((a) => {
+  r.plates = r.plates.filter((a) => {
     for (const p of w.players.values()) {
       const life = p.life;
       if (life.k !== 'alive' || dist2(a.x, a.y, p.x, p.y) > reach) continue;
-      const mine = ARMOR_IDS.indexOf(p.loadout.armor), theirs = ARMOR_IDS.indexOf(a.tier);
-      const better = theirs > mine, refill = theirs === mine && life.armor < ARMORS[a.tier].points;
-      if (!better && !refill) continue;
-      if (better) p.loadout = { ...p.loadout, armor: a.tier };
-      const plates = Math.round(ARMORS[p.loadout.armor].points - life.armor);
-      life.armor = ARMORS[p.loadout.armor].points;
-      w.events.push({ e: 'gain', id: p.id, from: 'body', ...(plates > 0 && { armor: plates }), ...(better && { armorTo: a.tier }) });
+      const full = ARMORS[p.loadout.armor].points;
+      if (life.armor >= full) continue;
+      const gave = Math.min(LOOT.platePoints, full - life.armor);
+      life.armor += gave;
+      w.events.push({ e: 'gain', id: p.id, from: 'body', armor: Math.max(1, Math.round(gave)) });
       return false;
     }
     return true;
@@ -405,7 +402,7 @@ export function tickRoyale(w: World, dtMs: number) {
   burnOutside(w, r, dtMs);
   tickLoot(w, r);
   tickGuns(w, r);
-  tickArmors(w, r);
+  tickPlates(w, r);
   tickTowers(w, r);
   redeploy(w, r);
   eliminate(w, r);

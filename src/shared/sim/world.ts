@@ -1,5 +1,5 @@
 import type { Cos } from '../cosmetics.ts';
-import { AIRDROP, BARREL, byTurret, PERK_TIERS, PROPS, WORLD, type ArmorId, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type LootTier, type GunId, type ModeId, type PerkId, type PlayerKind, type PropKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
+import { AIRDROP, BARREL, byTurret, PERK_TIERS, PROPS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type LootTier, type GunId, type ModeId, type PerkId, type PlayerKind, type PropKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
@@ -250,8 +250,8 @@ export type RoyaleStats = { name: string; kills: number; loot: number };
 
 /** A loot cache (see `LOOT`): where it stands, its tier, whether it has been opened, and who has stood at it since when (null for nobody). */
 export type Cache = { id: number; x: number; y: number; tier: LootTier; open: boolean; by?: number | null; since?: number; gun?: GunId };
-/** Armor dropped by the dead in Last Standing: walked over, it is taken by anyone it would put in a better tier or whose plates it would fill. */
-export type FloorArmor = { id: number; x: number; y: number; tier: Exclude<ArmorId, 'none'> };
+/** An armor plate dropped by the dead in Last Standing: walked over by someone wearing a vest short of full, it puts `LOOT.platePoints` back. */
+export type FloorPlate = { id: number; x: number; y: number };
 /** A gun lying on the floor of a Last Standing map: from a weapon case, swapped out, or dropped by the dead. */
 export type FloorGun = { id: number; x: number; y: number; gun: GunId };
 /** A recon tower (see `TOWER`): when it is ready again, and who has been holding it since when (null while nobody alone holds it). */
@@ -271,7 +271,7 @@ export type Royale = {
   caches: Cache[];
   towers: Tower[];
   guns: FloorGun[];
-  armors: FloorArmor[];
+  plates: FloorPlate[];
   /** When each player last took a gun off the floor, so one press of E takes one gun. */
   tookAt: Map<number, number>;
   redeployAt: Map<number, number>;

@@ -97,10 +97,13 @@ test('a bot walks to a better gun lying on the floor and takes it, leaving its o
   assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['pistol'], 'its old gun lies where it stood');
 });
 
-test('a bot with no armor walks over to an armor box a dead player left, and wears it', () => {
+test('a bot whose vest is worn walks over to an armor plate a dead player left, and fills up', () => {
   const w = soloWorld();
   const bot = spawnAt(w, 1200, 1200, { kind: 'bot' });
-  w.royale!.armors = [{ id: 900_020, x: 1550, y: 1350, tier: 'medium' }];
+  bot.loadout = { ...bot.loadout, armor: 'medium' };
+  if (bot.life.k === 'alive') bot.life.armor = 10;
+  w.royale!.plates = [{ id: 900_020, x: 1550, y: 1350 }];
   const mems = new Map([[bot.id, newBotMemory(() => 0.5)]]);
-  assert.ok(Number.isFinite(drive(w, mems, 15_000, () => bot.loadout.armor === 'medium')), `wears ${bot.loadout.armor}`);
+  assert.ok(Number.isFinite(drive(w, mems, 15_000, () => w.royale!.plates.length === 0)), 'took the plate');
+  assert.ok(bot.life.k === 'alive' && bot.life.armor === 10 + LOOT.platePoints, `armor ${bot.life.k === 'alive' ? bot.life.armor : 0}`);
 });

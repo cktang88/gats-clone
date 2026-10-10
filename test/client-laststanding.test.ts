@@ -18,7 +18,7 @@ const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
 
 const royale = (o: Partial<RoyaleView> = {}): RoyaleView => ({
   round: 0, ring: { phase: 0, from: { x: 0, y: 0, r: 2000 }, to: { x: 0, y: 0, r: 1500 }, shrinkAt: 60_000, closeAt: 90_000 } as RoyaleView['ring'],
-  redeploys: true, alive: 12, total: 18, redeployAt: null, drops: [], watch: null, result: null, caches: [], towers: [], guns: [], armors: [], ...o,
+  redeploys: true, alive: 12, total: 18, redeployAt: null, drops: [], watch: null, result: null, caches: [], towers: [], guns: [], plates: [], ...o,
 });
 
 const snap = (o: { events?: GameEvent[]; royale?: RoyaleView; self?: Partial<SelfView> } = {}): Snapshot => ({

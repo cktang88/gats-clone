@@ -55,7 +55,7 @@ import { drawCorpses, drawZombieCorpses, liveCorpses, zombieField } from './corp
 import { flinchOf, flinchOffset } from './flinch.ts';
 import { drawFloor as drawGunFloor, drawTop as drawGunTop, gunFxOf, noteMap as noteGunMap } from './gunfx.ts';
 import { drawDropsWorld, drawRingWorld } from './royale.ts';
-import { drawCacheFloor, drawCacheOverlay, drawCaches, drawFloorArmors, drawFloorGuns, drawTowerFloor, drawTowerFx, drawTowerOverlay, drawTowers, towersNeedClock } from './lootart.ts';
+import { drawCacheFloor, drawCacheOverlay, drawCaches, drawFloorGuns, drawFloorPlates, drawTowerFloor, drawTowerFx, drawTowerOverlay, drawTowers, towersNeedClock } from './lootart.ts';
 import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
 import { trackDash } from './blastfx.ts';
 import { boltScene, dropCarried, reloadScene, selfReload, stepBolt, stepReload, type ReloadFrame } from './reloadanim.ts';
@@ -183,7 +183,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawBarrels(ctx, snap, now, view);
   drawProps(ctx, snap, now, view);
   if (royale?.caches?.length) drawCaches(ctx, royale.caches, now, view);
-  if (royale?.armors?.length) drawFloorArmors(ctx, royale.armors, mine && mine.alive ? mine : null, now, view);
+  if (royale?.plates?.length) drawFloorPlates(ctx, royale.plates, mine && mine.alive ? mine : null, now, view);
   if (royale?.guns?.length) drawFloorGuns(ctx, royale.guns, mine && mine.alive ? mine : null, now, view);
   drawRadios(ctx, now, view, dark, reducedMotion());
   if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
