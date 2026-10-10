@@ -1,10 +1,10 @@
-import { AIRDROP, ARMORS, PROPS, WORLD } from '../defs.ts';
+import { AIRDROP, ARMORS, LEVELS, PROPS, WORLD } from '../defs.ts';
 import { MAPS, type MapId } from '../maps.ts';
 export { planeAt } from '../protocol.ts';
 import { award } from './combat.ts';
 import { circleHitsRect, rectsOverlap, type Rect } from './movement.ts';
 import { staticSolids } from '../mapgeo.ts';
-import { abilityOf, addScore, effectiveStats } from './stats.ts';
+import { abilityOf, effectiveStats, levelForScore } from './stats.ts';
 import { crateRect, newId, rand, type Crate, type Player, type Pose, type World } from './world.ts';
 
 const CELL = 50;
@@ -122,29 +122,38 @@ export function tickAirdrops(w: World) {
 }
 
 /**
- * Cracking a supply drop open: a golden gun for the rest of the life (and a full magazine), or, `AIRDROP.supplyChance` of the time
- * or when the gun is golden already, a full heal, full armor, a full magazine, the abilities back and score. Either way it is a Special Delivery.
+ * Cracking any supply drop open (an airdrop, or a Last Squad drop, `from`): its opener skips straight to their next level pick and gets a
+ * full resupply on top (health, armor, magazine, the ability back). One with every pick already made gets the golden gun instead (rounds
+ * `AIRDROP.goldMul` as hard for the rest of the life), if they do not hold one yet. The opener's pickup chips and the kill feed say what it gave.
  */
-export function openAirdrop(w: World, p: Player, crate: Crate) {
+export function crackSupply(w: World, p: Player, at: { x: number; y: number }, from: 'airdrop' | 'drop') {
+  const next = LEVELS[p.level + 1];
+  if (next) {
+    p.score = Math.max(p.score, next.score);
+    p.level = levelForScore(p.score);
+  }
+  let healed = 0, rounds = 0, plates = 0, cooling = false, gold = false;
   const life = p.life;
-  w.airdrops.flight = null;
-  const roll = rand(w);
-  if (life.k !== 'alive') return;
-  const stats = effectiveStats(p);
-  const gold = !life.golden && roll >= AIRDROP.supplyChance;
-  const rounds = Math.max(0, stats.mag - life.ammo), healed = Math.round(Math.max(0, stats.maxHp - life.hp)), cooling = w.now < p.abilityReadyAt && abilityOf(p) !== null;
-  const plates = Math.round(Math.max(0, ARMORS[p.loadout.armor].points - life.armor));
-  life.ammo = stats.mag;
-  life.reloadUntil = null;
-  if (gold) life.golden = true;
-  else {
+  if (life.k === 'alive') {
+    const stats = effectiveStats(p);
+    rounds = Math.max(0, stats.mag - life.ammo);
+    healed = Math.round(Math.max(0, stats.maxHp - life.hp));
+    plates = Math.round(Math.max(0, ARMORS[p.loadout.armor].points - life.armor));
+    cooling = w.now < p.abilityReadyAt && abilityOf(p) !== null;
     life.hp = stats.maxHp;
     life.armor = ARMORS[p.loadout.armor].points;
+    life.ammo = stats.mag;
+    life.reloadUntil = null;
     p.abilityReadyAt = 0;
-    addScore(w, p, AIRDROP.supplyScore);
+    if (!next && !life.golden) { life.golden = true; gold = true; }
   }
-  w.events.push({ e: 'gain', id: p.id, from: 'airdrop', ...(rounds > 0 && { ammo: rounds }), ...(gold ? { gold: true as const } : { ...(healed > 0 && { hp: healed }), ...(plates > 0 && { armor: plates }), ...(cooling && { ability: true as const }) }) });
+  w.events.push({ e: 'gain', id: p.id, from, ...(healed > 0 && { hp: healed }), ...(rounds > 0 && { ammo: rounds }), ...(plates > 0 && { armor: plates }), ...(cooling && { ability: true as const }), ...(next && { level: true as const }), ...(gold && { gold: true as const }) });
+  w.events.push({ e: 'airdrop', k: 'taken', x: at.x, y: at.y, by: p.name, gold, ...(next && { level: true }) });
+}
+
+export function openAirdrop(w: World, p: Player, crate: Crate) {
+  w.airdrops.flight = null;
   const h = crate.size / 2;
-  w.events.push({ e: 'airdrop', k: 'taken', x: crate.x + h, y: crate.y + h, by: p.name, gold });
+  crackSupply(w, p, { x: crate.x + h, y: crate.y + h }, 'airdrop');
   award(w, p, 'specialDelivery');
 }
