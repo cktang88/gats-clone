@@ -658,12 +658,12 @@ export const BARREL = {
 /**
  * Airdrops (versus modes): `perRound` of them at random times between `from` and `to` of the round's clock, at least `gapMs` apart.
  * A plane crosses the map at `planeSpeed` px/s, drops a crate where it passes the target, and the crate falls `fallMs` under its
- * chute, landing as a crate of `hp` that stands `lifeMs` unless broken. Whoever breaks it gets a golden gun (`goldMul` damage for the life) or, `supplyChance` of the time
- * or if they already hold one, a full heal, full armor, a full magazine and `supplyScore`.
+ * chute, landing as a crate of `hp` that stands `lifeMs` unless broken. Whoever breaks it skips to their next level pick with a full resupply,
+ * or, with every pick made, gets a golden gun (`goldMul` damage for the life); see `crackSupply`.
  */
 export const AIRDROP = {
   perRound: [1, 2] as const, from: 0.15, to: 0.8, gapMs: 120_000, planeSpeed: 1000, fallMs: 5000, hp: 300, size: 64, lifeMs: 75_000,
-  goldMul: 1.2, supplyChance: 0.4, supplyScore: 150, edge: 400,
+  goldMul: 1.2, edge: 400,
 } as const;
 
 /**

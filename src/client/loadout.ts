@@ -57,7 +57,7 @@ export function loadoutSlots(gun: GunId, perks: Partial<Record<Tier, PerkId>>, a
   return slots;
 }
 
-const PICK_NAME = (p: (typeof LEVELS)[number]['pick']): string =>
+export const PICK_NAME = (p: (typeof LEVELS)[number]['pick']): string =>
   p === null ? '' : p.k === 'evolve' ? 'Evolve' : p.tier === 1 ? 'Attachment' : p.tier === 2 ? 'Perk' : 'Ability';
 const PENDING_LINE = (p: PendingPick): string =>
   p.k === 'evolve' ? 'Evolve your gun' : p.tier === 1 ? 'Pick an attachment' : p.tier === 2 ? 'Pick a perk' : 'Pick an ability';
@@ -67,6 +67,14 @@ const PENDING_LINE = (p: PendingPick): string =>
  * the dock, or the life's score once the ladder is done. `level` is the server's level (an index into `LEVELS`).
  */
 export type Progress = { level: number; text: string; next: string | null; frac: number; pick: boolean };
+/** What cracking a supply drop would give a player at `level` (see `crackSupply`): the name of their next pick, or null with every pick made (the golden gun). */
+export const nextPickName = (level: number): string | null => {
+  const next = LEVELS[level + 1];
+  if (!next) return null;
+  const name = PICK_NAME(next.pick);
+  return name === 'Evolve' ? 'gun evolution' : name.toLowerCase();
+};
+
 export function progressLine(level: number, score: number, pending: PendingPick | null): Progress {
   const displayLevel = level + 1;
   const s = Math.max(0, Math.round(score));

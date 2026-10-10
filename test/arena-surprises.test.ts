@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { AIRDROP, BARREL, MEDALS, WORLD, type MedalId } from '../src/shared/defs.ts';
+import { AIRDROP, BARREL, LEVELS, MEDALS, WORLD, type MedalId } from '../src/shared/defs.ts';
 import { MAPS, ROTATION } from '../src/shared/maps.ts';
 import { die, explode } from '../src/shared/sim/combat.ts';
 import { createWorld, rand, type Barrel, type World } from '../src/shared/sim/world.ts';
@@ -237,24 +237,23 @@ function openWith(rng: number, setup: (p: ReturnType<typeof spawnAt>) => void = 
   return { w, p };
 }
 
-const goldRoll = () => rngWhere((r) => r >= AIRDROP.supplyChance);
-const supplyRoll = () => rngWhere((r) => r < AIRDROP.supplyChance);
-
-test('a golden drop makes the life golden and refills the magazine without healing', () => {
-  const { w, p } = openWith(goldRoll(), (q) => { if (q.life.k === 'alive') q.life.ammo = 1; });
-  assert.ok(p.life.k === 'alive' && p.life.golden);
-  assert.ok(p.life.k === 'alive' && p.life.hp === 30 && p.life.ammo > 1);
-  assert.ok(w.events.some((e) => e.e === 'airdrop' && e.k === 'taken' && e.gold === true));
-  assert.equal(snapshotFor(w, p.id).players.find((v) => v.id === p.id)!.golden, true);
+test('a supply drop skips its opener to their next level pick and resupplies them', () => {
+  const { w, p } = openWith(1, (q) => { if (q.life.k === 'alive') q.life.ammo = 1; });
+  assert.equal(p.level, 1, 'straight to the next pick');
+  assert.ok(p.life.k === 'alive' && p.life.hp === 100 && p.life.ammo > 1 && !p.life.golden, 'healed and refilled, not golden');
+  assert.ok(w.events.some((e) => e.e === 'gain' && e.level && (e.hp ?? 0) > 0));
+  assert.ok(w.events.some((e) => e.e === 'airdrop' && e.k === 'taken' && e.level === true && e.gold === false));
 });
 
-test('a supply drop heals, refills and pays score, and a golden gun is never given twice', () => {
-  const sup = openWith(supplyRoll());
-  assert.ok(sup.p.life.k === 'alive' && sup.p.life.hp === 100 && !sup.p.life.golden);
-  assert.ok(sup.p.score >= AIRDROP.supplyScore);
-  const again = openWith(goldRoll(), (q) => { if (q.life.k === 'alive') q.life.golden = true; });
-  assert.ok(again.p.life.k === 'alive' && again.p.life.hp === 100, 'already golden: resupply');
-  assert.ok(again.w.events.some((e) => e.e === 'airdrop' && e.k === 'taken' && e.gold === false));
+test('one with every pick made gets the golden gun instead, never twice', () => {
+  const top = LEVELS.length - 1;
+  const { w, p } = openWith(1, (q) => { q.level = top; q.score = LEVELS[top]!.score; });
+  assert.equal(p.level, top);
+  assert.ok(p.life.k === 'alive' && p.life.golden && p.life.hp === 100);
+  assert.ok(w.events.some((e) => e.e === 'airdrop' && e.k === 'taken' && e.gold === true));
+  assert.equal(snapshotFor(w, p.id).players.find((v) => v.id === p.id)!.golden, true);
+  const again = openWith(1, (q) => { q.level = top; q.score = LEVELS[top]!.score; if (q.life.k === 'alive') q.life.golden = true; });
+  assert.ok(again.w.events.some((e) => e.e === 'airdrop' && e.k === 'taken' && e.gold === false), 'already golden: just the resupply');
 });
 
 test('golden rounds hit AIRDROP.goldMul as hard, and the gold is lost with the life', () => {

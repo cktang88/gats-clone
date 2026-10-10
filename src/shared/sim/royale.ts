@@ -6,6 +6,7 @@ import { DOT_SHARE, dotPulses } from './dot.ts';
 import { goDown, tickDowned } from './downed.ts';
 import { circleBlocked, dist2, rectsOverlap } from './movement.ts';
 import { abilityOf, effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
+import { crackSupply } from './airdrop.ts';
 import { coverRects, crateRect, freshFeats, newId, rand, spawnPoint, type Player, type Ring, type Royale, type RoyaleStats, type World } from './world.ts';
 
 const squadName = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
@@ -100,25 +101,7 @@ export function hurtDowned(w: World, victim: Player, amount: number, by: Player 
 }
 
 export function openDrop(w: World, p: Player, at: { x: number; y: number }) {
-  const next = LEVELS[p.level + 1];
-  if (next) {
-    p.score = Math.max(p.score, next.score);
-    p.level = levelForScore(p.score);
-  }
-  // Always a full resupply on top, so cracking one is worth it at any level, and says so (the pickup chips, the feed line).
-  let healed = 0, rounds = 0, cooling = false;
-  if (p.life.k === 'alive') {
-    const stats = effectiveStats(p);
-    rounds = Math.max(0, stats.mag - p.life.ammo);
-    healed = Math.round(Math.max(0, stats.maxHp - p.life.hp));
-    cooling = w.now < p.abilityReadyAt && abilityOf(p) !== null;
-    p.life.hp = stats.maxHp;
-    p.life.ammo = stats.mag;
-    p.life.reloadUntil = null;
-    p.abilityReadyAt = 0;
-  }
-  w.events.push({ e: 'gain', id: p.id, from: 'drop', ...(healed > 0 && { hp: healed }), ...(rounds > 0 && { ammo: rounds }), ...(cooling && { ability: true as const }), ...(next && { level: true as const }) });
-  w.events.push({ e: 'airdrop', k: 'taken', x: at.x, y: at.y, by: p.name, ...(next && { level: true }) });
+  crackSupply(w, p, at, 'drop');
 }
 
 function advanceRing(w: World, r: Royale) {

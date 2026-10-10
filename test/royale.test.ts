@@ -297,5 +297,5 @@ test('cracking a supply drop says what it gave: a level and a resupply on the op
   const gain = w.events.find((e) => e.e === 'gain');
   assert.ok(gain && gain.e === 'gain' && gain.level && (gain.hp ?? 0) > 0 && (gain.ammo ?? 0) > 0, JSON.stringify(gain));
   assert.ok(hpOf(p) > 20, 'healed as well as levelled');
-  assert.deepEqual(w.events.find((e) => e.e === 'airdrop'), { e: 'airdrop', k: 'taken', x: 1300, y: 1000, by: 'Opener', level: true });
+  assert.deepEqual(w.events.find((e) => e.e === 'airdrop'), { e: 'airdrop', k: 'taken', x: 1300, y: 1000, by: 'Opener', gold: false, level: true });
 });

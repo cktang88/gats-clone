@@ -627,10 +627,10 @@ export function drawShields(ctx: CanvasRenderingContext2D, walls: readonly { x: 
 
 /**
  * A plate over every standing supply crate that says what it is and what breaking it gives, so a gold box is never a mystery:
- * a Last Squad drop gives a level and a full resupply, an airdrop a golden gun or a resupply.
+ * your next level pick (named for whoever is looking) and a full resupply, or a golden gun once every pick is made.
  */
-export function drawDropLabels(ctx: CanvasRenderingContext2D, crates: readonly { x: number; y: number; size: number; drop?: true }[], royale: boolean, now: number, view: View) {
-  const sub = royale ? 'Shoot it open: level up + resupply' : 'Shoot it open: golden gun or resupply';
+export function drawDropLabels(ctx: CanvasRenderingContext2D, crates: readonly { x: number; y: number; size: number; drop?: true }[], nextPick: string | null, now: number, view: View) {
+  const sub = nextPick ? `Shoot it open: your next ${nextPick} + resupply` : 'Shoot it open: golden gun + resupply';
   for (const c of crates) {
     if (!c.drop) continue;
     const x = c.x + c.size / 2, y = c.y - 12 - 2 * Math.sin(now / 400);

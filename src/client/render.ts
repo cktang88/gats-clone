@@ -59,6 +59,7 @@ import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGa
 import { trackDash } from './blastfx.ts';
 import { boltScene, dropCarried, reloadScene, selfReload, stepBolt, stepReload, type ReloadFrame } from './reloadanim.ts';
 import { reloadFoley } from './reloadsfx.ts';
+import { nextPickName } from './loadout.ts';
 import { drawGadgetBody, drawGadgetFx, isGadget } from './gadgetart.ts';
 import { applyPose, bodyPose, drawGunGlints, drawMotionAbove, drawMotionBelow, drawShieldShimmer, noteStride, observeMotion } from './motionfx.ts';
 
@@ -179,7 +180,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawRadios(ctx, now, view, dark, reducedMotion());
   if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
   drawBeacon(ctx, snap.airdrop, airClock, now, view);
-  drawDropLabels(ctx, snap.crates, !!snap.royale, now, view);
+  if (snap.crates.some((c) => c.drop)) drawDropLabels(ctx, snap.crates, nextPickName(mine?.level ?? 0), now, view);
   drawPlaneShadow(ctx, snap.airdrop, airClock, view);
   if (snap.buildings && snap.run) {
     drawSiegeTops(ctx, snap.buildings.filter((b) => standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), wallFlashes(s.effects, now), s.turretAims, snap.run.core, now, k);
