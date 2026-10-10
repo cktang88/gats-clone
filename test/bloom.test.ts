@@ -4,11 +4,11 @@
 // own bloom are the sim's, and the Machine Pistol carries a real stage-1 punch.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { EVOLUTIONS, GUN_IDS, GUNS, handlingOfGun, roundsPerSec, rulesOf, WORLD, type GunId } from '../src/shared/defs.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS, handlingOfGun, roundsPerSec, rulesOf, SPREAD_EASE, WORLD, type GunId } from '../src/shared/defs.ts';
 import { IDLE_INPUT } from '../src/shared/sim/world.ts';
 import type { InputState } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
-import { easedSpread, easeSpread, spreadFor } from '../src/shared/sim/stats.ts';
+import { easeDownTicks, easedSpread, easeSpread, spreadFor } from '../src/shared/sim/stats.ts';
 import { bloomShare, pullTrigger, sprayCap } from '../src/shared/sim/trigger.ts';
 import { NO_FIRING, settle, stepTrigger, type TriggerInput } from '../src/client/fire.ts';
 import { fireRhythm, ownBloom } from '../src/server/bot/motor.ts';
@@ -75,8 +75,9 @@ test('the bloom curve: each round past the free ones adds less than the one befo
 
 test('a held trigger bites at once and then slows: round 3 already shows a clear rise for every full-auto gun, and it is wide by round 20', () => {
   // Round 20 against round 1, standing: the class guns are pinned harder than the heavy evolutions (a drum SMG, a bipod gun stood up), which
-  // soak more of the kick with their weight.
-  const atLeast: Partial<Record<GunId, number>> = { assault: 3, lmg: 1.8, lightMg: 1.6, smg: 1.6, hailstorm: 2 };
+  // soak more of the kick with their weight. A light, short gun's whole bloom is held to its reach (`HANDLING.capReach`), so an SMG's widens
+  // less than a rifle's.
+  const atLeast: Partial<Record<GunId, number>> = { assault: 3, lmg: 1.8, lightMg: 1.6, smg: 1.5, hailstorm: 1.75 };
   const classGuns: readonly GunId[] = ['assault', 'smg', 'lmg', 'hailstorm', 'skirmisher', 'ranger'];
   for (const gun of BARE) {
     for (const moving of [false, true]) {
@@ -140,7 +141,7 @@ test('a set-down bipod tames a machine gun but does not stop its bloom', () => {
 });
 
 test('the page predicts the sim\'s spread, and a bot reckons the sim\'s bloom, through one implementation of the curve', () => {
-  for (const gun of ['assault', 'smg', 'lmg', 'heavyLmg', 'minigun', 'battleRifle', 'sniper', 'semiAuto'] as const) {
+  for (const gun of ['assault', 'smg', 'skirmisher', 'lmg', 'heavyLmg', 'minigun', 'battleRifle', 'sniper', 'semiAuto'] as const) {
     for (const moving of [false, true]) {
       const w = emptyWorld();
       const p = spawnAt(w, 1500, 3000, { loadout: { weapon: GUNS[gun].base, armor: 'none' }, kind: 'human' });
@@ -197,7 +198,7 @@ function hitsPerSec(gun: GunId, d: number, burst?: { rounds: number; pauseMs: nu
     was = fire;
     const fired = pullTrigger(s, { def: g, mag: g.mag, reloadMs: g.reloadMs, armed: true }, { fire, reload: false, pressed }, now, TICK_MS);
     const shot = fired ? s.spray : s.spray + 1, at = (k: number) => spreadFor(gun, {}, true, k);
-    hist = easeSpread(hist, at(shot), shot > spreadShot && hist.length > 0 ? at(shot) - at(spreadShot) : 0);
+    hist = easeSpread(hist, at(shot), shot > spreadShot && hist.length > 0 ? at(shot) - at(spreadShot) : 0, at(0), easeDownTicks(gun));
     spreadShot = shot;
     if (!fired) continue;
     hits += Math.min(1, half / easedSpread(hist));
@@ -215,6 +216,10 @@ test('bursting beats spraying at range, spraying wins up close, and the bloom co
     }
   }
   assert.ok(hitsPerSec('assault', 450, { rounds: 4, pauseMs: 150 }) > 1.2 * hitsPerSec('assault', 450), 'an assault rifle bursts clearly better');
+  // An SMG is not made to burst at 450 px (past its falloff, its rest cone twice a body): its bloom is small and gone so soon that a held
+  // trigger loses little there, and its quick bursts land within a tenth of it.
+  const smgHeld = hitsPerSec('smg', 450), smgBurst = hitsPerSec('smg', 450, { rounds: 4, pauseMs: 100 });
+  assert.ok(Math.abs(smgBurst / smgHeld - 1) < 0.1, `SMG at 450 px: quick bursts ${smgBurst.toFixed(2)}, held ${smgHeld.toFixed(2)}`);
   // Up close the cone swallows the bloom and the held trigger's rate wins.
   for (const gun of ['assault', 'smg', 'lmg'] as const) {
     assert.ok(hitsPerSec(gun, 150) > hitsPerSec(gun, 150, { rounds: 4, pauseMs: 150 }), `${gun}: spraying wins at 150 px`);
@@ -225,4 +230,31 @@ test('bursting beats spraying at range, spraying wins up close, and the bloom co
   // The scoped guns keep their slow per-shot settle: a sniper's bloom takes its seconds to come back down whatever the hip guns are tuned to.
   const scoped: Partial<Record<GunId, number>> = { sniper: 2984, longshot: 3884, piercer: 3834, artillery: 3834, semiAuto: 1593, ghost: 1594, repeater: 1257 };
   for (const [id, ms] of Object.entries(scoped)) assert.equal(handlingOfGun(GUNS[id as GunId]).recoverMs, ms, `${id} recovers as it did`);
+});
+
+/** How long (ms) after a held trigger at its cap is let go the reticle (the eased spread) is back within 10% of its rest, standing. */
+function capToRestMs(gun: GunId): number {
+  const w = emptyWorld();
+  const p = spawnAt(w, 1500, 3000, { loadout: { weapon: GUNS[gun].base, armor: 'none' }, kind: 'human' });
+  equip(p, gun);
+  const eased = () => (p.life.k === 'alive' ? easedSpread(p.life.spreadHist) : NaN);
+  press(w, p, { angle: 0 });
+  run(w, 2000);
+  const rest = eased();
+  press(w, p, { angle: 0, fire: true, shots: p.input.shots + 1 });
+  for (let t = 0; t < 3000; t += TICK_MS) { if (p.life.k === 'alive') p.life.ammo = 1e6; step(w, TICK_MS); }
+  assert.ok(eased() > rest * 1.2, `${gun}: a long spray has bloomed`);
+  press(w, p, { angle: 0, fire: false });
+  for (let t = TICK_MS; t < 3000; t += TICK_MS) { step(w, TICK_MS); if (eased() <= rest * 1.1) return t; }
+  return Infinity;
+}
+
+test('what you see recovers at the gun\'s pace: an SMG\'s reticle is back on its rest in under half an LMG\'s time, and only a big gun takes the whole ease', () => {
+  const ms = Object.fromEntries((['smg', 'skirmisher', 'assault', 'lmg', 'minigun'] as const).map((id) => [id, capToRestMs(id)]));
+  const shown = JSON.stringify(ms);
+  assert.ok(ms.smg! <= 0.5 * ms.lmg!, `SMG against LMG: ${shown}`);
+  assert.ok(ms.skirmisher! <= 0.5 * ms.minigun!, `Skirmisher against Minigun: ${shown}`);
+  assert.ok(ms.smg! < ms.assault! && ms.assault! < ms.lmg!, `smallest to biggest: ${shown}`);
+  // Never a snap: the cone holds through the bloom's settle and then comes down over ticks, not at once (see sprint.test.ts for the ease itself).
+  for (const [id, t] of Object.entries(ms)) assert.ok(t >= rulesOf(GUNS[id as GunId]).bloom!.settleMs + SPREAD_EASE.downMinMs / 2, `${id}: ${t} ms`);
 });

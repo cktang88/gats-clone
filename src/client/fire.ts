@@ -1,7 +1,7 @@
 import { GUNS, settleRulesOf, WORLD, type GunId, type PerkId, type Tier } from '../shared/defs.ts';
 import type { InputState, Snapshot } from '../shared/protocol.ts';
 import { walks } from '../shared/sim/movement.ts';
-import { bloomRecoverMul, easedSpread, easeSpread, isDeployed, isSteady, reloadMsFor, settleShare, spreadFor, sprintWanted } from '../shared/sim/stats.ts';
+import { bloomRecoverMul, easeDownTicks, easedSpread, easeSpread, isDeployed, isSteady, reloadMsFor, settleShare, spreadFor, sprintWanted } from '../shared/sim/stats.ts';
 import { consumePresses, pullTrigger } from '../shared/sim/trigger.ts';
 import { worksBolt } from './reloadbeats.ts';
 
@@ -46,7 +46,7 @@ export function stepTrigger(t: Trigger, input: TriggerInput, now: number): { t: 
   const shot = fired ? g.spray : g.spray + 1;
   const spreadAt = (sprayShot: number) => spreadFor(g.gun, g.perks, isSteady(g.gun, sinceMove), sprayShot, g.suppression, settleShare(g.settleLeft, g.settleMs), isDeployed(g.gun, sinceMove));
   const target = spreadAt(shot);
-  g.spreadHist = easeSpread(g.spreadHist, target, shot > g.spreadShot && g.spreadHist.length > 0 ? target - spreadAt(g.spreadShot) : 0);
+  g.spreadHist = easeSpread(g.spreadHist, target, shot > g.spreadShot && g.spreadHist.length > 0 ? target - spreadAt(g.spreadShot) : 0, spreadAt(0), easeDownTicks(g.gun));
   g.spreadShot = shot;
   if (fired) g.fired++;
   return { t: g, fired };

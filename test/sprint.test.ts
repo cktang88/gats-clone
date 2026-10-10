@@ -4,10 +4,10 @@ import { test } from 'node:test';
 import { CONTROLS, assembleInput, actionForKey } from '../src/client/input.ts';
 import { stepTrigger, NO_FIRING, settle, settleOf, spreadOf, type ServerGun } from '../src/client/fire.ts';
 import { NO_STICKS, dragStick, pressStick, touchMoves } from '../src/client/touch.ts';
-import { ARMORS, GUNS, LOAD_SPEED_FLOOR, minSpreadOf, rulesOf, settleRulesOf, SPREAD_EASE, SPRINT, WORLD, type GunId } from '../src/shared/defs.ts';
+import { ARMORS, GUN_IDS, GUNS, LOAD_SPEED_FLOOR, minSpreadOf, rulesOf, settleRulesOf, SPREAD_EASE, SPRINT, WORLD, type GunId } from '../src/shared/defs.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
-import { easedSpread, effectiveStats, postSprintSpread, spreadFor } from '../src/shared/sim/stats.ts';
+import { easeDownTicks, easedSpread, easeSpread, effectiveStats, postSprintSpread, SPREAD_EASE_TICKS, spreadEaseDownMs, spreadFor } from '../src/shared/sim/stats.ts';
 import { loadOf, sprintShareOf } from '../src/shared/handling.ts';
 import type { Player } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
@@ -209,24 +209,68 @@ test('spread never jumps: a stance change, a sprint, suppression or a gun swap e
   check('suppression', trace(w, a, 600), calm, spreadFor('assault', {}, true, 1, 1));
 });
 
-test('a shot\'s bloom kick lands at once, but comes back down no faster than SPREAD_EASE.ms', () => {
-  const w = emptyWorld();
-  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'sniper' } });
-  spawnAt(w, 1500, 900);
-  run(w, 1000);
-  const rest = easedOf(a);
-  assert.equal(rest, minSpreadOf(GUNS.sniper), 'planted: pinpoint');
-  press(w, a, { fire: true, shots: a.input.shots + 1 });
-  run(w, TICK_MS);
-  press(w, a, { fire: false });
-  run(w, TICK_MS);
-  const kicked = easedOf(a), target = spreadFor('sniper', {}, true, a.life.k === 'alive' ? a.life.spray + 1 : 0);
-  assert.ok(kicked > rest * 5 && Math.abs(kicked - target) < target * 0.05, `the kick is on the reticle the tick after the shot (${kicked} vs ${target})`);
-  // The sniper's own recovery is slow anyway; a reload drops the bloom to nothing at once, which the ease spreads out.
-  if (a.life.k === 'alive') a.life.ammo = 0;
-  const xs = trace(w, a, 600);
-  assert.ok(arrival(xs, kicked, rest) >= SPREAD_EASE.ms, `the drop takes at least ${SPREAD_EASE.ms} ms (${arrival(xs, kicked, rest)})`);
-  assert.ok(Math.abs(xs.at(-1)! - rest) < 1e-9, 'and lands on the rested spread');
+test('a shot\'s bloom kick lands at once and eases back out at the gun\'s own pace: never at once, a sniper\'s over the whole SPREAD_EASE.ms', () => {
+  /** A gun planted, one shot (a sniper) or a short spray (`rounds`), then a reload drops the bloom to nothing at once: the eased spread's drop. */
+  const drop = (gun: GunId, rounds: number) => {
+    const w = emptyWorld();
+    const a = spawnAt(w, 500, 500, { loadout: { weapon: GUNS[gun].base } });
+    equip(a, gun);
+    spawnAt(w, 1500, 900);
+    run(w, 1000);
+    const rest = easedOf(a);
+    press(w, a, { fire: true, shots: a.input.shots + 1 });
+    run(w, TICK_MS * rounds);
+    press(w, a, { fire: false });
+    run(w, TICK_MS);
+    const kicked = easedOf(a), target = spreadFor(gun, {}, true, a.life.k === 'alive' ? a.life.spray + 1 : 0);
+    if (a.life.k === 'alive') a.life.ammo = 0;
+    const xs = trace(w, a, 600);
+    for (let i = 1; i < xs.length; i++) assert.ok(xs[i]! <= xs[i - 1]! + 1e-12, `${gun}: the drop is monotone`);
+    assert.ok(Math.abs(xs.at(-1)! - rest) < 1e-9, `${gun}: and lands on the rested spread`);
+    return { rest, kicked, target, at: arrival(xs, kicked, rest), first: kicked - xs[0]! };
+  };
+  const sniper = drop('sniper', 1);
+  assert.equal(sniper.rest, minSpreadOf(GUNS.sniper), 'planted: pinpoint');
+  assert.ok(sniper.kicked > sniper.rest * 5 && Math.abs(sniper.kicked - sniper.target) < sniper.target * 0.05, `the kick is on the reticle the tick after the shot (${sniper.kicked} vs ${sniper.target})`);
+  // The sniper's own recovery is slow anyway: its cone comes down over the whole ease.
+  assert.ok(sniper.at >= SPREAD_EASE.ms, `the sniper's drop takes at least ${SPREAD_EASE.ms} ms (${sniper.at})`);
+  // An SMG's comes down in about its own recovery time: well under the full ease, but over several ticks, never in one.
+  const smg = drop('smg', 8);
+  assert.ok(smg.kicked > smg.rest * 1.2, `the SMG has bloomed (${smg.kicked} vs ${smg.rest})`);
+  assert.ok(smg.at >= SPREAD_EASE.downMinMs && smg.at >= spreadEaseDownMs('smg') && smg.at < SPREAD_EASE.ms, `the SMG's drop takes ${smg.at.toFixed(0)} ms`);
+  assert.ok(smg.first <= (smg.kicked - smg.rest) / 2, `and its first tick takes off no more than half of it (${smg.first} of ${smg.kicked - smg.rest})`);
+});
+
+test('the eased spread: falling bloom ramps out over the gun\'s own ticks, never at once; a rise, or any change of the base spread, over the whole SPREAD_EASE.ms', () => {
+  /** Ticks (from 1) until a trace is within 1% of the way from `from` to `to`. */
+  const ticks = (xs: number[], from: number, to: number) => xs.findIndex((x) => Math.abs(x - to) <= Math.abs(to - from) * 0.01) + 1;
+  /** Settled on `start` (a base and a bloom), then held on `end`'s: the eased spread each tick. */
+  const eased = (down: number, start: readonly [number, number], end: readonly [number, number]) => {
+    let h = easeSpread([], start[0] + start[1], 0, start[0], down);
+    const xs: number[] = [];
+    for (let i = 0; i < 2 * SPREAD_EASE_TICKS; i++) { h = easeSpread(h, end[0] + end[1], 0, end[0], down); xs.push(easedSpread(h)); }
+    return xs;
+  };
+  const base = 0.05, bloom = 0.1, full = SPREAD_EASE_TICKS * TICK_MS;
+  assert.ok(full >= SPREAD_EASE.ms);
+  const seen = new Set<number>();
+  for (const gun of GUN_IDS) {
+    const k = easeDownTicks(gun);
+    seen.add(k);
+    assert.ok(k >= 2 && k <= SPREAD_EASE_TICKS && (k - 1) * TICK_MS >= spreadEaseDownMs(gun) - 1e-9, `${gun}: ${k} ticks for ${spreadEaseDownMs(gun)} ms`);
+    // Bloom falling: over k ticks, never more than a 1/(k-1) of it in one, and monotone.
+    const fall = eased(k, [base, bloom], [base, 0]);
+    assert.ok(ticks(fall, base + bloom, base) * TICK_MS >= Math.max(SPREAD_EASE.downMinMs, spreadEaseDownMs(gun)), `${gun}: bloom falls in ${ticks(fall, base + bloom, base)} ticks`);
+    [base + bloom, ...fall].forEach((x, i, xs) => { if (i > 0) assert.ok(xs[i - 1]! - x >= -1e-12 && xs[i - 1]! - x <= bloom / (k - 1) + 1e-12, `${gun}: tick ${i} of the fall drops ${xs[i - 1]! - x}`); });
+    // Bloom rising without a kick (a bloomed gun walked off), the base rising (a sprint, suppression) or falling (planting your feet): the whole ease.
+    for (const [what, from, to] of [['bloom rising', [base, 0], [base, bloom]], ['base rising', [base, bloom], [base * 3, bloom]], ['base falling', [base * 3, bloom], [base, bloom]]] as const) {
+      const xs = eased(k, from, to);
+      assert.ok(ticks(xs, from[0] + from[1], to[0] + to[1]) * TICK_MS >= SPREAD_EASE.ms, `${gun}: ${what} in ${ticks(xs, from[0] + from[1], to[0] + to[1])} ticks`);
+    }
+  }
+  assert.ok(seen.size >= 3, 'small, middling and heavy guns ease their bloom out at different paces');
+  assert.equal(easeDownTicks('smg'), Math.ceil(SPREAD_EASE.downMinMs / TICK_MS) + 1, 'an SMG at the quickest');
+  assert.equal(easeDownTicks('lmg'), SPREAD_EASE_TICKS, 'an LMG over the whole ease');
 });
 
 test('a sprint ending mid-settle restarts it, and sprint speed appears in the self snapshot', () => {

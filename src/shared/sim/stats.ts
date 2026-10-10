@@ -94,19 +94,39 @@ export const settleShare = (left: number, settleMs: number): number => (settleMs
 export const SPREAD_EASE_TICKS = Math.ceil(SPREAD_EASE.ms / (1000 / WORLD.tickHz)) + 1;
 
 /**
- * One tick of the eased spread (`SPREAD_EASE`): the last `SPREAD_EASE_TICKS` targets, oldest first, this tick's `target` on the end. Their
- * mean is the spread a shot gets, so any change of the target ramps in linearly over the window and never in less than `SPREAD_EASE.ms`.
- * `kick` is the part of the target a shot's bloom added since last tick: it lands at once (every kept target is raised by it), and
- * comes back down with the target, eased like the rest. An empty history (a fresh life) starts settled on the target.
+ * How long (ms) a gun's bloom takes to ease back out of its spread (`SPREAD_EASE`): its own recovery time (`bloom.recoverMs`, how long a
+ * full spray's heat takes to cool), kept between `SPREAD_EASE.downMinMs` and `SPREAD_EASE.ms`. An SMG's cone falls back in 100 ms, an
+ * assault rifle's in about 125, an LMG's, a Minigun's or a sniper's over the full 250.
  */
-export function easeSpread(hist: readonly number[], target: number, kick = 0): number[] {
-  if (hist.length === 0) return new Array<number>(SPREAD_EASE_TICKS).fill(target);
-  const out = hist.slice(hist.length >= SPREAD_EASE_TICKS ? 1 : 0).map((x) => x + Math.max(0, kick));
-  out.push(target);
-  return out;
+export const spreadEaseDownMs = (gun: GunId): number =>
+  Math.min(SPREAD_EASE.ms, Math.max(SPREAD_EASE.downMinMs, rulesOf(GUNS[gun]).bloom?.recoverMs ?? SPREAD_EASE.ms));
+/** How many of the newest bloom targets set how far falling bloom has eased (see `easeSpread`): `spreadEaseDownMs` in ticks, plus one. */
+export const easeDownTicks = (gun: GunId): number => Math.min(SPREAD_EASE_TICKS, Math.ceil(spreadEaseDownMs(gun) / (1000 / WORLD.tickHz) - 1e-9) + 1);
+
+/**
+ * One tick of the eased spread (`SPREAD_EASE`). The spread's `target` is split in two: its `base` (the spread with no bloom: the stance,
+ * the post-sprint bloom, suppression) and the bloom on top (`target - base`). A history holds the last `SPREAD_EASE_TICKS` of each, oldest
+ * first: the bases, then the blooms. The base eases as their mean, so any change of it ramps in linearly and never in less than
+ * `SPREAD_EASE.ms`, either way. The bloom eases as the mean of its own, except that once it is falling the older ones are brought down to the
+ * mean of the newest `down` (see `easeDownTicks`), so falling bloom ramps out over that many ticks instead (never at once), while rising bloom
+ * (a stance that blooms more) still takes the whole window. `kick` is the bloom a shot added since last tick: it lands at once (every kept
+ * bloom is raised by it). An empty history (a fresh life) starts settled on the target.
+ */
+export function easeSpread(hist: readonly number[], target: number, kick = 0, base = target, down = SPREAD_EASE_TICKS): number[] {
+  const n = SPREAD_EASE_TICKS, bloom = Math.max(0, target - base);
+  if (hist.length !== 2 * n) return [...new Array<number>(n).fill(base), ...new Array<number>(n).fill(bloom)];
+  const bases = hist.slice(1, n), blooms = hist.slice(n + 1).map((x) => x + Math.max(0, kick));
+  bases.push(base);
+  blooms.push(bloom);
+  const k = Math.max(1, Math.min(n, down));
+  let newest = 0;
+  for (let i = n - k; i < n; i++) newest += blooms[i]!;
+  newest /= k;
+  for (let i = 0; i < n - k; i++) blooms[i] = Math.min(blooms[i]!, newest);
+  return [...bases, ...blooms];
 }
-/** The eased spread a history holds (see `easeSpread`). */
-export const easedSpread = (hist: readonly number[]): number => (hist.length === 0 ? 0 : hist.reduce((a, b) => a + b, 0) / hist.length);
+/** The eased spread a history holds (see `easeSpread`): the eased base plus the eased bloom. */
+export const easedSpread = (hist: readonly number[]): number => (hist.length === 0 ? 0 : (hist.reduce((a, b) => a + b, 0) * 2) / hist.length);
 
 /** How fast spray bloom recovers, as a multiplier (Steady Hands): the same for a bot as for a person. */
 export const bloomRecoverMul = (perks: Partial<Record<Tier, PerkId>>): number =>

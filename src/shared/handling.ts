@@ -8,6 +8,7 @@
  * - `kick`: the bloom a round adds on average over the climb to `cap` (radians), from its energy, soaked by the gun's weight and steadied
  *   by its length, and grown by its cadence past the reference rifle's (a gun that cycles faster than the hands can bring the muzzle back
  *   stacks each round on the last). `cap / kick` is how many rounds (`rounds`) a held trigger takes to reach the cap.
+ *   Both kick and cap are held to the gun's `reach` (`HANDLING.capReach`): a light, short gun cannot walk its muzzle far off the line.
  * - `shape`: how front-loaded that climb is (q below, from the weight): the first round past the free ones adds `q x kick` and each later
  *   one less, as `(1 - bloom/cap)^(1 - 1/q)`, landing on the cap with no overshoot. A light gun snaps up and flattens; a heavy one rises
  *   slower but carries its momentum nearly straight to the cap. `bloomShare` in sim/stats.ts is the curve. Bloom starts growing at
@@ -20,7 +21,7 @@
  *
  * A pinpoint (scoped) gun's kick, cap, decay (against its own recovery formula, `scopeRecover`), sway and standing share are scaled by `SCOPE` (the sight picture is lost and found again, not
  * just the muzzle moved; planted behind the glass it settles back on the target better than a hip gun), and a bolt-action's further by
- * `BOLT` (working the bolt breaks the cheek weld). Those are the only factors that are not physics;
+ * `BOLT` (working the bolt breaks the cheek weld). Those, and the shotgun's two class exceptions, are the only factors that are not physics;
  * everything a gun's role needs beyond them lives in its rules (bursts, bipods, rev-up, falloff, the pellet pattern) and in the handful of
  * explicit, marked overrides on the gun itself (`GunDef.overrides`). scripts/handling-table.ts prints the table.
  */
@@ -48,8 +49,9 @@ export type CalibreId = keyof typeof CALIBRES;
 /**
  * What a gun physically is. `pinpoint` and `bolt` come from its rules and its action; `rps` is rounds per second (a burst averaged out);
  * `rounds` is how many of its calibre one pull fires at once (two for paired barrels or a pistol in each hand; a shotgun's shell is one).
+ * `capMul` caps the bloom's reach at that share for a class exception (a shotgun's `HANDLING.shotgunCapMul`).
  */
-export type Build = { kg: number; cm: number; calibre: CalibreId; spread: number; rps: number; pinpoint: boolean; bolt: boolean; rounds?: number };
+export type Build = { kg: number; cm: number; calibre: CalibreId; spread: number; rps: number; pinpoint: boolean; bolt: boolean; rounds?: number; capMul?: number };
 
 /**
  * The constants of the formulas below. A reference gun (`REF`: an assault rifle, 3.6 kg, 90 cm, 5.56 mm) sits at the reference values;
@@ -73,8 +75,18 @@ export const HANDLING = {
    * early and flattens sooner. The reference rifle's 2; a pistol's 3.4 (it snaps up), the heaviest MG's 1.3 (its momentum carries it).
    */
   shape: { at: 2, weight: 0.45, min: 1.3, max: 3.4 },
-  /** cap = cap0 x energy^e / weight^w: the most bloom a spray can stack (radians: a held trigger at range is a bad idea) */
+  /** cap = cap0 x energy^e / weight^w x reach: the most bloom a spray can stack (radians: a held trigger at range is a bad idea). */
   cap: { at: 0.125, energy: 0.3, weight: 0.3 },
+  /**
+   * reach = min + (1 - min) x inertia^n / (inertia^n + mid^n), a Hill curve on the gun's moment of inertia: how far a held trigger can walk
+   * the muzzle off its line. A light, short gun is held close and cannot wander far (a pistol 0.6 of the cap above, an SMG about 0.67, a
+   * Skirmisher 0.62); a long, heavy one swings the whole way (an assault rifle 0.94, an LMG or the Minigun about 1), so spraying a machine
+   * gun stays punished. It scales the kick as well as the cap, so a spray takes the same rounds to its (lower) cap and cools as fast in
+   * rounds: the whole bloom is that share of what it was. Hip guns only: a scoped gun's bloom is its own (`SCOPE`).
+   */
+  capReach: { min: 0.6, mid: 1.5, n: 2 },
+  /** The other class exception: a shotgun's pellet pattern is its spread, so its bloom caps at no more than this share of what its build gives. */
+  shotgunCapMul: 0.65,
   /**
    * decay = cap / recover, recover = recover0 x weight^w x length^l ms: a heavy, long gun takes longer to bring back on (its moment of inertia,
    * so length counts for more than weight). An SMG comes back in half the time it took under the old 190 x weight^0.5 x length^0.3, an
@@ -136,8 +148,9 @@ export function handlingOf(b: Build): Handling {
   const e = (CALIBRES[b.calibre].joules * (b.rounds ?? 1)) / H.REF.joules, m = b.kg / H.REF.kg, l = b.cm / H.REF.cm, inertia = inertiaOf(b.kg, b.cm);
   const ONE = { kick: 1, cap: 1, recover: 1, sway: 1, still: 1 }, scope = b.pinpoint ? H.SCOPE : ONE, bolt = b.bolt ? H.BOLT : ONE;
   const cadence = Math.max(1, b.rps / H.REF.rps) ** H.kick.rate;
-  const kick = round(H.kick.at * e ** H.kick.energy / (m ** H.kick.weight * l ** H.kick.length) * cadence * scope.kick * bolt.kick, 5);
-  const cap = round(H.cap.at * e ** H.cap.energy / m ** H.cap.weight * scope.cap * bolt.cap, 4);
+  const reach = b.pinpoint ? 1 : Math.min(b.capMul ?? 1, H.capReach.min + (1 - H.capReach.min) * inertia ** H.capReach.n / (inertia ** H.capReach.n + H.capReach.mid ** H.capReach.n));
+  const kick = round(H.kick.at * e ** H.kick.energy / (m ** H.kick.weight * l ** H.kick.length) * cadence * reach * scope.kick * bolt.kick, 5);
+  const cap = round(H.cap.at * e ** H.cap.energy / m ** H.cap.weight * reach * scope.cap * bolt.cap, 4);
   const rec = b.pinpoint ? H.scopeRecover : H.recover;
   const recoverMs = Math.round(rec.at * m ** rec.weight * l ** rec.length * scope.recover * bolt.recover);
   const shape = round(Math.min(H.shape.max, Math.max(H.shape.min, H.shape.at / m ** H.shape.weight)), 2);

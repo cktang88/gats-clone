@@ -19,7 +19,7 @@ test('the formulas move the right way: heavier and longer settle slower, sway mo
   for (const [lo, hi] of [[40, 70], [90, 120]] as const) {
     const a = at({ cm: lo }), b = at({ cm: hi });
     assert.ok(b.settleMs >= a.settleMs && b.sway >= a.sway, `${lo} -> ${hi} cm settles slower and sways more`);
-    assert.ok(b.kick < a.kick && b.floor < a.floor, `${lo} -> ${hi} cm is steadier and groups tighter`);
+    assert.ok(b.rounds > a.rounds && b.floor < a.floor, `${lo} -> ${hi} cm is steadier (more rounds to its cap) and groups tighter`);
   }
   const rounds = (['9mm', '5.56mm', '7.62x51', '.338'] as const).map((calibre) => at({ calibre }));
   for (let i = 1; i < rounds.length; i++) {
@@ -29,6 +29,24 @@ test('the formulas move the right way: heavier and longer settle slower, sway mo
   assert.ok(at({ pinpoint: true }).kick > 5 * at({}).kick && at({ pinpoint: true, bolt: true }).kick > at({ pinpoint: true }).kick, 'a scope, and a bolt, lose the sight picture');
   for (let load = 0; load < 30; load += 0.5) {
     assert.ok(walkMulOf(load + 0.5) <= walkMulOf(load) && sprintShareOf(load + 0.5) <= sprintShareOf(load), `more load, slower (${load} kg)`);
+  }
+});
+
+test('a light, short gun\'s bloom is held to its reach: an SMG, a pistol or a shotgun caps a third or more lower than its build alone, a heavy automatic keeps its whole cap', () => {
+  const bare = (id: GunId) => {
+    const g = GUNS[id], h = handlingOfGun(g);
+    const e = (CALIBRES[g.calibre].joules * (g.base === 'shotgun' ? 1 : g.pellets)) / HANDLING.REF.joules;
+    return h.cap / (HANDLING.cap.at * e ** HANDLING.cap.energy / (g.kg / HANDLING.REF.kg) ** HANDLING.cap.weight);
+  };
+  for (const id of ['pistol', 'smg', 'skirmisher', 'hornet', 'shotgun', 'doubleBarrel', 'sawedOff', 'slugGun'] as const) assert.ok(bare(id) <= 0.7, `${id}: ${bare(id).toFixed(2)} of its cap`);
+  for (const id of ['lmg', 'heavyLmg', 'minigun', 'juggernaut', 'twinMg'] as const) assert.ok(bare(id) >= 0.98, `${id}: ${bare(id).toFixed(2)} of its cap`);
+  assert.ok(bare('assault') > 0.9 && bare('assault') < 1, `assault: ${bare('assault').toFixed(2)}`);
+  for (const id of GUN_IDS) {
+    const h = handlingOfGun(GUNS[id]);
+    // The reach scales the kick with the cap: a spray takes the rounds to its cap that its build gives.
+    const raw = handlingOf({ kg: GUNS[id].kg, cm: GUNS[id].cm, calibre: GUNS[id].calibre, spread: GUNS[id].spread, rps: roundsPerSec(GUNS[id]), pinpoint: rulesOf(GUNS[id]).pinpoint, bolt: GUNS[id].base === 'sniper' && GUNS[id].fireMs >= 1000, rounds: GUNS[id].base === 'shotgun' ? 1 : GUNS[id].pellets, capMul: 1 });
+    assert.ok(Math.abs(h.rounds - raw.rounds) / raw.rounds < 0.01, `${id}: ${h.rounds.toFixed(2)} rounds to its cap, ${raw.rounds.toFixed(2)} by its build`);
+    if (rulesOf(GUNS[id]).pinpoint) assert.equal(h.cap, raw.cap, `${id}: a scoped gun's bloom is its own`);
   }
 });
 

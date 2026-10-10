@@ -269,7 +269,7 @@ export const roundsPerSec = (def: { fireMs: number; burst?: { count: number; gap
 export const handlingOfGun = (def: GunSpec): Handling => {
   const spec = specOf(def);
   const h = handlingOf({ kg: def.kg, cm: def.cm, calibre: def.calibre, spread: def.spread, rps: roundsPerSec(def), pinpoint: spec.pinpoint, bolt: def.base === 'sniper' && def.fireMs >= 1000,
-    rounds: def.base === 'shotgun' ? 1 : def.pellets });
+    rounds: def.base === 'shotgun' ? 1 : def.pellets, ...(def.base === 'shotgun' && { capMul: HANDLING.shotgunCapMul }) });
   const settleMs = def.base === 'shotgun' ? Math.round(h.settleMs * HANDLING.shotgunSettleMul) : h.settleMs;
   return { ...h, settleMs, ...def.overrides };
 };
@@ -323,9 +323,11 @@ export const loadoutWalkMul = (gun: GunDef, armor: ArmorId): number => walkMulOf
 export const SPRINT = { speedMul: 1.65, settleMul: HANDLING.sprintBloom } as const;
 /**
  * Spread never jumps: every change of it (a stance, a sprint, a perk, suppression, a gun swap) eases in over at least `ms`, the same on
- * the server and on your reticle. Only a shot's own bloom kick lands at once (it still comes back down over at least `ms`).
+ * the server and on your reticle. Only a shot's own bloom kick lands at once. Bloom coming back down eases out over the gun's own
+ * recovery time (its `bloom.recoverMs`), kept between `downMinMs` and `ms`: a small gun's cone visibly tightens about as fast as its
+ * spray cools, a heavy one's over the full `ms`, and none ever snaps (see `easeSpread`).
  */
-export const SPREAD_EASE = { ms: 250 } as const;
+export const SPREAD_EASE = { ms: 250, downMinMs: 100 } as const;
 /** How wild this gun is the moment a sprint ends (`mul` times its moving spread) and how long it takes to settle (`ms`, before perks). */
 export const settleRulesOf = (def: GunDef): { mul: number; ms: number } => rulesOf(def).settle;
 /** How many of the tier-2 pool a level-up offers, drawn per life. */
