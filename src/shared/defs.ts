@@ -402,14 +402,14 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   gasGrenade: { name: 'Gas grenade', desc: 'Lingering damage cloud' },
   landMine: { name: 'Land mine', desc: 'Hidden explosive at your feet, two at a time' },
   knife: { name: 'Knife', desc: 'Lunge melee strike' },
-  engineer: { name: 'Shield', desc: 'A one-way energy wall where you aim, 12s: you shoot out through it, nothing shoots in' },
+  engineer: { name: 'Shield', desc: 'A one-way energy wall where you aim, 10s: you shoot out through it, nothing shoots in' },
   dash: { name: 'Dash', desc: 'Burst of speed' },
   radar: { name: 'Radar', desc: 'Throw a sensor: every enemy in a wide ring shows on everyone\'s minimap for 30s' },
   healPole: { name: 'Heal pole', desc: 'Plant a pole that heals you, your team and friends close by for 8s' },
 };
 
 export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
-  grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 4000, engineer: 10000, dash: 3500, radar: 15000, healPole: 16000,
+  grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 4000, engineer: 18000, dash: 3500, radar: 15000, healPole: 16000,
 };
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;

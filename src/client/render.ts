@@ -153,7 +153,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   const walls = wallSolids(s.walls.filter((w) => !w.out)).filter((w) => solidInView(view, w));
   const standing = (siege === 'static' ? [] : siege).filter((b) => solidInView(view, b));
   drawSolids(ctx, [...curbSolids(s.worldSize).filter((c) => solidInView(view, c)), ...walls, ...standing, ...crates]);
-  drawShields(ctx, s.walls.filter((w) => w.out && inView(view, w.x, w.y, w.w, w.h)), now);
+  const shields = s.walls.filter((w) => w.out && inView(view, w.x, w.y, w.w, w.h));
+  if (shields.length) drawShields(ctx, shields, now, serverNow(s.snaps, now));
   // Polygon walls, doors and roofs (docs/maps/GEOMETRY.md) come from the map itself; door state comes from the snapshot.
   const geoMap = mapOf(snap.match.map);
   const geo: GeoInfo | null = geoMap && (geoMap.polys?.length || geoMap.doors?.length || geoMap.roofs?.length) ? { now, view, dark, map: geoMap } : null;

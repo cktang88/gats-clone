@@ -10,7 +10,8 @@ import { areFriends, coverRects, friendly, isEnemy, newId, solidRects, type Play
 import { effectiveStats } from './stats.ts';
 import type { Team } from '../protocol.ts';
 
-const BUILT_WALL_MS = 12000;
+/** How long a Shield stands; its cooldown (`ABILITY_COOLDOWN_MS.engineer`) is longer, so one is never up all the time. */
+export const SHIELD_MS = 10_000;
 export const GAS_RADIUS = 140;
 /** A gas cloud's damage a second, the grenade's and the canister's alike. */
 export const GAS_DPS = 14;
@@ -99,7 +100,7 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
     const [ww, hh] = acrossX ? [140, 24] : [24, 140];
     // A shield: its owner's side shoots out through it, and nothing shoots back in (`roundPasses`).
     const out: [number, number] = acrossX ? [0, Math.sign(Math.sin(p.angle)) || 1] : [Math.sign(Math.cos(p.angle)) || 1, 0];
-    const wall: Wall = { x: cx - ww / 2, y: cy - hh / 2, w: ww, h: hh, built: true, expiresAt: w.now + BUILT_WALL_MS, out };
+    const wall: Wall = { x: cx - ww / 2, y: cy - hh / 2, w: ww, h: hh, built: true, expiresAt: w.now + SHIELD_MS, out, ends: w.now + SHIELD_MS };
     const blocked = [...w.players.values()].some((o) => o.life.k === 'alive' && circleHitsRect(o.x, o.y, WORLD.playerRadius, wall));
     if (blocked) return false;
     w.walls.push(wall);
