@@ -22,13 +22,15 @@ function nightWorld(): World {
   return w;
 }
 const X = 1475, Y = 1700, DOWN = Math.PI / 2;
+/** Holds a zombie where it stands (a hold at no pace), so a file of them stays a file while a slow round flies down it. */
+const stand = (z: Zombie) => { z.slow = { mul: 0, until: Infinity }; return z; };
 function addZombie(w: World, kind: ZombieKind, x: number, y: number, hp = zombieMaxHp(kind, 1, 1)) {
   const z: Zombie = { id: newId(w), kind, x, y, hp, attackAt: Infinity, vx: 0, vy: 0 };
   w.zombies.push(z);
   return z;
 }
 
-test('the bounty follows measured horde harm: slower guns pay more, the heaviest a little less, all within the clamp', () => {
+test('the bounty follows sustained harm, starkly: slower guns pay much more, the belt-fed guns about half, all within the clamp', () => {
   for (const g of GUN_IDS) {
     const b = zombieBounty(g);
     assert.ok(b >= BOUNTY.min && b <= BOUNTY.max, `${g} x${b}`);
@@ -37,6 +39,13 @@ test('the bounty follows measured horde harm: slower guns pay more, the heaviest
   assert.ok(zombieBounty(slowest) > 1.3, `${slowest} pays x${zombieBounty(slowest)}`);
   assert.equal(zombieBounty(fastest), BOUNTY.min, `${fastest} pays the least`);
   assert.ok(zombieBounty('shotgun') > zombieBounty('lmg') && zombieBounty('pistol') > zombieBounty('minigun'));
+  // The spread is stark: every machine gun pays at most 0.6, the bolt-actions at least 2.5, the shotguns at least 2 and the assault rifle the plain price.
+  for (const g of GUN_IDS.filter((id) => GUNS[id].base === 'lmg')) assert.ok(zombieBounty(g) <= 0.6, `${g} x${zombieBounty(g)}`);
+  for (const g of ['sniper', 'longshot', 'piercer'] as const) assert.ok(zombieBounty(g) >= 2.5, `${g} x${zombieBounty(g)}`);
+  for (const g of ['shotgun', 'slugGun', 'doubleBarrel', 'sawedOff'] as const) assert.ok(zombieBounty(g) >= 2, `${g} x${zombieBounty(g)}`);
+  assert.equal(zombieBounty('assault'), 1);
+  // Mag size and reload count: the LMG's 100-round belt out-harms an assault rifle through a whole night of fire.
+  assert.ok(HORDE_DPS.lmg > HORDE_DPS.assault && HORDE_DPS.assault > HORDE_DPS.sniper);
 });
 
 test('a kill pays the zombie\'s scrap times the killer\'s gun bounty, in the bank, the run stats and the zkill event; a turret\'s kill pays the plain price', () => {
@@ -83,10 +92,33 @@ test('a sniper round pierces a line of zombies; a pistol round stops in the firs
   const v = nightWorld();
   const s = spawnAt(v, X, Y);
   equip(s, 'sniper');
-  const row = [0, 1, 2, 3, 4].map((i) => addZombie(v, 'walker', X, Y + 120 + i * 45, 1000));
+  // Walkers die to the bolt's round outright, so each one it reached is gone or hurt; the one after the last it may pass is untouched.
+  const row = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => stand(addZombie(v, 'walker', X, Y + 120 + i * 45, 1000)));
+  // A bolt-action is pinpoint once planted and steady, so it stands a moment first.
+  press(v, s, { angle: DOWN });
+  run(v, 600);
   shootOnce(v, s, DOWN, 600);
   const pierce = zombieRole('sniper').pierce;
-  assert.deepEqual(row.map((z) => z.hp < 1000), [0, 1, 2, 3, 4].map((i) => i <= pierce), `the round passes ${pierce} and stops in the next`);
+  assert.ok(pierce >= 5, `a bolt-action pierces ${pierce}`);
+  assert.deepEqual(row.map((z) => z.hp < 1000), row.map((_, i) => i <= pierce), `the round passes ${pierce} and stops in the next`);
+});
+
+test('a bolt-action one-shots every walker and runner in its lane, far out on the Tide', () => {
+  const w = nightWorld();
+  w.run!.night = 10;
+  const s = spawnAt(w, X, Y);
+  equip(s, 'sniper');
+  const lane = [0, 1, 2, 3, 4, 5, 6].map((i) => stand(addZombie(w, i % 2 ? 'runner' : 'walker', X, Y + 300 + i * 40, zombieMaxHp(i % 2 ? 'runner' : 'walker', 10, 1))));
+  press(w, s, { angle: DOWN });
+  run(w, 600);
+  shootOnce(w, s, DOWN, 900);
+  assert.deepEqual(lane.map((z) => w.zombies.includes(z)), lane.map(() => false), 'one round, seven dead, out to 540 px');
+  const semi = nightWorld();
+  const q = spawnAt(semi, X, Y);
+  equip(q, 'repeater');
+  const z = addZombie(semi, 'walker', X, Y + 200, 5000);
+  shootOnce(semi, q, DOWN, 400);
+  assert.ok(z.hp > 0, 'a quick-firing marksman rifle earns no one-shot');
 });
 
 test('kinds take each class\'s multiplier, plating comes off by the role, and blasts lose half to plate', () => {
@@ -100,7 +132,7 @@ test('kinds take each class\'s multiplier, plating comes off by the role, and bl
   };
   near(hit('sniper', 'brute'), GUNS.sniper.damage * HORDE_GUN_MUL * zombieRole('sniper').vs.brute!, 'a bolt hits a brute harder');
   assert.ok(zombieRole('sniper').vs.brute! > 1);
-  near(hit('sniper', 'walker'), GUNS.sniper.damage * HORDE_GUN_MUL, 'every player round reaches the horde at HORDE_GUN_MUL');
+  near(hit('lmg', 'walker'), GUNS.lmg.damage * HORDE_GUN_MUL, 'every player round reaches the horde at HORDE_GUN_MUL');
   near(hit('smg', 'runner'), GUNS.smg.damage * HORDE_GUN_MUL * 1.75, 'an SMG round hits a runner 1.75 times as hard');
   near(hit('pistol', 'runner'), GUNS.pistol.damage * HORDE_GUN_MUL * 1.5);
   near(hit('assault', 'plated'), (GUNS.assault.damage - ZOMBIES.plated.plate / 2) * HORDE_GUN_MUL, 'an assault round loses only half the plate');

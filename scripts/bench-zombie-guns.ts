@@ -5,7 +5,7 @@
 // Does any gun earn its place in Zombies? Each gun is held by `humans` squad players for whole seeded runs with no perks (scripts/lib/zombieguns.ts `playGunRun`),
 // the rest of the squad bots with random guns. Per gun it prints the mean night reached, the holders' kills, harm dealt and the scrap their kills paid, the core
 // health lost, and a contribution score: the mean of night reached, holders' scrap and holders' kills, each over its mean across the guns benched (1.00 is average).
-// It prints the `HORDE_DPS` table the Zombies scrap bounty reads (`zombieBounty` in defs.ts): each gun's harm over the seconds its holders stood at night, over every run.
+// It sets each class gun's sustained harm, which the Zombies scrap bounty reads (`sustainedHarm`, `zombieBounty` in defs.ts), beside what its holders dealt a second at night.
 // `drill` holds each gun south of the core against packs of one kind at a time (`gunDrill`) and prints harm a second against each kind, and leaks, by gun and by class.
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -82,13 +82,11 @@ if (process.argv[2] === '--worker') {
     const best = (k: 'night' | 'scrap' | 'kills' | 'bank' | 'perKill') => [...byClass].sort((a, b) => b[k] - a[k])[0]!.c;
     console.log(`class with the most nights: ${best('night')}; the most scrap: ${best('scrap')}; the most kills: ${best('kills')}; the most scrap a kill: ${best('perKill')}; `
       + `the biggest squad bank: ${best('bank')}; the least core lost: ${[...byClass].sort((a, b) => a.core - b.core)[0]!.c}`);
-    if (guns.length === GUN_IDS.length) {
-      // The bounty's measure: each gun's harm a second to the horde while its holders stand at night, over every run.
-      const sorted = rows.map((r) => r.dps).sort((a, b) => a - b);
-      const median = (sorted[(sorted.length - 1) >> 1]! + sorted[sorted.length >> 1]!) / 2;
-      console.log(`\nHORDE_DPS for defs.ts (median ${f(median)}, BOUNTY.ref):\n{ ${GUN_IDS.map((g) => `${g}: ${f(rows.find((r) => r.gun === g)!.dps)}`).join(', ')} }`);
-      const drift = GUN_IDS.filter((g) => Math.abs(rows.find((r) => r.gun === g)!.dps / defs.HORDE_DPS[g] - 1) > 0.15);
-      console.log(drift.length ? `drifted more than 15% from defs.ts HORDE_DPS: ${drift.join(', ')}` : 'every gun within 15% of defs.ts HORDE_DPS');
+    // The bounty reads each gun's sustained harm (`sustainedHarm` in defs.ts), worked out from its numbers; set beside it what the holders really dealt a second at night.
+    console.log(`\nclass   | sustained harm/s (class gun) | dealt/s at night in runs | bounty (class gun)`);
+    for (const c of WEAPON_IDS) {
+      const cs = rows.filter((r) => GUNS[r.gun].base === c);
+      if (cs.length) console.log(`${c.padEnd(7)} | ${f(defs.HORDE_DPS[c]).padStart(28)} | ${f(mean(cs.map((r) => r.dps))).padStart(24)} | x${f(bounty(c), 2)}`);
     }
     const top = scored[0]!, low = scored[scored.length - 1]!;
     console.log(`spread: best gun ${top.gun} ${f(top.score, 2)} / worst ${low.gun} ${f(low.score, 2)} = ${f(top.score / low.score, 2)}x; best class ${byClass[0]!.c} / worst ${byClass.at(-1)!.c} = ${f(byClass[0]!.score / byClass.at(-1)!.score, 2)}x`);

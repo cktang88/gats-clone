@@ -123,8 +123,9 @@ test('zombies are knocked back by weight: runners and walkers fly, plated resist
 
 test('a bullet knocks a zombie back along its flight', () => {
   const w = emptyWorld('ZOM');
-  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'sniper' } });
-  equip(a, 'sniper');
+  // A Hand Cannon, a heavy shover: a bolt-action's round kills a walker outright in Zombies (`ZombieRole.oneShot`), and the dead are not thrown.
+  const a = spawnAt(w, 500, 500, { loadout: { weapon: 'pistol' } });
+  equip(a, 'handCannon');
   w.zombies.push({ id: newId(w), kind: 'walker', x: 700, y: 500, hp: 1e6, attackAt: Infinity, vx: 0, vy: 0 });
   const z = w.zombies[0]!;
   press(w, a, { angle: 0, fire: true, shots: a.input.shots + 1 });

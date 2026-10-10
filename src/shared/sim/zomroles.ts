@@ -13,7 +13,9 @@ import type { Zombie } from './world.ts';
 export function roundOnZombie(z: Zombie, gun: GunId | null, damage: number, piercing: boolean): number {
   const role = gun ? zombieRole(gun) : null;
   const plate = piercing ? 0 : ZOMBIES[z.kind].plate * (role?.plate ?? 1);
-  return Math.max(1, damage - plate) * (role ? HORDE_GUN_MUL * (role.vs[z.kind] ?? 1) : 1);
+  const harm = Math.max(1, damage - plate) * (role ? HORDE_GUN_MUL * (role.vs[z.kind] ?? 1) : 1);
+  // A bolt-action's round kills a walker or a runner outright, whatever the night or the range (`ZombieRole.oneShot`).
+  return role?.oneShot.includes(z.kind) ? Math.max(harm, z.hp) : harm;
 }
 
 /** What a blast of `damage` from `gun` does to `z`: `HORDE_GUN_MUL`, the role's blast multiplier, and the share of it plating lets through. */
