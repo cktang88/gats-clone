@@ -1,7 +1,7 @@
-import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS, type ModeId, type WeaponId } from '../shared/defs.ts';
+import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS, type ModeId, type WeaponId, zombieRole } from '../shared/defs.ts';
 import { HANDLING } from '../shared/handling.ts';
 import type { Loadout } from '../shared/protocol.ts';
-import { CLASS_ROLES, zombieGunLine } from '../shared/roles.ts';
+import { bountyLabel, CLASS_ROLES, zombieGunLine } from '../shared/roles.ts';
 import { authenticate, dropGuestClaim, fetchOwnEmail, fetchStats, loadAccount, requestReset, saveOwnEmail, loadGuestClaims, loadName, pickGuestClaim, saveAccount, type Account, type ServerInfo } from './api.ts';
 import { CARRY_LINE } from './enlist.ts';
 import { EMAIL_MAX, emailError } from '../shared/email.ts';
@@ -56,7 +56,7 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
     const art = el('canvas', { className: 'gun-art' });
     const b = el('button', { type: 'button', className: 'tile weapon', title: `${w.name}: ${CLASS_ROLES[id]}` },
       art, el('b', {}, w.name), el('small', {}, `${w.damage}${w.pellets > 1 ? `×${w.pellets}` : ''} dmg · ${w.mag} mag`), gunStats(id),
-      el('small', { className: 'zom-perk', hidden: true }, zombieGunLine(id)));
+      el('small', { className: 'zom-perk', hidden: true }, el('b', { className: 'zom-bounty' }, bountyLabel(id)), el('span', {}, zombieRole(id).perk)));
     b.onclick = () => set({ ...get(), weapon: id });
     if (opts.peek) {
       b.addEventListener('pointerenter', (e) => { if (e.pointerType !== 'touch') opts.peek!(id); });

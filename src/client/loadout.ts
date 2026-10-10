@@ -1,5 +1,5 @@
-import { GUNS, LEVELS, PERK_INFO, type AbilityId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
-import { bountyLabel, zombieGunLine } from '../shared/roles.ts';
+import { GUNS, LEVELS, PERK_INFO, type AbilityId, type GunId, type PendingPick, type PerkId, type Tier, zombieBounty } from '../shared/defs.ts';
+import { bountyChip, zombieGunLine } from '../shared/roles.ts';
 
 /**
  * The loadout strip: what you have picked this life, one slot each, as plain data so hud.ts draws it and the test reads the same
@@ -44,7 +44,7 @@ export function loadoutSlots(gun: GunId, perks: Partial<Record<Tier, PerkId>>, a
   const def = GUNS[gun];
   if (def.stage > 0 || zombies) {
     const kindLabel = def.stage > 0 ? `Gun · evolution ${def.stage} of 2${def.stage === 2 && !zombies ? ' · hunted' : ''}` : 'Gun';
-    const bounty = zombies ? bountyLabel(gun)?.replace(' scrap', '') : undefined;
+    const bounty = zombies && zombieBounty(gun) !== 1 ? bountyChip(gun) : undefined;
     slots.push({
       kind: 'gun', key: `gun:${gun}`, name: def.name, label: def.name, kindLabel, desc: zombies ? `${def.desc}. Zombies: ${zombieGunLine(gun)}.` : def.desc, gun,
       ...(bounty && { bounty }),

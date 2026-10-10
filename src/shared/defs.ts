@@ -833,13 +833,13 @@ export type ZombieRole = {
   blast: number; blastPlated: number; mend: number;
 };
 const ZROLE_BASE: Omit<ZombieRole, 'perk'> = { vs: {}, plate: 1, slow: null, shove: 1, blast: 1, blastPlated: 1, mend: 1 };
-const HEAVIES = { brute: 1.3, plated: 1.3, colossus: 1.3 } as const;
+const HEAVIES = { brute: 2, plated: 2, colossus: 2 } as const;
 export const ZOMBIE_CLASS_ROLES: Record<WeaponId, ZombieRole> = {
   pistol: { ...ZROLE_BASE, perk: 'Field mechanic: repairs and reloads 60% faster, x1.5 vs runners', vs: { runner: 1.5 }, mend: 1.6 },
   smg: { ...ZROLE_BASE, perk: 'Runner hunter: x1.75 vs runners, repairs and reloads 30% faster', vs: { runner: 1.75 }, mend: 1.3 },
   shotgun: { ...ZROLE_BASE, perk: 'Crowd breaker: staggers and shoves packs, x1.8 vs walkers and runners', vs: { walker: 1.8, runner: 1.8 }, slow: { mul: 0.35, ms: 700 }, shove: 2 },
   assault: { ...ZROLE_BASE, perk: 'Long-range anchor: x1.8 vs bloaters, rounds ignore half of plating', plate: 0.5, vs: { bloater: 1.8 } },
-  sniper: { ...ZROLE_BASE, perk: 'Heavy hitter: x1.3 vs brutes, plated, bosses', vs: HEAVIES },
+  sniper: { ...ZROLE_BASE, perk: 'Heavy hitter: x2 vs brutes, plated, bosses', vs: HEAVIES },
   lmg: { ...ZROLE_BASE, perk: 'Suppressor: hits slow zombies to 70%', slow: { mul: 0.7, ms: 450 } },
 };
 /** Evolutions whose job against the horde differs from their class's: the rails, the marksman rifles and the explosive guns. */
@@ -847,9 +847,9 @@ const ZOMBIE_GUN_ROLES: Partial<Record<GunId, ZombieRole>> = {
   railSlug: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'Rail: x1.4 vs brutes, plated, bosses', vs: { brute: 1.4, plated: 1.4, colossus: 1.4 } },
   executioner: { ...ZOMBIE_CLASS_ROLES.pistol, perk: 'x1.3 vs brutes, plated, bosses', vs: { brute: 1.3, plated: 1.3, colossus: 1.3 } },
   // The quick-firing marksman rifles already pour rounds in: the heavies take a smaller bonus from them than from a bolt's one big round.
-  semiAuto: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'x1.2 vs brutes, plated, bosses', vs: { brute: 1.2, plated: 1.2, colossus: 1.2 } },
-  ghost: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'x1.2 vs brutes, plated, bosses', vs: { brute: 1.2, plated: 1.2, colossus: 1.2 } },
-  repeater: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'x1.2 vs brutes, plated, bosses', vs: { brute: 1.2, plated: 1.2, colossus: 1.2 } },
+  semiAuto: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'x1.5 vs brutes, plated, bosses', vs: { brute: 1.5, plated: 1.5, colossus: 1.5 } },
+  ghost: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'x1.5 vs brutes, plated, bosses', vs: { brute: 1.5, plated: 1.5, colossus: 1.5 } },
+  repeater: { ...ZOMBIE_CLASS_ROLES.sniper, perk: 'x1.5 vs brutes, plated, bosses', vs: { brute: 1.5, plated: 1.5, colossus: 1.5 } },
   boomSlug: { ...ZROLE_BASE, perk: 'Blasts packs (x1.3); plated shrug off half', blast: 1.3, blastPlated: 0.5 },
   grenadier: { ...ZROLE_BASE, perk: 'Blasts packs (x1.3); plated shrug off half', blast: 1.3, blastPlated: 0.5 },
   artillery: { ...ZROLE_BASE, perk: 'Blasts packs (x1.3); plated shrug off half', blast: 1.3, blastPlated: 0.5 },

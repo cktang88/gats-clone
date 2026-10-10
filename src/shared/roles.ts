@@ -1,4 +1,4 @@
-import { zombieBounty, zombieRole, type GunId, type WeaponId } from './defs.ts';
+import { ZOMBIES, zombieBounty, zombieRole, type GunId, type WeaponId } from './defs.ts';
 
 /**
  * What each gun is for. A class has one job in the fight, and the two evolutions at every step are sidegrades that change HOW you play it,
@@ -96,11 +96,11 @@ export const GUN_ROLES: Record<GunId, Role> = {
 };
 
 
-/** Zombies only: a gun's scrap bounty as a player reads it ("+30% scrap", "-15% scrap"), or null when its kills pay the plain price. */
-export function bountyLabel(gun: GunId): string | null {
-  const pct = Math.round((zombieBounty(gun) - 1) * 100);
-  return pct === 0 ? null : `${pct > 0 ? '+' : '−'}${Math.abs(pct)}% scrap`;
-}
+const times = (n: number) => `×${Number(n.toFixed(2))}`;
+/** Zombies only: a gun's scrap bounty as a player reads it, in scrap: "×3 scrap a kill (9 per walker)". Every gun has one, the plain price included. */
+export const bountyLabel = (gun: GunId): string => `${times(zombieBounty(gun))} scrap a kill (${Math.round(ZOMBIES.walker.scrap * zombieBounty(gun))} per walker)`;
+/** The same bounty as the HUD's chip on the gun tile: "×3". */
+export const bountyChip = (gun: GunId): string => times(zombieBounty(gun));
 
 /** Zombies only: the one line the loadout step and the HUD show for a gun, its bounty and then its job against the horde. */
-export const zombieGunLine = (gun: GunId): string => [bountyLabel(gun), zombieRole(gun).perk].filter(Boolean).join(' · ');
+export const zombieGunLine = (gun: GunId): string => `${bountyLabel(gun)} · ${zombieRole(gun).perk}`;
