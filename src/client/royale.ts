@@ -1,15 +1,12 @@
-import { RING, ZOM, type ColorId } from '../shared/defs.ts';
-import { ringAt, type PlayerView, type RoyaleResult, type RoyaleView, type Snapshot } from '../shared/protocol.ts';
+import { RING } from '../shared/defs.ts';
+import { ringAt, type RoyaleResult, type RoyaleView, type Snapshot } from '../shared/protocol.ts';
 import { clock } from './derive.ts';
-import { TEAM_COLORS } from './palette.ts';
 
 type Point = { x: number; y: number };
 
 /** The ring in the kit's hazard colours: a rust-red storm edged in signal orange, with the next circle dashed in bone. */
 const RING_LOOK = { storm: '#7a2414', stormAlpha: 0.24, edge: '#ff5a1f', next: 'rgba(236, 230, 214, 0.85)', drop: '#ffc94a', muted: '#9a9ea6' } as const;
 const KIT_FONT = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif';
-
-export const squadLabel = (team: ColorId) => `${team[0]!.toUpperCase()}${team.slice(1)} squad`;
 
 export function ringLine(royale: Pick<RoyaleView, 'ring'>, serverNow: number): string {
   const { ring } = royale;
@@ -25,7 +22,7 @@ export function ringPill(royale: Pick<RoyaleView, 'ring'>, serverNow: number): {
   return { label: `RING ${ring.phase + 1}/${RING.length}`, time: clock(until - serverNow) };
 }
 
-export const resultTitle = (r: RoyaleResult) => (r.place === 1 ? '#1 · Last squad standing' : `#${r.place} of ${r.of}`);
+export const resultTitle = (r: RoyaleResult) => (r.place === 1 ? '#1 · Last one standing' : `#${r.place} of ${r.of}`);
 
 const nameOf = (snap: Snapshot, id: number | null) =>
   id === null ? null : snap.players.find((p) => p.id === id)?.name ?? snap.leaderboard.find((r) => r.id === id)?.name ?? null;
@@ -33,17 +30,17 @@ const nameOf = (snap: Snapshot, id: number | null) =>
 export function spectateLines(snap: Snapshot, royale: RoyaleView, serverNow: number): { title: string; sub: string } {
   const watched = nameOf(snap, royale.watch);
   const title = watched ? `Watching ${watched}` : 'Spectating';
-  if (royale.redeployAt !== null) return { title, sub: `Redeploy beside your squad in ${clock(royale.redeployAt - serverNow)}` };
-  if (royale.result) return { title, sub: `Your squad finished ${resultTitle(royale.result)}` };
-  const me = snap.players.find((p) => p.id === snap.self.id);
-  return { title, sub: me?.team ? 'Last lives: no redeploy this match' : 'You join a squad when the next match starts' };
+  if (royale.redeployAt !== null) return { title, sub: `Redeploy in ${clock(royale.redeployAt - serverNow)}` };
+  if (royale.result) return { title, sub: `You finished ${resultTitle(royale.result)}` };
+  return { title, sub: 'No redeploys left · you drop in when the next match starts' };
 }
 
-export function reviveHint(snap: Snapshot, me: PlayerView | null): string | null {
-  if (!me?.alive || !snap.royale) return null;
-  const mate = snap.players.find((p) => p.id !== me.id && p.team === me.team && p.downed && Math.hypot(p.x - me.x, p.y - me.y) <= ZOM.reviveRange);
-  return mate ? `Hold E to revive ${mate.name}` : null;
-}
+/** The Last Standing kill-feed line for player `id` out for good in `place`. */
+export const wipedLine = (f: { id: number; name: string; place: number }, myId: number) =>
+  f.id === myId ? `You're out · #${f.place}` : `${f.name} is out · #${f.place}`;
+
+/** The alive counter: `12 / 18 LEFT`. */
+export const aliveLabel = (royale: Pick<RoyaleView, 'alive' | 'total'>) => `${royale.alive} / ${royale.total}`;
 
 export function drawRingWorld(ctx: CanvasRenderingContext2D, royale: RoyaleView, serverNow: number, tl: Point, br: Point) {
   const c = ringAt(royale.ring, serverNow);
@@ -134,48 +131,12 @@ export function drawRingMap(ctx: CanvasRenderingContext2D, royale: RoyaleView, s
   ctx.restore();
 }
 
-const TRACKER = { col: 22, pip: 4.5, gap: 13 } as const;
-export const trackerSize = (squads: number) => ({ w: squads * TRACKER.col, h: 3 * TRACKER.gap });
-
-export function drawTracker(ctx: CanvasRenderingContext2D, royale: RoyaleView, mine: ColorId | null, left: number, top: number) {
-  const { col, pip, gap } = TRACKER;
-  const { h } = trackerSize(royale.squads.length);
-  royale.squads.forEach((s, i) => {
-    const x = left + col * i + col / 2;
-    const color = TEAM_COLORS[s.team];
-    if (s.team === mine) {
-      ctx.fillStyle = 'rgba(255, 90, 31, 0.18)';
-      ctx.fillRect(x - col / 2 + 1, top, col - 2, h);
-      ctx.fillStyle = '#ff5a1f';
-      ctx.fillRect(x - col / 2 + 1, top + h - 2, col - 2, 2);
-    }
-    if (s.place !== null && s.place > 1) {
-      ctx.globalAlpha = 0.7;
-      ctx.fillStyle = RING_LOOK.muted;
-      ctx.font = `700 12px ${KIT_FONT}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`#${s.place}`, x, top + h / 2);
-      ctx.globalAlpha = 1;
-      return;
-    }
-    s.pips.forEach((p, j) => {
-      const y = top + gap / 2 + j * gap;
-      ctx.beginPath();
-      ctx.arc(x, y, pip, 0, Math.PI * 2);
-      if (p === 'up') { ctx.fillStyle = color; ctx.fill(); }
-      else if (p === 'down') { ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke(); }
-      else { ctx.globalAlpha = 0.35; ctx.fillStyle = RING_LOOK.muted; ctx.fill(); ctx.globalAlpha = 1; }
-    });
-  });
-}
-
 export const ringMoved = (prev: RoyaleView | undefined, next: RoyaleView | undefined, prevAt: number, nextAt: number): boolean =>
   !!prev && !!next && prevAt < next.ring.shrinkAt && nextAt >= next.ring.shrinkAt && next.ring.phase < RING.length;
 
 export function royaleCallouts(prev: RoyaleView | undefined, next: RoyaleView | undefined, prevAt: number, nextAt: number): { title: string; line: string }[] {
   const out: { title: string; line: string }[] = [];
-  if (prev?.redeploys && next && !next.redeploys) out.push({ title: 'Last lives', line: 'No more redeploys. Knocked squadmates still get back up.' });
+  if (prev?.redeploys && next && !next.redeploys) out.push({ title: 'Last lives', line: 'No more redeploys. This life is your last.' });
   if (ringMoved(prev, next, prevAt, nextAt)) out.push({ title: 'The ring is moving', line: 'Get inside the dashed circle' });
   return out;
 }

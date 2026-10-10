@@ -298,7 +298,7 @@ export class Chatter {
 
 export const chatter = new Chatter();
 
-/** Chatter is for your own side: you hear yourself and your teammates (squad in Zombies or Last Squad), never an enemy or, in FFA, anyone else. */
+/** Chatter is for your own side: you hear yourself and your teammates (squad in Zombies), never an enemy or, in FFA, anyone else. */
 export const hearsChatter = (me: Pick<PlayerView, 'id' | 'team'>, p: Pick<PlayerView, 'id' | 'team'>): boolean =>
   p.id === me.id || (me.team !== null && p.team === me.team);
 

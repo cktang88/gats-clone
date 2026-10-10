@@ -1055,12 +1055,11 @@ export const RING: readonly RingPhase[] = [
 ];
 
 export const ROYALE = {
-  squadSize: 3,
+  /** Every player is on their own: the room fills to this many with bots. */
+  players: 18,
   /** Redeploys stay open until this many ring phases have closed; after that every life is the last. */
-  redeployPhases: 3,
-  redeployMs: (deaths: number) => 15_000 + 10_000 * Math.max(0, deaths - 1),
-  /** A knocked player's own health, as a share of their max, which enemies shoot through to finish them. */
-  knockHpFrac: 0.5,
+  redeployPhases: 2,
+  redeployMs: (deaths: number) => 12_000 + 8_000 * Math.max(0, deaths - 1),
   crateScore: 25,
   /** Each phase's supply drop lands this long into the phase's wait; minimaps show it `dropNoticeMs` before it lands. */
   dropLandMs: 20_000,
@@ -1068,3 +1067,25 @@ export const ROYALE = {
   dropHp: 300,
   dropSize: 64,
 } as const;
+
+/**
+ * Loot caches strewn over a Last Standing map, `count` of them at least `spacing` px apart on open ground, each opened by walking within
+ * `openPx` of it for `openMs` (stepping away starts it over). Each is one of three tiers, drawn by `weight`: a common one pays `score` and a full magazine; a rare one more score,
+ * `heal` health and one armor tier up (`armorUp`); an epic one skips its opener to their next level pick (`pick`), puts their armor up a
+ * tier and resupplies them in full. Everyone starts a life with no armor, so caches are where it comes from.
+ */
+export const LOOT = {
+  count: 64, spacing: 260, openPx: 56, openMs: 800, size: 30,
+  tiers: [
+    { name: 'Common', weight: 0.64, score: 90, heal: 0, armorUp: 0, pick: false },
+    { name: 'Rare', weight: 0.29, score: 220, heal: 45, armorUp: 1, pick: false },
+    { name: 'Epic', weight: 0.07, score: 0, heal: 0, armorUp: 1, pick: true },
+  ],
+} as const;
+export type LootTier = 0 | 1 | 2;
+
+/**
+ * Recon towers: `count` on a Last Standing map. Standing within `radius` of a ready one, with no other player inside, for `holdMs`
+ * marks every other living player within `revealPx` on its holder's minimap for `revealMs`; then it rests `cooldownMs`.
+ */
+export const TOWER = { count: 3, radius: 95, holdMs: 2500, revealPx: 2200, revealMs: 20_000, cooldownMs: 60_000 } as const;

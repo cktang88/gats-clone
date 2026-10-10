@@ -61,6 +61,9 @@ export function addMoments(m: Moments, prev: Snapshot | null, next: Snapshot, no
       const by = next.players.find((p) => p.id === ev.by)?.name;
       announce({ title: 'Back on your feet', line: by ? `${by} got you up` : 'Your squad got you up', color: PALETTE.hpGood, ring: true });
     }
+    if (ev.e === 'tower' && ev.by === next.self.id) {
+      announce({ title: 'Recon', line: ev.n === 0 ? 'Nobody in range' : `${ev.n} player${ev.n === 1 ? '' : 's'} marked on your map`, color: '#7fd4ff', ring: true });
+    }
     if (ev.e === 'zkill' && ev.by === next.self.id) popups.push({ x: ev.x, y: ev.y, amount: ZOMBIES[ev.kind].score, born: now });
   }
   const was = prev && selfOf(prev);

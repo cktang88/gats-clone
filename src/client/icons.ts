@@ -73,6 +73,10 @@ export const UI_ICONS = {
   lock: 'M6 11h12v10H6zM8.5 11V7.5a3.5 3.5 0 0 1 7 0V11',
   clock: 'M4 13a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M12 9v4l3 2M9.5 2.5h5M12 2.5V5',
   down: 'M12 4v12M6 11l6 7 6-7',
+  /** A head and shoulders: a player, for the Last Standing alive counter. */
+  person: 'M8.5 7a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0 -7 0M4.5 21c0-4.5 3.4-7.5 7.5-7.5s7.5 3 7.5 7.5z',
+  /** A recon tower: a mast under a dish. */
+  antenna: 'M12 10v12M8 22h8M9 22l3-12 3 12M5 4a7 7 0 0 0 9.9 9.9zM10 7l3-3',
 } as const;
 
 const paths = new Map<string, Path2D>();

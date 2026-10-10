@@ -27,7 +27,7 @@ export type Context = { night: number; storm: boolean };
 export const DAY: Grade = { lift: [-0.004, 0.0, 0.014], gain: [1.03, 1.005, 0.965], gamma: 1.0, sat: 0.97, bloomThreshold: 0.9, bloomStrength: 0.42, grain: 0.011 };
 /** Zombies night: deep steel shadows, amber lights kept warm and rich, and lamps that really glow. */
 export const NIGHT: Grade = { lift: [0.0, 0.006, 0.026], gain: [1.04, 1.0, 0.97], gamma: 1.04, sat: 1.06, bloomThreshold: 0.84, bloomStrength: 0.85, grain: 0.02 };
-/** Last Squad storm: a touch drained and cold, nothing else. */
+/** Last Standing storm: a touch drained and cold, nothing else. */
 export const STORM: Grade = { lift: [0.0, 0.006, 0.014], gain: [0.985, 1.0, 1.005], gamma: 1.0, sat: 0.82, bloomThreshold: 0.88, bloomStrength: 0.38, grain: 0.014 };
 
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;

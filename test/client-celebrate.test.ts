@@ -63,7 +63,7 @@ test('a team win floods the winning team\'s colour for everyone, and stamps vict
   assert.deepEqual(win.podium.map((p) => p.id), [1]);
 });
 
-test('no celebration without a winner, or in Last Squad', () => {
+test('no celebration without a winner, or in Last Standing', () => {
   const t = newTracker();
   assert.equal(celebrationFor(snap({ players: [pv(1, 0, 0)] }), t), null);
   const br = { ...snap({ winner: true }), royale: {} } as unknown as Snapshot;

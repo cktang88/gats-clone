@@ -8,8 +8,8 @@ import type { GameEvent } from '../shared/protocol.ts';
  *
  * Always on (while you are alive and playing): your health (the cross and its armor), the rounds left (on the reload button),
  * the ability (on its button, once you have picked one; touchbuttons.ts hides it until then), the two sticks, the pause cog, the minimap folded small, and one slim status line where the
- * mode needs one: Domination's zones and score, the zombies run's day or night with the core and survivors, and Last Squad's
- * ring and squads.
+ * mode needs one: Domination's zones and score, the zombies run's day or night with the core and survivors, and Last Standing's
+ * ring and who is left.
  *
  * On demand: the level ("LV 2") with a pin for each perk picked this life, and the score where no board chip shows it, beside the
  * cross for a moment after they change (or a tap on the cross); the minimap
@@ -42,18 +42,18 @@ export type PhoneElement =
   | 'status' | 'clock' | 'teamScore' | 'level' | 'score' | 'minimapOpen' | 'chatPip' | 'chatOpen' | 'board' | 'gg' | 'stickLabels'
   | 'intro' | 'rangeFull';
 
-/** Where the mode's one status line is always on (DOM zones, zombies night, Last Squad ring); FFA, TDM and the range have none. */
+/** Where the mode's one status line is always on (DOM zones, zombies night, Last Standing ring); FFA, TDM and the range have none. */
 export const statusAlways = (mode: ModeId): boolean => mode === 'DOM' || mode === 'ZOM' || mode === 'BR';
 
 export type FocusState = {
   mode: ModeId;
   now: number;
-  /** Ms left in the round, or null when it has no clock (zombies, Last Squad, the range). */
+  /** Ms left in the round, or null when it has no clock (zombies, Last Standing, the range). */
   timeLeft: number | null;
   /** The round (or run) is over and its result is up. */
   over: boolean;
-  /** Last Squad: squads still standing. */
-  squadsLeft?: number;
+  /** Last Standing: players still in. */
+  playersLeft?: number;
   /** When each changed or was tapped (-Infinity for never). */
   levelAt: number;
   scoreAt: number;
@@ -81,7 +81,7 @@ export function phoneFocus(f: FocusState): Record<PhoneElement, boolean> {
   const { now, mode } = f;
   const final = (ms: number) => f.timeLeft !== null && f.timeLeft > 0 && f.timeLeft <= ms;
   const chatOpen = f.chatLines > 0 && within(now, f.chatTapAt, FOCUS.chatOpenMs);
-  const nearEnd = f.over || final(FOCUS.ggMs) || (mode === 'BR' && f.squadsLeft !== undefined && f.squadsLeft <= 2);
+  const nearEnd = f.over || final(FOCUS.ggMs) || (mode === 'BR' && f.playersLeft !== undefined && f.playersLeft <= 3);
   return {
     health: true, ammo: true, ability: true, sticks: true, cog: true, minimap: true,
     status: statusAlways(mode),
@@ -105,7 +105,7 @@ type FeedLine = Extract<GameEvent, { e: 'kill' | 'hunted' | 'life' | 'wiped' | '
 
 /**
  * The phone's kill feed keeps your own kills and deaths (and assists), and the big events: a bounty paid, a long streak ended,
- * someone hunted, a squad wiped out, an airdrop, and a squadmate (or you) going down or coming back.
+ * someone hunted, a player out of Last Standing, an airdrop, and a zombies squadmate (or you) going down or coming back.
  */
 export function feedKeeps(f: FeedLine, myId: number, myTeam: string | null, teamOf: (id: number) => string | null): boolean {
   if (f.e === 'kill') return f.killerId === myId || f.victimId === myId || f.assisters.includes(myId) || f.bounty || f.ended >= 5;

@@ -1,7 +1,7 @@
 import { WORLD, type ModeId } from '../defs.ts';
 import { byRank, type RoundWinner, type Team } from '../protocol.ts';
 import { dist2 } from './movement.ts';
-import { emptiestSquad, royaleKill, royaleWinner, startRoyale, tickRoyale } from './royale.ts';
+import { royaleKill, royaleWinner, startRoyale, tickRoyale } from './royale.ts';
 import { tickRun } from './run.ts';
 import { freshLife, resetProgress } from './stats.ts';
 import { nextMap } from '../maps.ts';
@@ -124,7 +124,7 @@ export const MODES: Record<ModeId, ModeRules> = {
     winner: () => null,
   },
   BR: {
-    assignTeam: (w) => emptiestSquad(w),
+    assignTeam: () => null,
     onKill: royaleKill,
     tick: tickRoyale,
     winner: royaleWinner,

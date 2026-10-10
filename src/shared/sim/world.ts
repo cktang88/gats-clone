@@ -1,5 +1,5 @@
 import type { Cos } from '../cosmetics.ts';
-import { AIRDROP, BARREL, byTurret, PERK_TIERS, PROPS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type GunId, type ModeId, type PerkId, type PlayerKind, type PropKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
+import { AIRDROP, BARREL, byTurret, PERK_TIERS, PROPS, WORLD, type Badge, ZOM, ZOMBIE_KINDS, type Blast, type ColorId, type LootTier, type GunId, type ModeId, type PerkId, type PlayerKind, type PropKind, type Side, type Tier, type TurretKind, type ZombieKind } from '../defs.ts';
 import type { Circle, Dash, GameEvent, InputState, Loadout, RoundWinner, Team, WallView } from '../protocol.ts';
 import { CRATE_SIZE, MAP_MS, MAPS, ZONE_RADIUS, type Center, type MapId } from '../maps.ts';
 import { cellRect, coreRectAt } from './build.ts';
@@ -7,7 +7,7 @@ import { loadDoors, type DoorState } from './doors.ts';
 import { polyParts } from '../mapgeo.ts';
 import { circleBlocked, dist2, type Knock, type Rect } from './movement.ts';
 import type { ZAi } from './boids.ts';
-import { newRoyale } from './royale.ts';
+import { newRoyale, soloSpawn } from './royale.ts';
 import { newRange, type RangeSim } from './targets.ts';
 import { loadPacks } from './packs.ts';
 
@@ -246,18 +246,26 @@ export type Ring =
 
 export type Drop = { x: number; y: number; landsAt: number };
 
-export type RoyaleStats = { name: string; kills: number; knocks: number; revives: number };
+export type RoyaleStats = { name: string; kills: number; loot: number };
+
+/** A loot cache (see `LOOT`): where it stands, its tier, whether it has been opened, and who has stood at it since when (null for nobody). */
+export type Cache = { id: number; x: number; y: number; tier: LootTier; open: boolean; by?: number | null; since?: number };
+/** A recon tower (see `TOWER`): when it is ready again, and who has been holding it since when (null while nobody alone holds it). */
+export type Tower = { x: number; y: number; readyAt: number; holder: number | null; since: number };
 
 /**
- * `squads` are those that have fielded a player this match and `out` the ones with nobody left standing, first out first.
- * `redeployAt` holds each dead player still coming back; `killers` who took each player's life, so a wiped squad can watch them; `watching` whom each dead player's camera follows.
+ * Last Standing, every player for themselves. `entrants` are the players who have played in this match and `out` the ones who are out
+ * for good, first out first. `redeployAt` holds each dead player still coming back; `killers` who took each player's life, so they can
+ * watch their killer; `watching` whom each dead player's camera follows.
  */
 export type Royale = {
   /** The server time the round began: the round's name, which the clients' hidden radios are placed by. */
   startedAt: number;
   ring: Ring;
-  squads: ColorId[];
-  out: ColorId[];
+  entrants: number[];
+  out: number[];
+  caches: Cache[];
+  towers: Tower[];
   redeployAt: Map<number, number>;
   drops: Drop[];
   stats: Map<number, RoyaleStats>;
@@ -513,39 +521,10 @@ const SPAWN_CLEARANCE = 10;
 const SPAWN_CANDIDATES = 12;
 const SPAWN_EDGE = 100;
 
-const SQUAD_GAP = { min: 70, max: 160 } as const;
-const SQUAD_CANDIDATES = 24;
-
-function squadSpawn(w: World, team: Team, solids: readonly Rect[], size: number): Pose {
-  const r = WORLD.playerRadius + SPAWN_CLEARANCE;
-  const clear = (x: number, y: number) => x >= r && y >= r && x <= size - r && y <= size - r && !circleBlocked(solids, x, y, r);
-  const standing = [...w.players.values()].filter((p) => p.life.k === 'alive' && Number.isFinite(p.x));
-  const mates = standing.filter((p) => p.team === team);
-  if (mates.length) {
-    const m = mates[Math.floor(rand(w) * mates.length)]!;
-    for (let i = 0; i < 20; i++) {
-      const a = rand(w) * 2 * Math.PI, d = SQUAD_GAP.min + rand(w) * (SQUAD_GAP.max - SQUAD_GAP.min);
-      const x = m.x + Math.cos(a) * d, y = m.y + Math.sin(a) * d;
-      if (clear(x, y)) return { x, y };
-    }
-    return clearPointNear(solids, m.x, m.y, r, size);
-  }
-  const rivals = standing.filter((p) => p.team !== team);
-  let best: (Pose & { safety: number }) | null = null;
-  for (let i = 0, found = 0; i < 400 && found < SQUAD_CANDIDATES; i++) {
-    const x = SPAWN_EDGE + rand(w) * (size - 2 * SPAWN_EDGE), y = SPAWN_EDGE + rand(w) * (size - 2 * SPAWN_EDGE);
-    if (!clear(x, y)) continue;
-    found++;
-    const safety = Math.min(Infinity, ...rivals.map((p) => dist2(p.x, p.y, x, y)));
-    if (!best || safety > best.safety) best = { x, y, safety };
-  }
-  return best ? { x: best.x, y: best.y } : clearPointNear(solids, size / 2, size / 2, r, size);
-}
-
 export function spawnPoint(w: World, team: Team): Pose {
   const { spawns, siege, size } = MAPS[w.map];
   const solids = solidRects(w);
-  if (w.royale) return squadSpawn(w, team, solids, size);
+  if (w.royale) return soloSpawn(w, w.royale, -1);
   const regions = spawns[team === 'red' || team === 'blue' ? team : 'ffa'];
   const core = siege?.core;
   if (w.run && core) {

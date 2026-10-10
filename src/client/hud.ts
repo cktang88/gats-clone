@@ -16,7 +16,8 @@ import { nightAmount } from './render.ts';
 import { CORE_ALERT_MS } from './siege.ts';
 import { BUILD_CONTROLS, buildRows, buildsByNight, downedLine, forecast, phaseLine, readyHint, squadShare, upgradeTarget, useHint, NIGHT_BUILD_HINT, type BuildChip, type HintChip } from './zombies.ts';
 import { airdropLine, drawAirdropMap } from './arenafx.ts';
-import { drawRingMap, drawTracker, reviveHint, ringLine, ringPill, spectateLines, squadLabel, trackerSize } from './royale.ts';
+import { aliveLabel, drawRingMap, ringLine, ringPill, spectateLines, wipedLine } from './royale.ts';
+import { drawCachesMap, drawTowersMap } from './lootart.ts';
 import { drawGunArt, skinInk } from './gunart.ts';
 import type { Session } from './state.ts';
 import { uiScaleFor } from './uiscale.ts';
@@ -748,12 +749,11 @@ function drawKillFeed(hud: Hud, top: number, rows: number, rightEdge?: number, c
       return;
     }
     if (f.e === 'wiped') {
-      const line = `${squadLabel(f.team)} is out · #${f.place}`;
-      const pw = ctx.measureText(line).width + SPACE.md * 2 + 8;
-      feedRow(ctx, right - pw, y, pw, hud.me?.team === f.team);
-      ctx.fillStyle = TEAM_COLORS[f.team];
-      ctx.fillRect(right - pw + 6, y - 5, 6, 10);
-      text(ctx, line, right - pw + SPACE.md + 8, y, TYPE.label + 1, PANEL_INK, 'left', 650);
+      const line = wipedLine(f, s.myId);
+      const pw = ctx.measureText(line).width + SPACE.md * 2 + 14;
+      feedRow(ctx, right - pw, y, pw, f.id === s.myId);
+      strokeIcon(ctx, UI_ICONS.person, right - pw + SPACE.md + 3, y, 11, f.id === s.myId ? PALETTE.hunted : PANEL_MUTED, 2);
+      text(ctx, line, right - pw + SPACE.md + 14, y, TYPE.label + 1, PANEL_INK, 'left', 650);
       ctx.globalAlpha = 1;
       return;
     }
@@ -897,7 +897,7 @@ function drawLeaderboard(hud: Hud, compact: boolean, full: boolean, at?: { right
   panel(ctx, x, top, pw, ph);
   let y = top + BOARD.pad + BOARD.row / 2;
   if (full) {
-    const line = snap.run || snap.royale ? 'Squad kills' : teams ? `First to ${snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore}` : mostKillsText(timeLeft(hud));
+    const line = snap.run ? 'Squad kills' : snap.royale ? 'Most kills' : teams ? `First to ${snap.match.mode === 'TDM' ? WORLD.tdmWinScore : WORLD.domWinScore}` : mostKillsText(timeLeft(hud));
     text(ctx, line[0]!.toUpperCase() + line.slice(1), x + BOARD.pad + 2, y - 2, TYPE.micro, PANEL_MUTED, 'left', 600);
     y += head;
   }
@@ -1125,6 +1125,11 @@ function drawMinimap(hud: Hud, size: number) {
   }
   drawAirdropMap(ctx, snap.airdrop, serverNow(s.snaps, hud.now), hud.now, x, y, k, size, base);
   const clockNow = snap.royale ? serverNow(s.snaps, hud.now) : null;
+  if (snap.royale) {
+    drawCachesMap(ctx, snap.royale.caches, x, y, k);
+    drawTowersMap(ctx, snap.royale.towers, x, y, k, hud.now);
+    ctx.globalAlpha = base;
+  }
   if (snap.royale && clockNow !== null) {
     drawRingMap(ctx, snap.royale, clockNow, hud.now, x, y, k, size);
     ctx.globalAlpha = base;
@@ -1306,18 +1311,39 @@ function drawDownedSelf({ ctx, w, h, s, now }: Hud, downed: NonNullable<PlayerVi
   ctx.globalAlpha = 1;
 }
 
+/** Your kills in this round, from the board. */
+const myKills = (hud: Hud) => hud.snap.leaderboard.find((r) => r.id === hud.s.myId)?.kills ?? 0;
+
+/**
+ * Last Standing's standing line: a head icon with `12 / 18 LEFT` (the count in bone, the rest muted; orange once five or fewer
+ * are left), then a crosshair with your kills in gold. Segments for statusRow, drawn on their centre line.
+ */
+function standingSegs(hud: Hud, royale: NonNullable<Snapshot['royale']>, size: number): Seg[] {
+  const { ctx } = hud;
+  const count = aliveLabel(royale), tail = 'LEFT', kills = String(myKills(hud));
+  const late = royale.alive <= 5;
+  const cw = widthOf(ctx, count, size, 800), tw = widthOf(ctx, tail, TYPE.micro, 800), kw = widthOf(ctx, kills, size, 800);
+  return [
+    { w: 16 + cw + 5 + tw, draw: (x) => {
+      strokeIcon(ctx, UI_ICONS.person, x + 6, 0, 13, late ? ACCENT : PANEL_INK, 2.2);
+      text(ctx, count, x + 16, 1, size, late ? ACCENT : PANEL_INK, 'left', 800);
+      text(ctx, tail, x + 16 + cw + 5, 1, TYPE.micro, PANEL_MUTED, 'left', 800);
+    } },
+    { w: 18 + kw, draw: (x) => {
+      strokeIcon(ctx, UI_ICONS.target, x + 6, 0, 13, PALETTE.gold, 2.2);
+      text(ctx, kills, x + 18, 1, size, PALETTE.gold, 'left', 800);
+    } },
+  ];
+}
+
 function drawRoyale(hud: Hud, royale: NonNullable<Snapshot['royale']>, top: number) {
   if (hud.P) return drawPhoneRoyale(hud, hud.P, royale);
   const { ctx, w, h, snap, s, me, now } = hud;
-  const mine = me?.team ?? null;
-  const box = trackerSize(royale.squads.length);
-  const x = w / 2 - box.w / 2 - 6, y = top + 6;
-  panel(ctx, x, y, box.w + 12, box.h + 8);
-  panels.push({ x, y, w: box.w + 12, h: box.h + 8 });
-  drawTracker(ctx, royale, mine, x + 6, y + 4);
-  if (me?.downed) { drawDownedSelf(hud, me.downed); return; }
-  const revive = reviveHint(snap, me);
-  if (revive) platedLine(ctx, revive, w / 2, h * 0.64, TYPE.body + 1, PALETTE.gold, 750, ACCENT);
+  const segs = standingSegs(hud, royale, TYPE.title);
+  const total = segs.reduce((a, g) => a + g.w, 0) + 16 * (segs.length - 1) + 24;
+  const box = { x: w / 2 - total / 2, y: top + 6, w: total, h: 30 };
+  statusRow(ctx, box, segs);
+  panels.push(box);
   if (me?.alive) return;
   const clockNow = serverNow(s.snaps, now);
   if (clockNow === null) return;
@@ -2687,7 +2713,7 @@ function focusOf(hud: Hud): Record<PhoneElement, boolean> {
   const dom = phoneDomState();
   const F = phoneFocus({
     mode: snap.match.mode, now, timeLeft: snap.run || snap.royale || snap.range ? null : timeLeft(hud),
-    over: snap.match.winner !== null || snap.run?.phase === 'over', squadsLeft: snap.royale?.squads.filter((q) => q.place === null).length,
+    over: snap.match.winner !== null || snap.run?.phase === 'over', playersLeft: snap.royale?.alive,
     levelAt: focusSeen.levelAt, scoreAt: focusSeen.scoreAt, vitalsTapAt: phoneTaps.vitals, teamScoreAt: focusSeen.teamAt,
     mapTapAt: phoneTaps.map, chatTapAt: dom.chatTapAt, rangeTapAt: dom.rangeTapAt, chatLines: dom.chatLines,
     firstMatch: labelsSeen.first, guidesSince: guideClock.since, introSeen: introModes.has(snap.match.mode),
@@ -2728,7 +2754,7 @@ const widthOf = (ctx: CanvasRenderingContext2D, s: string, size: number, weight:
 /**
  * The phone's one status line, for the modes that need one always: Domination's two scores round its zones (and the clock in the
  * last minute), the zombies run's day or night with what is left of it, the core and the survivors (and the scrap by day, when it
- * buys walls and turrets), and Last Squad's ring with the squads still standing.
+ * buys walls and turrets), and Last Standing's ring with how many are left and your kills.
  */
 function drawPhoneStatus(hud: Hud, box: Box) {
   const { ctx, snap, s, now, me } = hud;
@@ -2764,8 +2790,7 @@ function drawPhoneStatus(hud: Hud, box: Box) {
     const pill = ringPill(royale, serverNow(s.snaps, now) ?? royale.ring.shrinkAt);
     const lw = widthOf(ctx, pill.label, TYPE.label + 1, 800), tw = pill.time ? widthOf(ctx, pill.time, TYPE.body, 650) : 0;
     segs.push({ w: lw + (tw ? 8 + tw : 0), draw: (x) => { text(ctx, pill.label, x, 1, TYPE.label + 1, '#c9b3ff', 'left', 800); if (tw) text(ctx, pill.time, x + lw + 8, 1, TYPE.body, PANEL_INK, 'left', 650); } });
-    const size = trackerSize(royale.squads.length), kt = Math.min(1, (box.h - 4) / size.h);
-    segs.push({ w: size.w * kt, draw: (x) => { ctx.save(); ctx.translate(x, (-size.h * kt) / 2); ctx.scale(kt, kt); drawTracker(ctx, royale, me?.team ?? null, 0, 0); ctx.restore(); } });
+    segs.push(...standingSegs(hud, royale, TYPE.body));
     if (!royale.redeploys) {
       const ll = 'LAST LIVES', llw = widthOf(ctx, ll, TYPE.micro, 800);
       segs.push({ w: llw, draw: (x) => text(ctx, ll, x, 1, TYPE.micro, PALETTE.lossOnDark, 'left', 800) });
@@ -2876,12 +2901,9 @@ function drawPhoneSiege(hud: Hud, P: PhoneLayout, run: NonNullable<Snapshot['run
   if (use) phoneBottom(hud, P, use, PALETTE.gold);
 }
 
-/** Last Squad on a phone: the tracker rides the top line; this keeps your downed plate, the revive prompt and who you watch. */
+/** Last Standing on a phone: the alive counter rides the top line; this names who you watch while you are out. */
 function drawPhoneRoyale(hud: Hud, P: PhoneLayout, royale: NonNullable<Snapshot['royale']>) {
   const { snap, s, me, now } = hud;
-  if (me?.downed) return drawPhoneDowned(hud, P, me.downed);
-  const revive = reviveHint(snap, me);
-  if (revive) return phoneBottom(hud, P, revive, PALETTE.gold);
   if (me?.alive) return;
   const clockNow = serverNow(s.snaps, now);
   if (clockNow === null) return;

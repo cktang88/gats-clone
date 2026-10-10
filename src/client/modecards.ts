@@ -9,7 +9,7 @@ export const MODE_INFO: Record<SceneId, { name: string; pitch: string; short: st
   FFA: { name: 'Free for all', pitch: 'Every soldier for themselves. Top score when the clock runs out wins the yard.', short: 'Free for all' },
   TDM: { name: 'Team deathmatch', pitch: 'Red against Blue. Every kill counts for your squad; hold the line together.', short: 'Team deathmatch' },
   DOM: { name: 'Domination', pitch: 'Capture the zones and keep them. Points tick up for whoever holds the ground.', short: 'Domination' },
-  BR: { name: 'Last squad', pitch: 'Squads of three drop in as the storm closes the ring. Be the last squad standing.', short: 'Last squad' },
+  BR: { name: 'Last standing', pitch: 'Eighteen drop in, everyone for themselves. Loot caches for armor, take recon towers, outlast the ring.', short: 'Last standing' },
   ZOM: { name: 'Bastion squad', pitch: 'Hold the core against the horde with up to three friends. Build by day, survive the night.', short: 'Bastion squad' },
   RNG: { name: 'Shooting range', pitch: 'Your own private range. Any gun, any perk, nothing counts toward your record.', short: 'Shooting range' },
 };

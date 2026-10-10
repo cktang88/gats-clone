@@ -267,7 +267,7 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
   const renderResult = (snap: Snapshot) => {
     const result = snap.royale?.result ?? null;
     const { winner, restartIn } = snap.match;
-    const key = result ? `${result.place}|${result.of}|${result.kills}|${result.knocks}|${result.revives}|${winner?.name}|${seconds(restartIn)}` : '';
+    const key = result ? `${result.place}|${result.of}|${result.kills}|${result.loot}|${winner?.name}|${seconds(restartIn)}` : '';
     if (key === keys.report) return;
     keys.report = key;
     report.hidden = !result;
@@ -279,13 +279,13 @@ export function createOverlays(onPick: (slot: number) => void, onDeathSend: (msg
     const head = document.createElement('tr');
     const row = document.createElement('tr');
     row.className = 'you';
-    for (const [label, v] of [['Kills', result.kills], ['Knocks', result.knocks], ['Revives', result.revives]] as const) {
+    for (const [label, v] of [['Kills', result.kills], ['Caches looted', result.loot]] as const) {
       head.append(Object.assign(document.createElement('th'), { textContent: label }));
       row.append(Object.assign(document.createElement('td'), { textContent: String(v) }));
     }
     table.append(head, row);
     const next = document.createElement('p');
-    next.textContent = winner ? `${winner.name} wins · next match in ${seconds(restartIn)}s` : 'Your squad is out · watching the rest of the match';
+    next.textContent = winner ? `${winner.name} wins · next match in ${seconds(restartIn)}s` : 'You are out · watching the rest of the match';
     report.replaceChildren(h, table, next);
   };
 
