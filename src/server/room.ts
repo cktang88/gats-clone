@@ -1,11 +1,11 @@
 import type { WebSocket } from 'ws';
 import type { Player } from '../shared/sim/world.ts';
-import { CAREER_PAY, CAREER_TIERS, COLOR_IDS, GUN_IDS, GUNS, MAX_LEVEL, NIGHTS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
+import { CAREER_PAY, CAREER_TIERS, GUN_IDS, GUNS, MAX_LEVEL, NIGHTS, ROYALE, WORLD, ZOM, type GunId, type MedalId, type ModeId, type PlayerKind, type WeaponId } from '../shared/defs.ts';
 import { MAPS, rotationMap, type MapId } from '../shared/maps.ts';
 import { parseClientMsg, type ClientMsg, type FriendAction, type GameEvent, type Loadout, type ServerMsg, type Snapshot, type Team } from '../shared/protocol.ts';
 import { addPlayer, removePlayer, respawn, setInput, step } from '../shared/sim.ts';
 import { rewindCapFor } from '../shared/sim/combat.ts';
-import { benchUntilNextMatch, placeOf, redeploysOpen, seatFor, takeSeat } from '../shared/sim/royale.ts';
+import { benchUntilNextMatch, enterRoyale, placeOf, redeploysOpen, seatFor, takeSeat } from '../shared/sim/royale.ts';
 import { build, buildLine, demolish, toggleReady, upgrade } from '../shared/sim/run.ts';
 import { interestLook, snapshotFor, wallViews } from '../shared/sim/snapshot.ts';
 import { holdLook, NO_LOOK, type LookSides } from '../shared/lookahead.ts';
@@ -97,7 +97,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const humans = (team: Team) => [...world.players.values()].filter((p) => p.kind === 'human' && p.team === team).length;
     if (mode === 'FFA') return [[null, Math.max(0, limits.minPlayers - humans(null))]];
     if (mode === 'ZOM') return [['red', Math.max(0, ZOM.squadSize - humans('red'))]];
-    if (mode === 'BR') return COLOR_IDS.map((team) => [team, Math.max(0, ROYALE.squadSize - humans(team))]);
+    // Only the people playing in the match take a bot's place; one watching until the next match does not.
+    if (mode === 'BR') return [[null, Math.max(0, ROYALE.players - [...world.players.values()].filter((p) => p.kind === 'human' && world.royale?.entrants.includes(p.id)).length)]];
     const seats = botSeats({ red: humans('red'), blue: humans('blue') }, limits.minPlayers, BOTS_PER_HUMAN, limits.minPlayers);
     return [['red', seats.red], ['blue', seats.blue]];
   }
@@ -105,12 +106,14 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
   function addBot(team: Team) {
     const name = uniqueName(botName(new Set(names()), botRand), names(), registered);
     const p = addPlayer(world, name, randomLoadout(botRand), { team });
+    if (mode === 'BR') enterRoyale(world, p);
     bots.set(p.id, newBotMemory(botRand, { name, seed }));
     p.cos = botCosmetics(name);
     return p;
   }
 
-  const seatOpen = (team: Team) => !world.royale || (redeploysOpen(world.royale) && world.match.k === 'playing' && (team === null || !world.royale.out.includes(team)));
+  /** Whether a Last Standing match can still take a new player: until its redeploys close. */
+  const seatOpen = (_team: Team) => !world.royale || (redeploysOpen(world.royale) && world.match.k === 'playing');
 
   function balanceBots() {
     for (const [team, want] of botTargets()) {
@@ -118,6 +121,8 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       for (const id of mine.slice(want)) {
         bots.delete(id);
         removePlayer(world, id);
+        // A bot let go to make room for a person was never really in the match: it takes no place in it.
+        if (world.royale) world.royale.entrants = world.royale.entrants.filter((e) => e !== id);
       }
       if (seatOpen(team)) for (let i = mine.length; i < want; i++) addBot(team);
     }
@@ -212,7 +217,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     const m = world.match;
     if (m.k !== 'over') return false;
     if (mode === 'FFA') return m.winner.id === p.id;
-    if (mode === 'BR') return !!(world.royale && p.team && placeOf(world, world.royale, p.team) === 1);
+    if (mode === 'BR') return !!(world.royale && placeOf(world, world.royale, p.id) === 1);
     return p.team !== null && m.winner.name === (TEAM_NAME as Record<string, string>)[p.team];
   };
   let roundPaid = false;
@@ -471,7 +476,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
     backlogSince.delete(ws);
     if (c?.k !== 'joined') return;
     const left = world.players.get(c.playerId);
-    if (mode === 'BR' && left?.team && seatOpen(left.team)) takeSeat(world, addBot(left.team), left);
+    if (mode === 'BR' && left && world.royale?.entrants.includes(left.id) && !world.royale.out.includes(left.id) && seatOpen(null)) takeSeat(world, addBot(null), left);
     const walk = walked.get(c.playerId);
     const key = left ? profileKey(c, left.name) : null;
     if (key && walk?.px && !practice) profiles.record(key, { distance: walk.px });
@@ -516,6 +521,7 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
 
   balanceBots();
   let seatedRoyale = world.royale;
+  let seatedEntrants = world.royale?.entrants.length ?? 0;
   /** Set by close(): a socket that reaches a closed room is turned away (one still finishing its close handshake was already let go). */
   let closed = false;
 
@@ -572,9 +578,10 @@ export function createRoom(id: string, mode: ModeId, seed: number, accounts: Acc
       const a0 = performance.now();
       const events = advance();
       net.advanceMs += performance.now() - a0;
-      if (world.royale !== seatedRoyale) {
+      if (world.royale !== seatedRoyale || (world.royale && world.royale.entrants.length !== seatedEntrants)) {
         seatedRoyale = world.royale;
         balanceBots();
+        seatedEntrants = world.royale?.entrants.length ?? 0;
       }
       if (world.wallsVersion !== wallsVersion) {
         wallsVersion = world.wallsVersion;

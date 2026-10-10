@@ -1,6 +1,6 @@
 import {
   AIRDROP, ARMOR_IDS, BUILDING_KINDS, COLOR_IDS, GUN_IDS, LEVELS, MAX_LEVEL, PERK_TIERS, PICK_OPTIONS, WEAPON_IDS, WORLD, ZOM,
-  type AbilityId, type ArmorId, type Badge, type ColorId, type MedalId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type PropKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind,
+  type AbilityId, type ArmorId, type Badge, type ColorId, type MedalId, type GunId, type ModeId, type PendingPick, type PerkId, type PickOption, type PlayerKind, type PropKind, type Tier, type WeaponId, type ZombieKind, type BuildingKind, type TurretKind, type LootTier,
 } from './defs.ts';
 import { MAP_IDS, MAPS, type MapId, type WallMaterial } from './maps.ts';
 import type { DoorView } from './sim/doors.ts';
@@ -250,7 +250,14 @@ export type GameEvent =
   /** A squad player went down, was revived (`by` the reviver), bled out, was finished while down (`by` null for the ring), or redeployed beside a squadmate. */
   | { e: 'life'; id: number; name: string; k: 'downed' | 'revived' | 'bledOut' | 'finished' | 'redeployed'; by: number | null }
   /** A Last Squad squad has nobody left standing; `place` is where it finished. */
-  | { e: 'wiped'; team: ColorId; place: number }
+  /** Player `id` (named `name`) is out of a Last Standing match for good, in `place`. */
+  | { e: 'wiped'; id: number; name: string; place: number }
+  /** Player `by` opened a loot cache of `tier` at (x, y); `gun` is what a weapon case left on the floor. */
+  | { e: 'loot'; x: number; y: number; tier: LootTier; by: number; gun?: GunId }
+  /** Player `id` took `gun` off the floor at (x, y), leaving `left` (the gun they had) in its place. */
+  | { e: 'took'; id: number; gun: GunId; left: GunId; x: number; y: number }
+  /** Player `by` took the recon tower at (x, y), marking `n` players within `r` on their minimap. */
+  | { e: 'tower'; x: number; y: number; r: number; by: number; n: number }
   /** A supply plane is `inbound` for (`x`, `y`); its crate `landed`; or `by` cracked it open and took a golden gun (`gold`) or a resupply. */
   /** `level`: a Last Squad supply drop that also gave its opener a level. */
   | { e: 'airdrop'; k: 'inbound' | 'landed' | 'taken'; x: number; y: number; by?: string; gold?: boolean; level?: boolean }
@@ -260,12 +267,13 @@ export type GameEvent =
    * Player `id` took something: `hp` health, `armor` armor points and `ammo` rounds actually gained (what was wasted is not counted), `ability` ready again,
    * `gold` a golden gun. `from` is where it came from. News only to that player, who sees it pop up over their own soldier.
    */
-  | { e: 'gain'; id: number; from: GainSource; hp?: number; ammo?: number; ability?: true; gold?: true; level?: true; armor?: number }
+  /** `xp` is score a loot cache paid; `armorTo` the armor tier it put you in. */
+  | { e: 'gain'; id: number; from: GainSource; hp?: number; ammo?: number; ability?: true; gold?: true; level?: true; armor?: number; xp?: number; armorTo?: ArmorId }
   /** An armor pack at (`x`, `y`) was taken (`pick`). */
   | { e: 'pack'; k: 'pick'; x: number; y: number };
 
 /** Where a `gain` came from: a health or ammo pack, a supply plane's crate, a Last Squad drop, an armor pack. */
-export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop' | 'armor';
+export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop' | 'armor' | 'loot';
 
 export type Circle = { x: number; y: number; r: number };
 /**
@@ -280,20 +288,25 @@ export const ringAt = (ring: RingView, now: number): Circle => {
   const lerp = (a: number, b: number) => a + (b - a) * k;
   return { x: lerp(ring.from.x, ring.to.x), y: lerp(ring.from.y, ring.to.y), r: lerp(ring.from.r, ring.to.r) };
 };
-export type Pip = 'up' | 'down' | 'dead';
-/** `place` once the squad is out, 1 for the winner. */
-export type SquadView = { team: ColorId; pips: Pip[]; place: number | null };
-/** Where a Last Squad match ended for you: `place` of `of` squads. */
-export type RoyaleResult = { place: number; of: number; kills: number; knocks: number; revives: number };
+/** Where a Last Standing match ended for you: `place` of `of` players, your kills and the caches you opened. */
+export type RoyaleResult = { place: number; of: number; kills: number; loot: number };
+/** A loot cache: `[id, x, y, tier, opened, opening, weapon]`: opened 1 once someone has; `opening` (0..1) how far whoever stands at it is through opening it; `weapon` 1 for a weapon case. */
+export type CacheView = [id: number, x: number, y: number, tier: LootTier, opened: 0 | 1, opening: number, weapon: 0 | 1];
+/** A gun lying on the floor: `[id, x, y, gun]`. */
+export type FloorGunView = [id: number, x: number, y: number, gun: GunId];
+/** A recon tower: ready again at server time `readyAt` (0 when ready), and how far (0..1) its holder is through taking it (absent when nobody is). */
+export type TowerView = { x: number; y: number; readyAt: number; progress?: number; holder?: number };
 /**
- * `redeploys` stays true until the third phase closes. `redeployAt` is the server time you come back, null when no redeploy is coming.
- * `drops` are supply drops about to land or landed and still standing; `watch` is the player your camera follows while you are dead.
+ * Last Standing, every player for themselves. `redeploys` stays true until the second phase closes. `redeployAt` is the server time you
+ * come back, null when no redeploy is coming. `alive` of `total` players are still in it. `drops` are supply drops about to land or landed
+ * and still standing; `watch` is the player your camera follows while you are dead.
  */
 export type RoyaleView = {
   /** The server time the round began; the clients place their hidden radios by it. */
   round: number;
-  ring: RingView; redeploys: boolean; squads: SquadView[]; redeployAt: number | null;
+  ring: RingView; redeploys: boolean; alive: number; total: number; redeployAt: number | null;
   drops: { x: number; y: number; landsAt: number }[]; watch: number | null; result: RoyaleResult | null;
+  caches: CacheView[]; towers: TowerView[]; guns: FloorGunView[];
 };
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */

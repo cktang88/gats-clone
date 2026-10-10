@@ -36,6 +36,9 @@ function effectOf(ev: GameEvent, snap: Snapshot): EffectSpec | EffectSpec[] | nu
     case 'hunted':
     case 'life':
     case 'wiped':
+    case 'loot':
+    case 'took':
+    case 'tower':
     case 'airdrop':
     case 'gain':
     case 'prop':

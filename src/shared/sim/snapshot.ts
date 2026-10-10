@@ -1,6 +1,6 @@
-import { ARMORS, BARREL, byTurret, PROP_FX, PROP_KINDS, ROYALE, STREAK, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
+import { ARMORS, BARREL, byTurret, PROP_FX, PROP_KINDS, LOOT, ROYALE, STREAK, TOWER, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
-  AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, MatchView, MinimapMark, Pip, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
+  AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, CacheView, FloorGunView, MatchView, MinimapMark, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { lookReach, lookSides, NO_LOOK, type LookSides } from '../lookahead.ts';
@@ -15,7 +15,7 @@ import { abilityOf, effectiveStats, hasPerk, isHunted, pendingPick, rushMul } fr
 import { zombieMaxHp } from './run.ts';
 import { rangeView, targetViews } from './targets.ts';
 import { buildingView, tenths } from './build.ts';
-import { placeOf, redeploysOpen, resultFor, ringView } from './royale.ts';
+import { redeploysOpen, resultFor, ringView, stillIn } from './royale.ts';
 import { areFriends, isEnemy, sameTeam, type Player, type Royale, type Run, type World } from './world.ts';
 
 const GHILLIE_STILL_MS = 600;
@@ -211,16 +211,14 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
   };
 }
 
-const pipOf = (p: Player): Pip => (p.life.k === 'alive' ? 'up' : p.life.k === 'downed' ? 'down' : 'dead');
-
 function royaleView(w: World, r: Royale, me: Player): RoyaleView {
-  const players = [...w.players.values()];
   const half = ROYALE.dropSize / 2;
   return {
     ring: ringView(r.ring),
     redeploys: redeploysOpen(r),
     round: r.startedAt,
-    squads: r.squads.map((team) => ({ team, pips: players.filter((p) => p.team === team).map(pipOf), place: placeOf(w, r, team) })),
+    alive: stillIn(r).length,
+    total: r.entrants.length,
     redeployAt: r.redeployAt.get(me.id) ?? null,
     drops: [
       ...r.drops.filter((d) => d.landsAt - w.now <= ROYALE.dropNoticeMs),
@@ -228,6 +226,15 @@ function royaleView(w: World, r: Royale, me: Player): RoyaleView {
     ],
     watch: r.watching.get(me.id) ?? null,
     result: resultFor(w, r, me),
+    caches: r.caches.map((c): CacheView => [
+      c.id, Math.round(c.x), Math.round(c.y), c.tier, c.open ? 1 : 0,
+      !c.open && c.by != null ? Math.round(Math.min(1, (w.now - (c.since ?? w.now)) / LOOT.openMs) * 50) / 50 : 0, c.gun ? 1 : 0,
+    ]),
+    guns: r.guns.map((g): FloorGunView => [g.id, Math.round(g.x), Math.round(g.y), g.gun]),
+    towers: r.towers.map((t) => ({
+      x: Math.round(t.x), y: Math.round(t.y), readyAt: w.now < t.readyAt ? t.readyAt : 0,
+      ...(t.holder !== null && { holder: t.holder, progress: Math.round(Math.min(1, (w.now - t.since) / TOWER.holdMs) * 20) / 20 }),
+    })),
   };
 }
 

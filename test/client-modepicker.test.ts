@@ -13,7 +13,7 @@ const closed = (selected = 0): ListState => ({ open: false, active: selected, se
 
 test('the dropdown offers every fight with its chip, name, one-line pitch and who is in', () => {
   assert.deepEqual(TAGS, ['FFA', 'TDM', 'DOM', 'BR', 'ZOM', 'RANGE']);
-  assert.deepEqual(NAMES, ['Free for all', 'Team deathmatch', 'Domination', 'Last squad', 'Zombies squad', 'Shooting range']);
+  assert.deepEqual(NAMES, ['Free for all', 'Team deathmatch', 'Domination', 'Last standing', 'Zombies squad', 'Shooting range']);
   assert.deepEqual(OPTS.map((o) => o.live), ['18 playing', '12 playing', '9 playing', '18 playing', 'Up to 4', 'Just you']);
   for (const o of OPTS) assert.ok(o.pitch.length > 20 && !o.pitch.includes('\n'), `${o.mode} has a one-line pitch`);
   assert.equal(modeOptions(ROOMS, 'z-abcdef').find((o) => o.mode === 'ZOM')!.live, 'Squad z-abcdef');
@@ -66,7 +66,7 @@ test('type-ahead jumps by name (or chip), a word typed quickly narrows, one lett
   s = listboxKey(s, 't', NAMES, TAGS, 100).state;
   assert.equal(s.active, 1, 'T: Team deathmatch');
   s = listboxKey(s, 'l', NAMES, TAGS, 100 + TYPE_AHEAD_MS + 1).state;
-  assert.equal(s.active, 3, 'after a pause, L: Last squad');
+  assert.equal(s.active, 3, 'after a pause, L: Last standing');
   s = listboxKey(s, 'a', NAMES, TAGS, 100 + TYPE_AHEAD_MS + 50).state;
   assert.equal(s.typed, 'la');
   assert.equal(s.active, 3);

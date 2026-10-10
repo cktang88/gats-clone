@@ -1,20 +1,22 @@
 /**
  * Pickups, as the player sees them:
- * - the gain popups: whatever you just took (a health pack's +hp, an armor pack's +armor, an ammo pack's +rounds, the ability back, a golden gun) pops up over
+ * - the gain popups: whatever you just took (a health pack's +hp, an armor pack's +armor, an ammo pack's +rounds, the ability back, a golden gun,
+ *   a loot cache's score and armor tier) pops up over
  *   your own soldier as small toy chips, an icon and a number on a gunmetal plate, and rises and fades. What lands at once shares a row
  *   (and a second pack of the same kind adds to its chip); a later pickup starts a new row under it and lifts the older ones. Only you see
  *   your own: nobody else's gains are on your wire (sim/snapshot.ts).
  * There is no key for supplies: a standing medical cabinet or ammo crate opens by itself as you come up to it needing what it holds, and a
  * pack on the floor is taken by walking over it (sim/props.ts).
  */
-import { WORLD } from '../shared/defs.ts';
+import { ARMOR_IDS, ARMORS, WORLD } from '../shared/defs.ts';
 import type { GameEvent, Snapshot } from '../shared/protocol.ts';
 import { celPart, polygon, roundBox } from './cel.ts';
 import { INK, shade } from './palette.ts';
 
 // ---------------------------------------------------------------------------------------------------------------- gain popups
 
-export type GainKind = 'hp' | 'armor' | 'ammo' | 'ability' | 'gold' | 'level';
+/** `xp`: score a loot cache paid. `armorTo`: the armor tier a cache put you in, as its index in ARMOR_IDS (1 light .. 3 heavy). */
+export type GainKind = 'hp' | 'armor' | 'ammo' | 'ability' | 'gold' | 'level' | 'xp' | 'armorTo';
 export type GainIn = Partial<Record<GainKind, number>>;
 export type GainChip = { kind: GainKind; amount: number; touched: number; from: number };
 export type GainRow = { chips: GainChip[]; born: number; touched: number; push: number; pushFrom: number; pushedAt: number };
@@ -27,8 +29,10 @@ export const GAIN = { mergeMs: 350, holdMs: 950, fadeMs: 420, rise: 26, gap: 30,
 export const GAIN_LIFE_MS = GAIN.holdMs + GAIN.fadeMs;
 
 /** Each kind's icon colour (art bible: heal mint, armor steel blue, lamp amber, spark, reward gold). */
-export const GAIN_COLOR: Record<GainKind, string> = { hp: '#8ff0c4', armor: '#8fb8ff', ammo: '#ffb347', ability: '#ffd27a', gold: '#ffd34d', level: '#ffd34d' };
-const ORDER: readonly GainKind[] = ['level', 'hp', 'armor', 'ammo', 'ability', 'gold'];
+export const GAIN_COLOR: Record<GainKind, string> = { hp: '#8ff0c4', armor: '#8fb8ff', ammo: '#ffb347', ability: '#ffd27a', gold: '#ffd34d', level: '#ffd34d', xp: '#ffcf5a', armorTo: '#b9d2ff' };
+const ORDER: readonly GainKind[] = ['level', 'armorTo', 'xp', 'hp', 'armor', 'ammo', 'ability', 'gold'];
+/** Kinds whose chip names a state, not an amount: a second one replaces the first instead of adding to it. */
+const LATEST: ReadonlySet<GainKind> = new Set(['armorTo', 'level', 'ability', 'gold']);
 
 /** Your gains in a snapshot's events, one per `gain` event; an event that gave nothing is dropped. */
 export function gainsOf(events: readonly GameEvent[], myId: number): GainIn[] {
@@ -42,6 +46,8 @@ export function gainsOf(events: readonly GameEvent[], myId: number): GainIn[] {
     if (e.ability) g.ability = 1;
     if (e.gold) g.gold = 1;
     if (e.level) g.level = 1;
+    if (e.xp && e.xp > 0) g.xp = e.xp;
+    if (e.armorTo && e.armorTo !== 'none') g.armorTo = ARMOR_IDS.indexOf(e.armorTo);
     if (Object.keys(g).length) out.push(g);
   }
   return out;
@@ -61,7 +67,7 @@ export function addGain(rows: GainRow[], g: GainIn, now: number): void {
   if (open && now - open.born < GAIN.mergeMs && isLiveRow(open, now)) {
     for (const k of kinds) {
       const chip = open.chips.find((c) => c.kind === k);
-      if (chip) { chip.amount += g[k]!; chip.touched = now; chip.from = 1.35; }
+      if (chip) { chip.amount = LATEST.has(k) ? Math.max(chip.amount, g[k]!) : chip.amount + g[k]!; chip.touched = now; chip.from = 1.35; }
       else open.chips.push({ kind: k, amount: g[k]!, touched: now, from: 0.35 });
     }
     open.chips.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
@@ -85,7 +91,16 @@ export const rowAlpha = (r: GainRow, now: number): number => {
 /** World px above the soldier's anchor the row sits: the rise of its life plus the lift newer rows gave it. */
 export const rowLift = (r: GainRow, now: number, reduced = false): number => pushOf(r, now) + (reduced ? 0.4 : 1) * GAIN.rise * easeOut((now - r.born) / GAIN_LIFE_MS);
 
-export const chipLabel = (c: Pick<GainChip, 'kind' | 'amount'>): string => (c.kind === 'ability' ? 'READY' : c.kind === 'gold' ? 'GOLDEN GUN' : c.kind === 'level' ? 'LEVEL UP' : `+${Math.round(c.amount)}`);
+export function chipLabel(c: Pick<GainChip, 'kind' | 'amount'>): string {
+  switch (c.kind) {
+    case 'ability': return 'READY';
+    case 'gold': return 'GOLDEN GUN';
+    case 'level': return 'LEVEL UP';
+    case 'xp': return `+${Math.round(c.amount)} XP`;
+    case 'armorTo': return `${ARMORS[ARMOR_IDS[Math.min(ARMOR_IDS.length - 1, Math.max(1, Math.round(c.amount)))]!].name.toUpperCase()} ARMOR`;
+    default: return `+${Math.round(c.amount)}`;
+  }
+}
 
 const FONT = '"Barlow Condensed", system-ui, sans-serif';
 const TEXT = 16, ICON = 16, PAD = 6, H = 24, CHIP_GAP = 6;
@@ -94,7 +109,7 @@ const SCALE = 1.5;
 const PLATE = '#3d4450';
 
 /** The icons, centred on the origin, `ICON` px across: a chunky cross, a shield plate, a round of ammo, a lightning bolt, a star. */
-function icon(ctx: CanvasRenderingContext2D, kind: GainKind) {
+function icon(ctx: CanvasRenderingContext2D, kind: GainKind, tier = 1) {
   const c = GAIN_COLOR[kind];
   if (kind === 'hp') {
     const a = 2.6, b = 7;
@@ -112,6 +127,18 @@ function icon(ctx: CanvasRenderingContext2D, kind: GainKind) {
     ctx.fillStyle = INK;
     ctx.fillRect(-3.2, 5.4, 6.4, 1.2);
     ctx.restore();
+  } else if (kind === 'armorTo') {
+    // A bigger plate carrier: the shield with one chevron per tier.
+    celPart(ctx, (g) => { g.moveTo(0, -9); g.lineTo(7.4, -6.4); g.lineTo(6.8, 1.5); g.quadraticCurveTo(5.2, 6.8, 0, 9.4); g.quadraticCurveTo(-5.2, 6.8, -6.8, 1.5); g.lineTo(-7.4, -6.4); g.closePath(); }, c, 0, 12, 1.4);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.6;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < Math.max(1, Math.min(3, tier)); i++) { const y = -3.5 + i * 3.6; ctx.moveTo(-3.6, y + 1.4); ctx.lineTo(0, y - 1); ctx.lineTo(3.6, y + 1.4); }
+    ctx.stroke();
+  } else if (kind === 'xp') {
+    // A four-point glint: score, told apart from the level's five-point star.
+    celPart(ctx, polygon([0, -9], [2.2, -2.2], [9, 0], [2.2, 2.2], [0, 9], [-2.2, 2.2], [-9, 0], [-2.2, -2.2]), c, 0, 12, 1.3);
   } else if (kind === 'ability') {
     celPart(ctx, polygon([1.5, -8.5], [-5, 1], [-0.5, 1], [-2, 8.5], [5, -1.5], [0.5, -1.5]), c, 0, 10, 1.3);
   } else {
@@ -132,7 +159,7 @@ function drawChip(ctx: CanvasRenderingContext2D, c: GainChip, x: number, w: numb
   celPart(ctx, roundBox(x, -H / 2, x + w, H / 2, 7), PLATE, 0, 8, 1.4, 3);
   ctx.save();
   ctx.translate(x + PAD + ICON / 2 + 1, -1.5);
-  icon(ctx, c.kind);
+  icon(ctx, c.kind, Math.round(c.amount));
   ctx.restore();
   const label = chipLabel(c);
   ctx.font = `900 ${TEXT}px ${FONT}`;

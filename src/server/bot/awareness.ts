@@ -118,7 +118,7 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   const enemy = (p: PlayerView) => p.id !== me.id && (me.team === null || p.team !== me.team);
   const inSight = (p: PlayerView) => enemy(p) && !p.spawnShield && inBotSight(sight, me, p) && clearShot(solids, me, p);
   const standing = snap.players.filter((p) => p.alive && inSight(p));
-  const visible = (standing.length || !snap.royale ? standing : snap.players.filter((p) => p.downed && inSight(p))).map((p) => ({ p, d: dist(p, me) }))
+  const visible = standing.map((p) => ({ p, d: dist(p, me) }))
     .sort((a, b) => danger(b.p) - danger(a.p) || a.d - b.d);
 
   const seen = new Set(visible.map((t) => t.p.id));

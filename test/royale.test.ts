@@ -1,17 +1,33 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RING, WORLD, ZOM } from '../src/shared/defs.ts';
-import { goDown } from '../src/shared/sim/downed.ts';
+import { LEVELS, LOOT, RING, TOWER, WORLD } from '../src/shared/defs.ts';
 import type { Circle, GameEvent } from '../src/shared/protocol.ts';
-import { removePlayer, step } from '../src/shared/sim.ts';
+import { step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { enterRoyale, newRoyale, openDrop } from '../src/shared/sim/royale.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
 import type { Accounts } from '../src/server/accounts.ts';
 import { createRoom } from '../src/server/room.ts';
-import { emptyWorld, fakeSocket, hpOf, PISTOL, press, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
+import { emptyWorld, fakeSocket, hpOf, PISTOL, run, shootOnce, shootUntilDead, spawnAt, TICK_MS } from './helpers.ts';
 
 /** Reads the life afresh, past what an earlier assertion narrowed it to. */
 const lifeOf = (p: Player) => p.life;
+
+/** A Last Standing world with no caches or towers on it, unless a test places its own. */
+function brWorld(): World {
+  const w = emptyWorld('BR');
+  w.royale!.caches = [];
+  w.royale!.towers = [];
+  return w;
+}
+
+/** Solo players in the match: each its own side (`team` null), entered as the match would enter them. */
+function solo(w: World, x: number, y: number, opts: Parameters<typeof spawnAt>[3] = {}): Player {
+  const p = spawnAt(w, x, y, { ...opts, team: null });
+  enterRoyale(w, p);
+  if (p.life.k === 'alive') p.life.shieldUntil = -Infinity;
+  return p;
+}
 
 function holdRing(w: World, circle: Circle, phase = 1) {
   w.royale!.ring = { k: 'waiting', phase, circle, next: circle, shrinkAt: Infinity };
@@ -24,218 +40,192 @@ function collect(w: World, ms: number): GameEvent[] {
 }
 
 test('the ring burns only those outside it, through armor and the spawn shield, and holds their regen off', () => {
-  const w = emptyWorld('BR');
+  const w = brWorld();
   holdRing(w, { x: 1000, y: 1000, r: 400 });
-  const inside = spawnAt(w, 1100, 1000, { team: 'red', loadout: { armor: 'heavy' } });
-  const outside = spawnAt(w, 2000, 1000, { team: 'red', loadout: { armor: 'heavy' }, shielded: true });
-  spawnAt(w, 200, 200, { team: 'blue' });
+  const inside = solo(w, 1100, 1000);
+  const outside = solo(w, 2000, 1000);
+  if (outside.life.k === 'alive') outside.life.shieldUntil = Infinity;
   run(w, 1000);
   assert.equal(hpOf(inside), 100);
   assert.ok(Math.abs(hpOf(outside) - (100 - RING[1]!.dps * 100)) < 0.5, `lost ${100 - hpOf(outside)} in a second`);
-  if (inside.life.k === 'alive') inside.life.hp = 50;
-  if (inside.life.k === 'alive') inside.life.lastDamageAt = -Infinity;
+  if (inside.life.k === 'alive') { inside.life.hp = 50; inside.life.lastDamageAt = -Infinity; }
   const before = hpOf(outside);
   run(w, 6000);
   assert.ok(hpOf(inside) > 50, 'regenerates inside');
   assert.ok(hpOf(outside) < before - 5 * RING[1]!.dps * 100, 'no regen while burning');
 });
 
-test('a player with a squadmate standing is knocked, not killed, and the knock pays the kill; enemies can shoot the knocked player to finish them', () => {
-  const w = emptyWorld('BR');
+test('every player is on their own: a hit hurts anyone, a fall is a death, never a knock, and it pays the kill', () => {
+  const w = brWorld();
   w.firstBlood = true;
-  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
-  const victim = spawnAt(w, 1200, 1000, { team: 'red' });
-  spawnAt(w, 3000, 3000, { team: 'red' });
+  const shooter = solo(w, 1000, 1000);
+  const victim = solo(w, 1200, 1000);
+  solo(w, 3000, 3000);
+  assert.equal(shooter.team, null);
   shootUntilDead(w, shooter, victim);
-  assert.equal(lifeOf(victim).k, 'downed');
+  assert.equal(lifeOf(victim).k, 'dead', 'no knock, no squad to revive them');
   assert.equal(shooter.kills, 1);
-  assert.equal(shooter.score, 100);
-  for (let i = 0; i < 10 && lifeOf(victim).k === 'downed'; i++) shootOnce(w, shooter, 0, 300);
-  assert.equal(lifeOf(victim).k, 'dead');
-  assert.equal(shooter.kills, 1, 'the finish pays no second kill');
+  assert.equal(snapshotFor(w, shooter.id).royale!.alive, 3, 'redeploys are open, so the dead are still in it');
 });
 
-test('a squad is out once nobody in it stands: its knocked players die with it and it places below the squads still in', () => {
-  const w = emptyWorld('BR');
-  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
-  const first = spawnAt(w, 1200, 1000, { team: 'red' });
-  const last = spawnAt(w, 1000, 1200, { team: 'red' });
-  spawnAt(w, 4000, 4000, { team: 'green' });
-  shootUntilDead(w, shooter, first);
-  assert.equal(lifeOf(first).k, 'downed');
-  const events: GameEvent[] = [];
-  for (let i = 0; i < 40 && lifeOf(last).k === 'alive'; i++) { shootOnce(w, shooter, Math.PI / 2, 0); events.push(...w.events, ...collect(w, 300)); }
-  step(w, TICK_MS);
-  events.push(...w.events);
-  assert.equal(lifeOf(last).k, 'dead', 'the last one standing dies outright');
-  assert.equal(lifeOf(first).k, 'dead', 'the knocked squadmate dies with the squad');
-  assert.deepEqual(events.filter((e) => e.e === 'wiped'), [{ e: 'wiped', team: 'red', place: 3 }]);
-  assert.equal(w.match.k, 'playing', 'two squads are still in');
+test('everyone starts a life with no armor, whatever their loadout says', () => {
+  const w = brWorld();
+  const p = solo(w, 1000, 1000, { loadout: { armor: 'heavy' } });
+  assert.equal(p.loadout.armor, 'none');
+  assert.ok(p.life.k === 'alive' && p.life.armor === 0);
 });
 
-test('the last squad standing wins, and every squad reads back the place it went out in', () => {
-  const w = emptyWorld('BR');
-  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
-  const green = spawnAt(w, 1200, 1000, { team: 'green' });
-  const red = spawnAt(w, 1000, 1200, { team: 'red' });
-  shootUntilDead(w, shooter, green);
-  shootUntilDead(w, shooter, red, Math.PI / 2);
-  step(w, TICK_MS);
-  assert.equal(w.match.k, 'over');
-  if (w.match.k === 'over') assert.deepEqual(w.match.winner, { name: 'Blue squad', id: null, note: 'Last squad standing' });
-  const place = (p: Player) => snapshotFor(w, p.id).royale!.result?.place;
-  assert.deepEqual([place(shooter), place(red), place(green)], [1, 2, 3]);
-  assert.equal(snapshotFor(w, shooter.id).royale!.result!.of, 3);
-});
-
-test('a winner still knocked when the next match starts has the life it ends paid, like those standing', () => {
-  const w = emptyWorld('BR');
-  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
-  const mate = spawnAt(w, 3000, 3000, { team: 'blue' });
-  const green = spawnAt(w, 1200, 1000, { team: 'green' });
-  mate.score = 300;
-  goDown(w, mate, 50);
-  shootUntilDead(w, shooter, green);
-  step(w, TICK_MS);
-  assert.equal(w.match.k, 'over');
-  w.lifeRecords.length = 0;
-  run(w, WORLD.roundRestartMs + 500);
-  assert.equal(w.match.k, 'playing', 'the next match is on');
-  assert.deepEqual(w.lifeRecords.filter((r) => r.id === mate.id).map((r) => r.score), [300], 'the knocked winner\'s life is paid');
-  assert.equal(w.lifeRecords.filter((r) => r.id === shooter.id).length, 1, 'as is the standing one\'s');
-});
-
-test('bullets spare a squadmate but hurt every other squad', () => {
-  const w = emptyWorld('BR');
-  const shooter = spawnAt(w, 1000, 1000, { team: 'green' });
-  const mate = spawnAt(w, 1200, 1000, { team: 'green' });
-  const rival = spawnAt(w, 1000, 1200, { team: 'yellow' });
-  shootOnce(w, shooter, 0);
-  assert.equal(hpOf(mate), 100);
-  shootOnce(w, shooter, Math.PI / 2);
-  assert.ok(hpOf(rival) < 100);
-});
-
-function finish(w: World, shooter: Player, victim: Player, angle = 0) {
-  shootUntilDead(w, shooter, victim, angle);
-  for (let i = 0; i < 20 && lifeOf(victim).k === 'downed'; i++) shootOnce(w, shooter, angle, 300);
-  assert.equal(lifeOf(victim).k, 'dead');
-}
-
-test('a dead player redeploys beside a standing squadmate, later each death, with the class gun and a spawn shield', () => {
-  const w = emptyWorld('BR');
-  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
-  const victim = spawnAt(w, 1200, 1000, { team: 'red', loadout: { weapon: 'smg' } });
-  const mate = spawnAt(w, 3000, 3000, { team: 'red' });
+test('a dead player redeploys inside the circle with their class gun, no armor and a spawn shield, later each death', () => {
+  const w = brWorld();
+  holdRing(w, { x: 3000, y: 3000, r: 1500 });
+  const shooter = solo(w, 2400, 3000);
+  const victim = solo(w, 2600, 3000, { loadout: { weapon: 'smg' } });
   victim.gun = 'heavySmg';
-  finish(w, shooter, victim);
+  shootUntilDead(w, shooter, victim);
   assert.ok(snapshotFor(w, victim.id).royale!.redeployAt! > w.now);
-  run(w, 14_000);
+  run(w, 11_000);
   assert.equal(lifeOf(victim).k, 'dead');
   run(w, 1500);
   assert.equal(lifeOf(victim).k, 'alive');
-  assert.ok(Math.hypot(victim.x - mate.x, victim.y - mate.y) < 250, 'beside the squadmate');
+  assert.ok(Math.hypot(victim.x - 3000, victim.y - 3000) <= 1500, 'inside the circle');
   assert.equal(victim.gun, 'smg');
+  assert.equal(victim.loadout.armor, 'none');
   assert.equal(snapshotFor(w, victim.id).players.find((p) => p.id === victim.id)?.spawnShield, true);
-  victim.x = 1200;
-  victim.y = 1000;
-  if (victim.life.k === 'alive') victim.life.shieldUntil = -Infinity;
-  finish(w, shooter, victim);
-  run(w, 20_000);
-  assert.equal(lifeOf(victim).k, 'dead', 'the second wait is longer');
-  run(w, 6000);
-  assert.equal(lifeOf(victim).k, 'alive');
 });
 
-test('once the third ring phase closes nobody redeploys: last lives', () => {
-  const w = emptyWorld('BR');
-  holdRing(w, { x: 3000, y: 3000, r: 3000 }, 2);
-  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
-  const victim = spawnAt(w, 1200, 1000, { team: 'red' });
-  spawnAt(w, 3000, 3000, { team: 'red' });
-  finish(w, shooter, victim);
-  assert.equal(snapshotFor(w, victim.id).royale!.redeploys, true);
-  w.royale!.ring = { k: 'shrinking', phase: 2, from: { x: 3000, y: 3000, r: 3000 }, to: { x: 3000, y: 3000, r: 2900 }, startAt: w.now, closeAt: w.now + 100 };
+test('once the second ring phase closes nobody redeploys: a death is out for good, placed by when it fell', () => {
+  const w = brWorld();
+  holdRing(w, { x: 3000, y: 3000, r: 3000 }, 1);
+  const shooter = solo(w, 1000, 1000);
+  const victim = solo(w, 1200, 1000);
+  solo(w, 3000, 3000);
+  w.royale!.ring = { k: 'shrinking', phase: 1, from: { x: 3000, y: 3000, r: 3000 }, to: { x: 3000, y: 3000, r: 2900 }, startAt: w.now, closeAt: w.now + 100 };
   run(w, 200);
-  const view = snapshotFor(w, victim.id).royale!;
-  assert.equal(view.ring.phase, 3);
-  assert.equal(view.redeploys, false);
-  assert.equal(view.redeployAt, null);
-  run(w, 25_000);
-  assert.equal(lifeOf(victim).k, 'dead');
-});
-
-test('a dead player watches a squadmate still up, and the snapshot centres on them', () => {
-  const w = emptyWorld('BR');
-  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
-  const victim = spawnAt(w, 1200, 1000, { team: 'red' });
-  const mate = spawnAt(w, 4000, 4000, { team: 'red' });
-  const near = spawnAt(w, 4300, 4000, { team: 'green' });
-  finish(w, shooter, victim);
-  step(w, TICK_MS);
-  const snap = snapshotFor(w, victim.id);
-  assert.equal(snap.royale!.watch, mate.id);
-  assert.ok(snap.players.some((p) => p.id === near.id), 'sees what the watched squadmate sees');
-  assert.ok(!snap.players.some((p) => p.id === shooter.id), 'not what is round its own body');
-});
-
-test('a squadmate holding use beside a knocked player revives them; left alone they bleed out', () => {
-  const w = emptyWorld('BR');
-  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
-  const victim = spawnAt(w, 1200, 1000, { team: 'red' });
-  const medic = spawnAt(w, 1200, 1050, { team: 'red' });
+  assert.equal(snapshotFor(w, victim.id).royale!.redeploys, false);
+  const events: GameEvent[] = [];
   shootUntilDead(w, shooter, victim);
-  press(w, medic, { use: true });
-  run(w, ZOM.reviveMs + 100);
-  assert.equal(lifeOf(victim).k, 'alive');
-  assert.equal(w.royale!.stats.get(medic.id)?.revives, 1);
-  press(w, medic, {});
-  shootUntilDead(w, shooter, victim);
-  run(w, ZOM.bleedOutMs + 100);
+  events.push(...collect(w, 200));
+  assert.equal(snapshotFor(w, victim.id).royale!.result?.place, 3, 'first of three out: third');
+  run(w, 30_000);
   assert.equal(lifeOf(victim).k, 'dead');
+  assert.equal(snapshotFor(w, shooter.id).royale!.alive, 2);
 });
 
-test('a supply drop shows before it lands, and breaking it jumps the breaker to their next level pick, or heals one with every pick made', () => {
+test('the last one standing wins, and everyone reads back the place they went out in', () => {
+  const w = brWorld();
+  holdRing(w, { x: 3000, y: 3000, r: 3000 }, 2);
+  const a = solo(w, 1000, 1000);
+  const b = solo(w, 1200, 1000);
+  const c = solo(w, 1000, 1200);
+  shootUntilDead(w, a, b);
+  run(w, 100);
+  shootUntilDead(w, a, c, Math.PI / 2);
+  run(w, 200);
+  assert.equal(w.match.k, 'over');
+  assert.ok(w.match.k === 'over' && w.match.winner.id === a.id && w.match.winner.note === 'Last one standing');
+  assert.deepEqual([a, b, c].map((p) => snapshotFor(w, p.id).royale!.result?.place), [1, 3, 2]);
+  assert.equal(snapshotFor(w, a.id).royale!.result?.kills, 2);
+});
+
+test('friends never hurt each other in Last Standing either', async () => {
+  const { befriend } = await import('../src/shared/sim/world.ts');
+  const w = brWorld();
+  const a = solo(w, 1000, 1000), b = solo(w, 1200, 1000);
+  befriend(w, a.id, b.id);
+  shootOnce(w, a, 0);
+  assert.equal(hpOf(b), 100);
+});
+
+test('a cache opens for whoever walks up to it, and pays by its tier: score, armor, health, and an epic one a level pick', () => {
+  const w = brWorld();
+  const p = solo(w, 1000, 1000);
+  if (p.life.k === 'alive') { p.life.hp = 40; p.life.ammo = 1; }
+  const r = w.royale!;
+  const at = (id: number, tier: 0 | 1 | 2) => ({ id, x: 1000 + LOOT.openPx, y: 1000, tier, open: false });
+  r.caches = [at(901, 0)];
+  const events = collect(w, LOOT.openMs + TICK_MS * 2);
+  assert.ok(r.caches[0]!.open, 'opened on walk-up');
+  assert.ok(p.score >= LOOT.tiers[0].score, 'a common one pays score');
+  assert.ok(p.life.k === 'alive' && p.life.ammo > 1, 'and a full magazine');
+  assert.ok(events.some((e) => e.e === 'loot' && e.tier === 0 && e.by === p.id));
+  assert.ok(events.some((e) => e.e === 'gain' && e.from === 'loot' && (e.xp ?? 0) > 0));
+
+  r.caches = [at(902, 1)];
+  const hpBefore = hpOf(p);
+  const rare = collect(w, LOOT.openMs + TICK_MS * 2);
+  assert.equal(p.loadout.armor, 'light', 'a rare one puts the armor up a tier');
+  assert.ok(p.life.k === 'alive' && p.life.armor > 0);
+  assert.ok(hpOf(p) > hpBefore, 'and heals');
+  assert.ok(rare.some((e) => e.e === 'gain' && e.armorTo === 'light'));
+
+  const level = p.level;
+  r.caches = [at(903, 2)];
+  collect(w, LOOT.openMs + TICK_MS * 2);
+  assert.equal(p.level, level + 1, 'an epic one skips to the next pick');
+  assert.equal(p.loadout.armor, 'medium');
+  assert.equal(hpOf(p), 100, 'and resupplies in full');
+  assert.equal(snapshotFor(w, p.id).royale!.caches.length, 1);
+  assert.equal(snapshotFor(w, p.id).royale!.caches[0]![4], 1, 'the view shows it opened');
+});
+
+test('a match lays caches of every tier over the map, apart from each other, and a few towers far apart', () => {
   const w = emptyWorld('BR');
-  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
-  spawnAt(w, 4000, 4000, { team: 'red' });
+  const r = newRoyale(w);
+  assert.ok(r.caches.length >= LOOT.count * 0.7, `${r.caches.length} caches`);
+  for (const a of r.caches) for (const b of r.caches) if (a !== b) assert.ok(Math.hypot(a.x - b.x, a.y - b.y) >= LOOT.spacing - 1e-6);
+  assert.ok(r.caches.some((c) => c.tier === 0) && r.caches.some((c) => c.tier === 1));
+  assert.equal(r.towers.length, TOWER.count);
+  for (const a of r.towers) for (const b of r.towers) if (a !== b) assert.ok(Math.hypot(a.x - b.x, a.y - b.y) >= 1000, 'towers far apart');
+});
+
+test('a tower held alone marks everyone within reach on its holder\'s minimap, then rests; a rival inside stops the hold', () => {
+  const w = brWorld();
+  const r = w.royale!;
+  r.towers = [{ x: 2000, y: 2000, readyAt: 0, holder: null, since: 0 }];
+  const holder = solo(w, 2000, 2000);
+  const near = solo(w, 2000 + TOWER.revealPx - 200, 2000);
+  const far = solo(w, 2000, 2000 + TOWER.revealPx + 300);
+  const contester = solo(w, 2050, 2000);
+  run(w, TOWER.holdMs + 500);
+  assert.equal(r.towers[0]!.readyAt, 0, 'two inside: nobody takes it');
+  contester.x = 5000;
+  contester.y = 5000;
+  const events = collect(w, TOWER.holdMs + 300);
+  assert.ok(r.towers[0]!.readyAt > w.now, 'taken, now resting');
+  assert.ok(events.some((e) => e.e === 'tower' && e.by === holder.id));
+  const marks = snapshotFor(w, holder.id).minimap.filter((m) => m.marked);
+  assert.ok(marks.some((m) => Math.abs(m.x - near.x) < 2), 'the near one is marked');
+  assert.ok(!marks.some((m) => Math.abs(m.x - far.x) < 2), 'the far one is not');
+  assert.equal(snapshotFor(w, near.id).minimap.filter((m) => m.marked).length, 0, 'only for the holder');
+});
+
+test('a supply drop shows before it lands, and breaking it jumps the breaker to their next level pick', () => {
+  const w = brWorld();
+  const shooter = solo(w, 1000, 1000);
+  solo(w, 4000, 4000);
   w.royale!.drops = [{ x: 1300, y: 1000, landsAt: w.now + 5000 }];
   assert.deepEqual(snapshotFor(w, shooter.id).royale!.drops, [{ x: 1300, y: 1000, landsAt: w.now + 5000 }]);
-  assert.ok(!w.crates.some((c) => c.drop));
   run(w, 5100);
   const drop = w.crates.find((c) => c.drop)!;
   assert.ok(drop && Math.abs(drop.x + drop.size / 2 - 1300) < 1, 'lands where it was shown');
   for (let i = 0; i < 40 && drop.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
   assert.notEqual(drop.respawnAt, null);
   assert.equal(shooter.level, 1);
-  assert.deepEqual(snapshotFor(w, shooter.id).self.pending, { level: 1, k: 'perk', tier: 1 });
-
-  shooter.level = 5;
-  shooter.score = 600;
-  shooter.perks = { 1: 'extended', 2: 'thickSkin', 3: 'fragGrenade' };
-  shooter.gun = 'executioner';
-  if (shooter.life.k === 'alive') shooter.life.hp = 10;
-  w.royale!.drops = [{ x: 1300, y: 1000, landsAt: w.now }];
-  run(w, 100);
-  const second = w.crates.find((c) => c.drop && c.respawnAt === null)!;
-  for (let i = 0; i < 40 && second.respawnAt === null; i++) shootOnce(w, shooter, 0, 250);
-  assert.equal(shooter.level, 5);
-  assert.ok(hpOf(shooter) >= 140, `healed to ${hpOf(shooter)}`);
 });
 
-test('crates pay 25 and stay broken for the match', () => {
-  const w = emptyWorld('BR');
-  const shooter = spawnAt(w, 1000, 1000, { team: 'blue' });
-  spawnAt(w, 4000, 4000, { team: 'red' });
-  w.crates = [{ id: 999_999, x: 1150, y: 978, size: 44, hp: 40, respawnAt: null }];
-  w.wallsVersion++;
-  for (let i = 0; i < 6; i++) shootOnce(w, shooter, 0, 250);
-  assert.equal(shooter.score, 25);
-  run(w, 60_000);
-  assert.ok(!snapshotFor(w, shooter.id).crates.some((c) => c.id === 999_999));
+test('cracking a supply drop says what it gave on the opener\'s chips and in the feed', () => {
+  const w = brWorld();
+  const p = solo(w, 1000, 1000, { name: 'Opener' });
+  if (p.life.k === 'alive') { p.life.hp = 20; p.life.ammo = 1; }
+  w.events = [];
+  openDrop(w, p, { x: 1300, y: 1000 });
+  const gain = w.events.find((e) => e.e === 'gain');
+  assert.ok(gain && gain.e === 'gain' && gain.level && (gain.hp ?? 0) > 0 && (gain.ammo ?? 0) > 0, JSON.stringify(gain));
+  assert.deepEqual(w.events.find((e) => e.e === 'airdrop'), { e: 'airdrop', k: 'taken', x: 1300, y: 1000, by: 'Opener', gold: false, level: true });
+  assert.ok(p.level < LEVELS.length);
 });
 
-test('a joiner takes a bot\'s seat while redeploys are open, solo humans spread one per squad, and after that they watch until the next match seats them', (t) => {
+test('a joiner takes a bot\'s place while redeploys are open; after that they watch until the next match enters them', (t) => {
   const accounts = { stats: () => null, nameForToken: () => null, credit: () => {} } as unknown as Accounts;
   const room = createRoom('br-test', 'BR', 1, accounts);
   const w = room.world;
@@ -247,55 +237,70 @@ test('a joiner takes a bot\'s seat while redeploys are open, solo humans spread 
     const welcome = ws.sent.find((m) => m.t === 'welcome');
     return { ws, p: w.players.get(welcome?.t === 'welcome' ? welcome.id : -1)! };
   };
-  const squadOf = (team: Player['team']) => [...w.players.values()].filter((p) => p.team === team);
   assert.equal(w.players.size, 18);
   const ann = join('Ann');
-  const bob = join('Bob');
-  assert.equal(w.players.size, 18, 'each joiner replaces a bot');
-  assert.notEqual(ann.p.team, null);
-  assert.notEqual(ann.p.team, bob.p.team, 'two solo humans land in different squads');
-  assert.deepEqual(squadOf(ann.p.team).map((p) => p.kind).sort(), ['bot', 'bot', 'human']);
+  assert.equal(w.players.size, 18, 'the joiner replaces a bot');
+  assert.equal(ann.p.team, null);
   assert.equal(lifeOf(ann.p).k, 'alive');
+  assert.ok(w.royale!.entrants.includes(ann.p.id));
+  assert.equal(w.royale!.entrants.length, 18);
 
   w.royale!.ring = { k: 'waiting', phase: 3, circle: { x: 3000, y: 3000, r: 4300 }, next: { x: 3000, y: 3000, r: 4300 }, shrinkAt: Infinity };
   const cat = join('Cat');
-  assert.equal(w.players.size, 19, 'no seat once redeploys close');
-  assert.equal(cat.p.team, null);
+  assert.equal(w.players.size, 19, 'no place once redeploys close');
   assert.equal(lifeOf(cat.p).k, 'dead');
+  assert.ok(!w.royale!.entrants.includes(cat.p.id));
   room.tick();
   const snap = cat.ws.sent.filter((m) => m.t === 'snap').at(-1);
   assert.ok(snap?.t === 'snap' && snap.royale?.watch !== null, 'watches someone still in');
 
-  w.match = { k: 'over', winner: { name: 'Red squad', id: null, note: null }, restartAt: w.now };
+  w.match = { k: 'over', winner: { name: 'Ann', id: ann.p.id, note: null }, restartAt: w.now };
   w.mapChangeAt = w.now;
   room.tick();
-  assert.notEqual(cat.p.team, null, 'the next match seats them');
-  assert.equal(lifeOf(cat.p).k, 'alive');
+  room.tick();
+  assert.equal(lifeOf(cat.p).k, 'alive', 'the next match enters them');
+  assert.ok(w.royale!.entrants.includes(cat.p.id));
   assert.equal(w.players.size, 18);
-  assert.equal(new Set([ann.p.team, bob.p.team, cat.p.team]).size, 3);
-  for (const team of new Set([...w.players.values()].map((p) => p.team))) assert.equal(squadOf(team).length, 3, `${team} has three`);
 });
 
-test('a knocked player who leaves has the life paid, as a standing one does', () => {
-  const w = emptyWorld('BR');
-  const p = spawnAt(w, 1000, 1000, { team: 'blue' });
-  spawnAt(w, 3000, 3000, { team: 'blue' });
-  p.score = 250;
-  goDown(w, p, 50);
-  w.lifeRecords.length = 0;
-  removePlayer(w, p.id);
-  assert.deepEqual(w.lifeRecords.filter((r) => r.id === p.id).map((r) => [r.score, r.died]), [[250, false]]);
+test('a weapon case leaves a gun of its tier on the floor; E takes it and leaves yours in its place', () => {
+  const w = brWorld();
+  const p = solo(w, 1000, 1000, { loadout: { weapon: 'pistol' } });
+  const r = w.royale!;
+  r.caches = [{ id: 911, x: 1000 + LOOT.openPx, y: 1000, tier: 1, open: false, gun: 'handCannon' }];
+  const events = collect(w, LOOT.openMs + TICK_MS * 2);
+  assert.ok(events.some((e) => e.e === 'loot' && e.gun === 'handCannon'));
+  assert.deepEqual(r.guns.map((g) => g.gun), ['handCannon'], 'the gun lies on the floor');
+  assert.equal(p.gun, 'pistol', 'nothing is taken without E');
+  assert.deepEqual(snapshotFor(w, p.id).royale!.caches[0]!.slice(4), [1, 0, 1], 'an opened weapon case');
+  p.input = { ...p.input, use: true };
+  const took = collect(w, TICK_MS * 2);
+  assert.equal(p.gun, 'handCannon');
+  assert.ok(p.life.k === 'alive' && p.life.ammo === 6, 'with a full magazine of it');
+  assert.deepEqual(r.guns.map((g) => g.gun), ['pistol'], 'the pistol lies where the hand cannon was');
+  assert.ok(took.some((e) => e.e === 'took' && e.gun === 'handCannon' && e.left === 'pistol'));
+  run(w, 200);
+  assert.equal(p.gun, 'handCannon', 'holding E does not swap back');
 });
 
-test('cracking a supply drop says what it gave: a level and a resupply on the opener\'s chips, and who cracked it in the feed', async () => {
-  const { openDrop } = await import('../src/shared/sim/royale.ts');
-  const w = emptyWorld('BR');
-  const p = spawnAt(w, 1000, 1000, { team: 'blue', name: 'Opener' });
-  if (p.life.k === 'alive') { p.life.hp = 20; p.life.ammo = 1; }
-  w.events = [];
-  openDrop(w, p, { x: 1300, y: 1000 });
-  const gain = w.events.find((e) => e.e === 'gain');
-  assert.ok(gain && gain.e === 'gain' && gain.level && (gain.hp ?? 0) > 0 && (gain.ammo ?? 0) > 0, JSON.stringify(gain));
-  assert.ok(hpOf(p) > 20, 'healed as well as levelled');
-  assert.deepEqual(w.events.find((e) => e.e === 'airdrop'), { e: 'airdrop', k: 'taken', x: 1300, y: 1000, by: 'Opener', gold: false, level: true });
+test('weapon cases hold guns of their tier: a class gun, a first evolution, a final one', async () => {
+  const { GUNS } = await import('../src/shared/defs.ts');
+  for (let seed = 1; seed < 6; seed++) {
+    const w = emptyWorld('BR');
+    w.rng = seed;
+    for (const c of newRoyale(w).caches) if (c.gun) assert.equal(GUNS[c.gun].stage, c.tier, `${c.gun} in a tier ${c.tier} case`);
+  }
+  assert.equal(LOOT.count, 48);
+});
+
+test('the dead drop an evolved gun for whoever kills them; a class gun stays with the body', () => {
+  const w = brWorld();
+  const shooter = solo(w, 1000, 1000);
+  const victim = solo(w, 1200, 1000);
+  victim.gun = 'handCannon';
+  shootUntilDead(w, shooter, victim);
+  assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['handCannon']);
+  const plain = solo(w, 1200, 1300);
+  shootUntilDead(w, shooter, plain, Math.atan2(300, 200));
+  assert.equal(w.royale!.guns.length, 1, 'no class gun is dropped');
 });

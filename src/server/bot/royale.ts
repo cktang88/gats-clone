@@ -1,12 +1,18 @@
-import { COLOR_IDS, ZOM } from '../../shared/defs.ts';
-import { ringAt, type Circle, type InputState, type PlayerView, type RingView, type RoyaleView, type Snapshot } from '../../shared/protocol.ts';
+import { GUNS, LOOT, TOWER, WORLD } from '../../shared/defs.ts';
+import { ringAt, type CacheView, type Circle, type PlayerView, type RingView, type RoyaleView, type Snapshot, type TowerView } from '../../shared/protocol.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { skillKnobs, TICK_MS } from './aim.ts';
 import { openSpot, type BotArena } from './arena.ts';
-import { perceive } from './awareness.ts';
-import { bandFor, nextIntent, PERSONALITIES, skilledPersona, startIntent, type Intent, type IntentCtx } from './intent.ts';
+import { perceive, type Perception } from './awareness.ts';
+import { bandFor, lane, nextIntent, PERSONALITIES, skilledPersona, startIntent, type Intent, type IntentCtx } from './intent.ts';
 import { act } from './motor.ts';
-import { dist, isOpen, type Point } from './nav.ts';
+import { dist, isOpen, nearestOpenPoint, type Point } from './nav.ts';
+
+/**
+ * Last Standing, every player for themselves. A bot plays it as a person would: it keeps inside the safe circle and heads for the next
+ * one in time; with nobody to fight it loots, walking from cache to cache (the rarer ones first) inside the next circle, sometimes takes a
+ * recon tower or goes for a supply drop; and it fights as it does in versus when an enemy shows, without chasing him across the ring.
+ */
 
 const LEAVE_MARGIN_MS = 15_000;
 const WALK_DETOUR = 1.4;
@@ -14,11 +20,23 @@ const EDGE_PX = 120;
 const ANCHOR_EDGE_PX = 400;
 const ANCHOR_REACH = 0.6;
 const HOME_R = 220;
-const REVIVE_REACH_PX = 900;
-const REVIVE_STOP_PX = ZOM.reviveRange - 20;
-const MATE_DEAD_ZONE = 30;
 const DROP_ODDS = 0.5;
 const DROP_REACH_PX = 1800;
+/** Caches it looks to first: within this of it; past it, it goes for the best one anywhere in the circle. */
+const LOOT_REACH_PX = 1400;
+/** What a cache of each tier is worth to it against the walk (`lootScore`): an epic one is worth a long walk past commons. */
+const TIER_VALUE = [1, 3, 6] as const;
+const LOOT_WALK_PAD = 250;
+/** Another player this much nearer a cache gets there first: it looks for another. */
+const BEATEN_TO_PX = 150;
+const TOWER_REACH_PX = 900;
+const TOWER_ODDS = 0.5;
+/** Where it stands on a tower: well inside its circle, so a step aside does not start the hold over. */
+const TOWER_STAND_PX = TOWER.radius * 0.4;
+/** A fight that has gone quiet this long is over: it goes back to its errand. */
+const QUIET_MS = 3000;
+/** The farthest a lone bot goes after an enemy it lost sight of (a flank or a search), so it never chases him across the ring. */
+const CHASE_PX = 650;
 
 const inside = (p: Point, c: Circle, margin: number) => dist(p, c) <= Math.max(c.r - margin, c.r / 2);
 
@@ -28,15 +46,13 @@ function goalCircle(ring: RingView, me: Point, speed: number, now: number): { ci
   return ring.shrinkAt - now < walkMs + LEAVE_MARGIN_MS ? { circle: ring.to, urgent: true } : { circle: ringAt(ring, now), urgent: false };
 }
 
-const goesForDrop = (squad: number, phase: number, drop: Point) => ((squad * 7 + phase * 3 + Math.floor(drop.x + drop.y)) % 10) / 10 < DROP_ODDS;
+/** Whether bot `id` goes for this drop: about half of them do, the same ones each time for the same drop. */
+const goesForDrop = (id: number, phase: number, drop: Point) => lane(id, phase * 31 + Math.floor(drop.x + drop.y)) < DROP_ODDS;
+/** Whether bot `id` takes this tower when it passes near it ready: about half of them do. */
+export const takesTower = (id: number, tower: Point) => lane(id, 7 + Math.floor(tower.x * 3 + tower.y)) < TOWER_ODDS;
 
-function anchorFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: Circle, arena: BotArena): Point {
-  const team = me.team!;
-  const mates = [me, ...snap.minimap.filter((m) => m.team === team && m.pingAge === null)];
-  const at = { x: mates.reduce((s, m) => s + m.x, 0) / mates.length, y: mates.reduce((s, m) => s + m.y, 0) / mates.length };
-  const squad = COLOR_IDS.indexOf(team);
-  const drop = royale.drops.find((d) => inside(d, circle, 0) && dist(d, at) < DROP_REACH_PX && goesForDrop(squad, royale.ring.phase, d));
-  if (drop) return drop;
+/** Open ground toward the circle's middle from `at`, far enough in to be safe a while (`ANCHOR_EDGE_PX`), as near `at` as that allows. */
+function anchorFor(at: Point, circle: Circle, arena: BotArena): Point {
   const d = dist(at, circle);
   const reach = Math.max(circle.r - ANCHOR_EDGE_PX, circle.r * ANCHOR_REACH);
   const k = d > reach ? reach / d : 1;
@@ -47,32 +63,80 @@ function anchorFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: C
   return circle;
 }
 
+const cacheAt = (c: CacheView): Point => ({ x: c[1], y: c[2] });
+
+/** The unopened cache inside the circle most worth the walk, by its tier's value over the way there; one another player is clearly nearer is left to him. */
+export function lootTarget(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: Circle): CacheView | null {
+  const others = snap.players.filter((p) => p.id !== me.id && p.alive);
+  const open = royale.caches.filter((c) => c[4] === 0 && inside(cacheAt(c), circle, EDGE_PX)
+    && !others.some((o) => dist(o, cacheAt(c)) < dist(me, cacheAt(c)) - BEATEN_TO_PX));
+  const score = (c: CacheView) => TIER_VALUE[c[3]] / (dist(me, cacheAt(c)) + LOOT_WALK_PAD);
+  const best = (cs: readonly CacheView[]) => cs.reduce<CacheView | null>((b, c) => (b && score(b) >= score(c) ? b : c), null);
+  return best(open.filter((c) => dist(me, cacheAt(c)) <= LOOT_REACH_PX)) ?? best(open);
+}
+
+const ready = (t: TowerView, now: number) => t.readyAt <= now;
+
+/** A ready tower near it, inside the circle and not being taken by someone else, that this bot is one to take. */
+export function towerTarget(royale: RoyaleView, me: PlayerView, circle: Circle, now: number): TowerView | null {
+  return royale.towers.find((t) => ready(t, now) && (t.holder === undefined || t.holder === me.id) && dist(me, t) <= TOWER_REACH_PX
+    && inside(t, circle, EDGE_PX) && takesTower(me.id, t)) ?? null;
+}
+
+/** Where it stands to take a tower, and which way it looks while it does: out over the circle, the way people come from. */
+function towerPost(t: TowerView, me: PlayerView, circle: Circle, arena: BotArena): { spot: Point; facing: Point } {
+  const a = lane(me.id, 3) * Math.PI * 2;
+  const near = { x: t.x + Math.cos(a) * TOWER_STAND_PX * 0.5, y: t.y + Math.sin(a) * TOWER_STAND_PX * 0.5 };
+  const spot = isOpen(arena.nav, near) ? near : isOpen(arena.nav, t) ? { x: t.x, y: t.y } : nearestOpenPoint(arena.nav, t, TOWER_STAND_PX) ?? { x: t.x, y: t.y };
+  const out = dist(t, circle) > 150 ? Math.atan2(circle.y - t.y, circle.x - t.x) : a;
+  return { spot, facing: { x: t.x + Math.cos(out) * 600, y: t.y + Math.sin(out) * 600 } };
+}
+
+type Errand = { k: 'drop' | 'loot' | 'gun' | 'roam'; at: Point } | { k: 'tower'; at: Point; facing: Point };
+
+/** How far a bot walks for a better gun lying on the floor. */
+const GUN_REACH_PX = 900;
+/** A gun on the floor at a higher stage than the one in hand, inside the circle and in reach: the nearest such. */
+export function betterGun(royale: RoyaleView, me: PlayerView, circle: Circle, reach = GUN_REACH_PX): Point | null {
+  const mine = GUNS[me.gun].stage;
+  const ups = (royale.guns ?? []).filter((g) => GUNS[g[3]].stage > mine && inside({ x: g[1], y: g[2] }, circle, EDGE_PX) && dist(me, { x: g[1], y: g[2] }) < reach);
+  if (!ups.length) return null;
+  const g = ups.reduce((a, b) => (dist(me, { x: b[1], y: b[2] }) < dist(me, { x: a[1], y: a[2] }) ? b : a));
+  return { x: g[1], y: g[2] };
+}
+
+function errandFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: Circle, arena: BotArena, now: number): Errand {
+  const drop = royale.drops.find((d) => inside(d, circle, 0) && dist(d, me) < DROP_REACH_PX && goesForDrop(me.id, royale.ring.phase, d));
+  if (drop) return { k: 'drop', at: { x: drop.x, y: drop.y } };
+  const gun = betterGun(royale, me, circle);
+  if (gun) return { k: 'gun', at: gun };
+  const tower = towerTarget(royale, me, circle, now);
+  if (tower) { const post = towerPost(tower, me, circle, arena); return { k: 'tower', at: post.spot, facing: post.facing }; }
+  const cache = lootTarget(snap, royale, me, circle);
+  if (cache) return { k: 'loot', at: cacheAt(cache) };
+  return { k: 'roam', at: anchorFor(me, circle, arena) };
+}
+
+/** In a fight, or just out of one: an enemy in sight, a round at it, or one it lost sight of moments ago. */
+const engaged = (v: Perception) => v.threats.some((t) => t.p.alive) || v.underFire || (v.lastSeen !== null && (v.tick - v.lastSeen.seenTick) * TICK_MS < QUIET_MS);
+
 const goalOf = (i: Intent): Point | null => {
   switch (i.k) {
     case 'patrol': return i.goal;
     case 'resupply': return i.at;
     case 'takePosition': case 'peekAndHide': case 'reloadInCover': case 'retreatAndHeal': case 'hold': return i.spot;
-    case 'search': case 'flank': case 'engage': return null;
+    case 'search': return i.at;
+    case 'flank': return i.via;
+    case 'engage': return null;
   }
 };
 
-const leavesSquadCover = (intent: Intent, circle: Circle, home: Point) => {
+/** A plan that takes it out of the circle, or after an enemy farther than a lone player should go. */
+const strays = (intent: Intent, circle: Circle, me: Point) => {
   const goal = goalOf(intent);
-  return intent.k === 'search' || intent.k === 'flank' || (goal !== null && (!inside(goal, circle, EDGE_PX) || dist(goal, home) > HOME_R));
+  if (goal === null) return false;
+  return !inside(goal, circle, EDGE_PX) || ((intent.k === 'search' || intent.k === 'flank') && dist(goal, me) > CHASE_PX);
 };
-
-const nearestOf = (me: Point, xs: readonly PlayerView[]) => xs.reduce<PlayerView | null>((b, p) => (b && dist(b, me) <= dist(p, me) ? b : p), null);
-
-export function crawlThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, mem: BotMemory): Omit<BotDecision, 'pick'> {
-  const mate = nearestOf(me, snap.players.filter((p) => p.id !== me.id && p.team === me.team && p.alive));
-  const to = mate ?? ringAt(royale.ring, snap.tick * TICK_MS);
-  const near = dist(me, to) < REVIVE_STOP_PX;
-  const input: InputState = {
-    up: !near && to.y < me.y - MATE_DEAD_ZONE, down: !near && to.y > me.y + MATE_DEAD_ZONE, left: !near && to.x < me.x - MATE_DEAD_ZONE, right: !near && to.x > me.x + MATE_DEAD_ZONE,
-    angle: me.angle, fire: false, shots: mem.motor.shots, reload: false, ability: false, aimDist: 0, use: false,
-  };
-  return { input, mem };
-}
 
 export function royaleThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, arena: BotArena, mem: BotMemory, rand: () => number): Omit<BotDecision, 'pick'> {
   const now = snap.tick * TICK_MS;
@@ -80,25 +144,29 @@ export function royaleThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, 
   const skill = skillKnobs(mem.skill);
   const persona = skilledPersona(PERSONALITIES[mem.persona], skill);
   const { circle, urgent } = goalCircle(royale.ring, me, snap.self.speed, now);
-  const home = { at: anchorFor(snap, royale, me, circle, arena), r: HOME_R, face: { x: circle.x, y: circle.y } };
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: null, band: bandFor(view.me.gun, persona), arena, rand, home, skill };
   const current = ringAt(royale.ring, now);
   const outside = !inside(me, circle, EDGE_PX) && (urgent || dist(me, current) > current.r);
-  const fighting = view.threats.some((t) => t.p.alive);
-  const downed = nearestOf(me, snap.players.filter((p) => p.id !== me.id && p.team === me.team && p.downed && dist(p, me) < REVIVE_REACH_PX));
-  const prev = mem.intent ?? startIntent({ k: 'patrol', goal: home.at }, ctx);
+  const errand = outside ? { k: 'roam' as const, at: anchorFor(me, circle, arena) } : errandFor(snap, royale, me, circle, arena, now);
+  const home = { at: inside(me, circle, EDGE_PX) && errand.k === 'roam' ? { x: me.x, y: me.y } : errand.at, r: HOME_R, face: { x: circle.x, y: circle.y } };
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: null, band: bandFor(view.me.gun, persona), arena, rand, home, skill };
+  const prev = mem.intent ?? startIntent({ k: 'patrol', goal: errand.at }, ctx);
   const walkTo = (goal: Point, slack: number) => (prev.k === 'patrol' && dist(prev.goal, goal) < slack ? prev : startIntent({ k: 'patrol', goal }, ctx));
+  const errandIntent = (): Intent => {
+    if (errand.k !== 'tower') return walkTo(errand.at, errand.k === 'roam' ? HOME_R : 30);
+    return prev.k === 'takePosition' && dist(prev.spot, errand.at) < 30 ? prev : startIntent({ k: 'takePosition', spot: errand.at, facing: errand.facing }, ctx);
+  };
   let intent: Intent;
-  if (outside) intent = walkTo(home.at, 60);
-  else if (downed && !fighting) intent = walkTo(downed, 30);
-  else {
+  if (outside) intent = walkTo(errand.at, 60);
+  else if (engaged(view)) {
     intent = nextIntent(prev, view, ctx);
-    if (leavesSquadCover(intent, circle, home.at)) intent = startIntent({ k: 'patrol', goal: openSpot(arena, rand, home) }, ctx);
+    if (strays(intent, circle, me)) intent = startIntent({ k: 'patrol', goal: openSpot(arena, rand, { at: me, r: HOME_R }) }, ctx);
+  } else {
+    // Nobody about: a dry gun or a bad wound is seen to first (the versus rules), else it is off on its errand.
+    const planned = nextIntent(prev, view, ctx);
+    intent = (planned.k === 'reloadInCover' || planned.k === 'retreatAndHeal') && !strays(planned, circle, me) ? planned : errandIntent();
   }
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
-  const reviving = !outside && !fighting && downed !== null && dist(me, downed) <= REVIVE_STOP_PX;
-  return {
-    input: reviving ? { ...input, up: false, down: false, left: false, right: false, use: true } : input,
-    mem: { ...mem, intent, awareness, motor },
-  };
+  // Standing over a better gun than the one in hand, it takes it (E), fight or no fight.
+  const take = betterGun(royale, me, current, LOOT.takePx + WORLD.playerRadius - 4) !== null;
+  return { input: take ? { ...input, use: true } : input, mem: { ...mem, intent, awareness, motor } };
 }

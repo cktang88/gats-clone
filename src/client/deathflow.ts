@@ -10,7 +10,7 @@ import type { Recap } from './records.ts';
  * then `loadout` (weapon, color and armor in three lean rows, with Respawn always in view under them). Respawn waits out the
  * timer with the seconds left on the button. Anywhere else the card has room for `all` of it at once: the recap, the loadout
  * and Respawn, which Space also presses. A zombies run has no respawn button (dawn or the Bastion brings you back), and Last
- * Squad shows its result card instead of this one.
+ * Standing shows its result card instead of this one.
  */
 export type DeathStep = 'stats' | 'loadout' | 'all';
 export type DeathAct = 'loadout' | 'stats' | 'respawn' | 'more';

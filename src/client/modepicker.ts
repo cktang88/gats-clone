@@ -113,7 +113,7 @@ export function listboxKey(s: ListState, key: string, names: readonly string[], 
     case 'End': case 'PageDown': return move(last);
     case 'Enter': return { state: close(s.active), commit: s.active, focus: 'trigger', handled: true };
     case ' ':
-      // A space inside a type-ahead word is part of the word ("last squad"); otherwise it chooses.
+      // A space inside a type-ahead word is part of the word ("last standing"); otherwise it chooses.
       if (s.typed && now - s.typedAt < TYPE_AHEAD_MS) return typing(s);
       return { state: close(s.active), commit: s.active, focus: 'trigger', handled: true };
     case 'Escape': return { state: close(), focus: 'trigger', handled: true };

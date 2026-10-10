@@ -34,7 +34,7 @@ export type BotTickOptions = {
  * human can see, far from every human and on no human's team, thinks a third as often, and only news wakes it early (a hit, a shot at it,
  * its enemy gone, being stuck): its legs run on and it waits where it arrived. Its motor still runs every tick, so it never stands frozen
  * pressing stale keys or turns its gun at a third of its speed.
- * Zombies and Battle Royale squads keep thinking every tick (every third, off every screen): their brains read the run and the ring.
+ * Zombies squads and Last Standing bots keep thinking every tick (every third, off every screen): their brains read the run and the ring.
  */
 export const TACTICAL_TICKS = 6;
 export const PLAN_EVERY = 3;

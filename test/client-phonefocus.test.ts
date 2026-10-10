@@ -6,7 +6,7 @@ import { MODE_IDS, type ModeId } from '../src/shared/defs.ts';
 /** A steady mid-round moment: nothing changed lately, nothing tapped, no chat, a veteran of earlier matches, five minutes left. */
 const NEVER = -Infinity;
 const steady = (mode: ModeId, over: Partial<FocusState> = {}): FocusState => ({
-  mode, now: 100_000, timeLeft: mode === 'FFA' || mode === 'TDM' || mode === 'DOM' ? 300_000 : null, over: false, squadsLeft: mode === 'BR' ? 6 : undefined,
+  mode, now: 100_000, timeLeft: mode === 'FFA' || mode === 'TDM' || mode === 'DOM' ? 300_000 : null, over: false, playersLeft: mode === 'BR' ? 12 : undefined,
   levelAt: NEVER, scoreAt: NEVER, vitalsTapAt: NEVER, teamScoreAt: NEVER, mapTapAt: NEVER, chatTapAt: NEVER, rangeTapAt: NEVER,
   chatLines: 0, firstMatch: false, guidesSince: 0, introSeen: true, ...over,
 });
@@ -28,7 +28,7 @@ test('mid-round, each mode shows only the always-on set, its status line where i
     RNG: base,
   };
   for (const mode of MODE_IDS) assert.deepEqual(on(phoneFocus(steady(mode))), expect[mode], mode);
-  assert.deepEqual(MODE_IDS.filter(statusAlways), ['DOM', 'ZOM', 'BR'], 'the status line is always on only for Domination, zombies and Last Squad');
+  assert.deepEqual(MODE_IDS.filter(statusAlways), ['DOM', 'ZOM', 'BR'], 'the status line is always on only for Domination, zombies and Last Standing');
 });
 
 test('each on-demand piece is hidden by default and comes up on its trigger, then goes again', () => {
@@ -72,7 +72,7 @@ test('the clock and GG come up only as a round nears its end; GG also once it is
     assert.equal(phoneFocus(steady(mode, { timeLeft: FOCUS.ggMs - 1 })).gg, true, `${mode}: GG in the last half minute`);
     assert.equal(phoneFocus(steady(mode, { over: true })).gg, true, `${mode}: GG once the round is over`);
   }
-  assert.equal(phoneFocus(steady('BR', { squadsLeft: 2 })).gg, true, 'Last Squad: GG with two squads left');
+  assert.equal(phoneFocus(steady('BR', { playersLeft: 3 })).gg, true, 'Last Standing: GG with three players left');
   assert.equal(phoneFocus(steady('ZOM', { over: true })).gg, true, 'zombies: GG once the run is over');
   assert.equal(phoneFocus(steady('RNG', { over: true })).gg, false, 'never on the range');
 });
@@ -98,7 +98,7 @@ test('the phone feed keeps your own kills and deaths and the big events, and dro
   assert.equal(feedKeeps(kill({ ended: 5 }), me, null, teamOf), true, 'a long streak ended');
   assert.equal(feedKeeps(kill({ ended: 2 }), me, null, teamOf), false, 'a short one is not news');
   assert.equal(feedKeeps({ e: 'hunted', id: 1, name: 'x' }, me, null, teamOf), true, 'someone hunted');
-  assert.equal(feedKeeps({ e: 'wiped', team: 'red', place: 4 }, me, null, teamOf), true, 'a squad out');
+  assert.equal(feedKeeps({ e: 'wiped', id: 9, name: 'Ann', place: 4 }, me, null, teamOf), true, 'a player out');
   assert.equal(feedKeeps({ e: 'life', id: 3, name: 'x', k: 'downed', by: null }, me, 'red', teamOf), true, 'a squadmate down');
   assert.equal(feedKeeps({ e: 'life', id: 4, name: 'x', k: 'downed', by: null }, me, 'red', teamOf), false, 'a stranger down');
   assert.ok(FOCUS.feedMs < 6000, 'and briefer than the desktop feed');

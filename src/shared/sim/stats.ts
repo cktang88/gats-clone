@@ -292,7 +292,7 @@ export function resetProgress(p: Player, w: World) {
 }
 
 /** An attachment the gun in hand cannot use, like a silencer on a silenced gun, is taken off so the tier-1 pick opens again on the gun's own menu. */
-function reopenUselessAttachment(p: Player) {
+export function reopenUselessAttachment(p: Player) {
   const attachment = p.perks[1];
   if (attachment && !pickOptions({ k: 'perk', tier: 1 }, p.gun).includes(attachment)) delete p.perks[1];
 }

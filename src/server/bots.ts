@@ -5,7 +5,7 @@ import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
 import { skillFor, skillKnobs, skillOf, type Skill } from './bot/aim.ts';
 import { bandFor, GUN_BAND, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, skilledPersona, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
 import { act, freshMotor, type Motor } from './bot/motor.ts';
-import { crawlThink, royaleThink } from './bot/royale.ts';
+import { royaleThink } from './bot/royale.ts';
 import { supplyFor } from './bot/supplies.ts';
 import { isOpen } from './bot/nav.ts';
 import { readTactics, type Tactics } from './bot/tactics.ts';
@@ -90,7 +90,6 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
     const input = { ...IDLE_BOT_INPUT, shots: mem.motor.shots, up: core.y < me.y - DEAD_ZONE, down: core.y > me.y + DEAD_ZONE, left: core.x < me.x - DEAD_ZONE, right: core.x > me.x + DEAD_ZONE };
     return { input, pick: null, mem };
   }
-  if (me?.downed && snap.royale) return { ...crawlThink(snap, snap.royale, me, mem), pick: null };
   if (!me || !me.alive) {
     const forgotten = mem.intent ? { ...mem, intent: null, awareness: freshAwareness(), motor: { ...freshMotor(), shots: mem.motor.shots } } : mem;
     return { input: { ...IDLE_BOT_INPUT, shots: mem.motor.shots }, pick: null, mem: forgotten };

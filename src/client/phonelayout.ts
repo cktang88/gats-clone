@@ -21,7 +21,7 @@ export type PhoneLayout = {
   vitals: Box;
   /** The minimap, folded small; a tap opens it to `minimapOpen` for a few seconds (phonefocus.ts). */
   minimap: Box;
-  /** Top centre: the mode's one status line (Domination's zones, the zombies night, Last Squad's ring, or the clock in a round's
+  /** Top centre: the mode's one status line (Domination's zones, the zombies night, Last Standing's ring, or the clock in a round's
    * final minute), and under it a brief line (a callout, the objective once). */
   topChip: Box;
   topLine: Box;

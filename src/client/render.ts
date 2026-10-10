@@ -55,6 +55,7 @@ import { drawCorpses, drawZombieCorpses, liveCorpses, zombieField } from './corp
 import { flinchOf, flinchOffset } from './flinch.ts';
 import { drawFloor as drawGunFloor, drawTop as drawGunTop, gunFxOf, noteMap as noteGunMap } from './gunfx.ts';
 import { drawDropsWorld, drawRingWorld } from './royale.ts';
+import { drawCacheFloor, drawCacheOverlay, drawCaches, drawFloorGuns, drawTowerFloor, drawTowerFx, drawTowerOverlay, drawTowers, towersNeedClock } from './lootart.ts';
 import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
 import { trackDash } from './blastfx.ts';
 import { boltScene, dropCarried, reloadScene, selfReload, stepBolt, stepReload, type ReloadFrame } from './reloadanim.ts';
@@ -135,6 +136,10 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   if (snap.run) drawCoreGlow(ctx, snap.run, now);
   if (snap.run && snap.buildings) drawFloorItems(ctx, snap.buildings.filter((b) => !standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), now);
   drawScorches(ctx, now, view);
+  // Last Standing: the caches' tier glow and the recon towers' capture circles lie on the floor, under every body (lootart.ts).
+  const royale = snap.royale;
+  if (royale?.caches?.length) drawCacheFloor(ctx, royale.caches, now, view);
+  if (royale?.towers?.length) drawTowerFloor(ctx, royale.towers, now, view);
   // What the horde brought down lies on the floor as a charred heap of junk (wrecks.ts); its smoke and embers come in the siege's late pass.
   if (snap.run && wrecks.list.length) drawWrecks(ctx, wrecks.list, view, now, k);
 
@@ -177,6 +182,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawAmbientGround(ctx, { snap, s, now, view, dark });
   drawBarrels(ctx, snap, now, view);
   drawProps(ctx, snap, now, view);
+  if (royale?.caches?.length) drawCaches(ctx, royale.caches, now, view);
+  if (royale?.guns?.length) drawFloorGuns(ctx, royale.guns, mine && mine.alive ? mine : null, now, view);
   drawRadios(ctx, now, view, dark, reducedMotion());
   if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
   drawBeacon(ctx, snap.airdrop, airClock, now, view);
@@ -224,6 +231,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     drawRingWorld(ctx, snap.royale, clockNow, tl, br);
     drawDropsWorld(ctx, snap.royale, clockNow, now, ROYALE.dropSize);
   }
+  if (royale?.caches?.length) drawCacheOverlay(ctx, royale.caches, view);
+  if (royale?.towers?.length) drawTowerOverlay(ctx, royale.towers, towersNeedClock(royale.towers) ? clockNow ?? serverNow(s.snaps, now) : null, now, view);
   // Tonight's dead lie over the night shade, so the horde's toll stays readable in the dark.
   const field = zombieField(s.zombieCorpses, snap.run?.phase === 'night', now);
   s.zombieCorpses = { list: field.list, dawnAt: field.dawnAt };
@@ -270,6 +279,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawGadgetFx(ctx, snap, now);
   drawArenaLight(ctx, snap, now, view);
   drawPropTops(ctx, snap, now, view);
+  if (royale?.towers?.length) drawTowers(ctx, royale.towers, now, view);
+  if (royale) drawTowerFx(ctx, snap, now);
   drawParachute(ctx, snap.airdrop, airClock, now, view);
   drawParticles(ctx, s.particles, now);
   if (theme?.over && themeMap) theme.over(ctx, now, view, themeMap, alive);

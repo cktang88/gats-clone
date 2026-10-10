@@ -1,7 +1,8 @@
 /// <reference types="node" />
 // Usage: node royale-ui.ts <run-dir>
-// Joins the br room in muted headless Chrome through the menu, then walks out of the ring and stays there: the storm, the knock, the ring's finish,
-// spectating and the result card each get a screenshot. Run it on a scratch copy with a fast, hard ring (see features/last-squad.md).
+// Joins the br room (Last Standing, solo) in muted headless Chrome through the menu, then walks out of the ring and stays there: the storm, the
+// ring's kill, spectating and the result card each get a screenshot. Run it on a scratch copy with a fast, hard ring and redeploys closed
+// from the start (`ROYALE.redeployPhases` 0; see features/last-squad.md).
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ringAt, type Snapshot } from '../../../../src/shared/protocol.ts';
@@ -30,7 +31,6 @@ const page = await openPage({
     frames.snap = fillSnapshot(msg, frames.snap) ?? frames.snap;
     for (const e of frames.snap?.events ?? []) {
       if (e.e === 'dmg' && e.kind === 'player' && e.victim === frames.welcome?.id && e.attacker === null) frames.ringHits++;
-      if (e.e === 'kill' && e.knock) frames.feed.push('knock');
       if (e.e === 'wiped') frames.feed.push('wiped');
     }
   },
@@ -63,11 +63,10 @@ const fleeRing = async () => {
 await cdp('Page.navigate', { url: `${BASE}/?dev` });
 await sleep(800);
 await joinFromMenu(page, { room: 3, name: 'Ringer', press: true });
-expect('the menu joins the Last Squad room', await until(() => frames.welcome?.mode === 'BR' && me(), 8000), `mode ${frames.welcome?.mode}`);
-const team = me()?.team;
-const squad = frames.snap?.royale?.squads.find((s) => s.team === team);
-expect('the player is seated in a squad of three', !!team && squad?.pips.length === 3, `team ${team}, pips ${squad?.pips.join(',')}`);
-expect('six squads are tracked', frames.snap?.royale?.squads.length === 6);
+expect('the menu joins the Last Standing room', await until(() => frames.welcome?.mode === 'BR' && me(), 8000), `mode ${frames.welcome?.mode}`);
+expect('the player plays solo, on no team', me()?.team === null, `team ${me()?.team}`);
+expect('the match counts everyone still in', (frames.snap?.royale?.alive ?? 0) > 1 && frames.snap?.royale?.alive === frames.snap?.royale?.total, `${frames.snap?.royale?.alive} / ${frames.snap?.royale?.total}`);
+expect('loot caches and towers are on the map', (frames.snap?.royale?.caches.length ?? 0) > 20 && (frames.snap?.royale?.towers.length ?? 0) > 0);
 await sleep(1500);
 await shot('br-start');
 
@@ -87,15 +86,8 @@ expect('the ring catches the player outside it', await until(async () => { await
 await shot('br-ring');
 expect('the ring hurts the player outside it', await until(async () => { await fleeRing(); return frames.ringHits >= 2; }, 10_000), `${frames.ringHits} ring hits`);
 
-const knocked = await until(async () => { await fleeRing(); return !!me()?.downed || (me() && !me()!.alive); }, 90_000);
-expect('the ring takes the player down', knocked);
-if (me()?.downed) {
-  await sleep(400);
-  await shot('br-knocked');
-  expect('a knocked player stays in play, not on the death screen', await js(`document.getElementById('death').hidden`));
-}
 await steer([]);
-expect('the player dies', await until(() => me() && !me()!.alive && !me()!.downed, 60_000));
+expect('the ring kills the player', await until(async () => { await fleeRing(); return !!me() && !me()!.alive; }, 90_000));
 expect('a dead player watches someone', await until(() => frames.snap?.royale?.watch !== null, 5000), `watch ${frames.snap?.royale?.watch}`);
 await sleep(600);
 const watched = frames.snap?.players.find((p) => p.id === frames.snap?.royale?.watch);
@@ -107,10 +99,10 @@ await shot('br-spectate');
 
 expect('the result card shows the place', await until(async () => !(await js(`document.getElementById('report').hidden`)), 240_000));
 const result = await js(`document.getElementById('report').textContent`) as string;
-expect('it reads as a place with kills, knocks and revives', /#\d/.test(result) && result.includes('Knocks') && result.includes('Revives'), result);
+expect('it reads as a place with kills', /#\d/.test(result) && /kills/i.test(result), result);
 await sleep(400);
 await shot('br-result');
-expect('the feed carried knocks and squad wipes', frames.feed.includes('knock') && frames.feed.includes('wiped'), frames.feed.slice(0, 8).join(','));
+expect('the feed carried players going out', frames.feed.includes('wiped'), frames.feed.slice(0, 8).join(','));
 
 for (const p of problems.filter((p) => p.startsWith('page') || p.startsWith('console'))) log(p);
 log(problems.length ? `RESULT FAIL (${problems.length})` : 'RESULT PASS');

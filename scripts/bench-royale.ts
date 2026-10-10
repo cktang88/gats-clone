@@ -3,11 +3,11 @@
 import { availableParallelism } from 'node:os';
 import { parseArgs } from 'node:util';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
-import { COLOR_IDS, GUNS, RING, ROYALE, WORLD, type ColorId } from '../src/shared/defs.ts';
+import { GUNS, RING, ROYALE, WORLD } from '../src/shared/defs.ts';
 import { ROTATION, type MapId } from '../src/shared/maps.ts';
 import type { GameEvent } from '../src/shared/protocol.ts';
 import { addPlayer, step } from '../src/shared/sim.ts';
-import { closedPhases } from '../src/shared/sim/royale.ts';
+import { closedPhases, placeOf, stillIn } from '../src/shared/sim/royale.ts';
 import { createWorld, rand, type World } from '../src/shared/sim/world.ts';
 import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
 import { thinkBots } from '../src/server/bot/tick.ts';
@@ -21,10 +21,11 @@ const SAMPLE_TICKS = 15;
 
 type Spec = { map: MapId; seed: number; proxy: boolean };
 type Result = {
-  spec: Spec; won: boolean; ms: number; ringDeaths: number; playerDeaths: number; ringWipes: number; wipes: number;
+  spec: Spec; won: boolean; ms: number; ringDeaths: number; playerDeaths: number; ringOuts: number; outs: number;
   takedownsByPhase: number[]; phaseMs: number[];
-  squadsLeftByMinute: number[]; lastFightPhase: number; survivorStages: number[];
-  drops: number; contested: number; thinkMs: number; ticks: number; proxyTeam: ColorId | null; winner: ColorId | null;
+  aliveByMinute: number[]; lastFightPhase: number; survivorStages: number[];
+  drops: number; contested: number; caches: number; opened: number; openedByMinute: number[]; towersTaken: number;
+  thinkMs: number; ticks: number; proxy: number | null; proxyPlace: number | null; winner: number | null;
 };
 
 const hash = (s: string) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193); return h >>> 0; };
@@ -33,17 +34,18 @@ function play(spec: Spec): Result {
   const w: World = createWorld('BR', hash(`${spec.map}:${spec.seed}`), spec.map);
   const r = () => rand(w);
   const mems = new Map<number, BotMemory>();
-  const proxyTeam = spec.proxy ? COLOR_IDS[spec.seed % COLOR_IDS.length]! : null;
-  for (const team of COLOR_IDS) {
-    for (let i = 0; i < ROYALE.squadSize; i++) {
-      const kind = team === proxyTeam && i === 0 ? 'human' : 'bot';
-      const p = addPlayer(w, `${team}${i}`, randomLoadout(r), { team, kind });
-      mems.set(p.id, newBotMemory(r));
-    }
+  const proxySeat = spec.proxy ? spec.seed % ROYALE.players : -1;
+  let proxy: number | null = null;
+  for (let i = 0; i < ROYALE.players; i++) {
+    const kind = i === proxySeat ? 'human' : 'bot';
+    const p = addPlayer(w, `bot${i}`, randomLoadout(r), { kind });
+    if (kind === 'human') proxy = p.id;
+    mems.set(p.id, newBotMemory(r));
   }
   const res: Result = {
-    spec, won: false, ms: 0, ringDeaths: 0, playerDeaths: 0, ringWipes: 0, wipes: 0, takedownsByPhase: Array(PHASES).fill(0), phaseMs: Array(PHASES).fill(0),
-    squadsLeftByMinute: [], lastFightPhase: -1, survivorStages: [], drops: 0, contested: 0, thinkMs: 0, ticks: 0, proxyTeam, winner: null,
+    spec, won: false, ms: 0, ringDeaths: 0, playerDeaths: 0, ringOuts: 0, outs: 0, takedownsByPhase: Array(PHASES).fill(0), phaseMs: Array(PHASES).fill(0),
+    aliveByMinute: [], lastFightPhase: -1, survivorStages: [], drops: 0, contested: 0, caches: w.royale!.caches.length, opened: 0, openedByMinute: [], towersTaken: 0,
+    thinkMs: 0, ticks: 0, proxy, proxyPlace: null, winner: null,
   };
   const dropSeen = new Map<number, boolean>();
   const lastCause = new Map<number, 'ring' | 'player'>();
@@ -65,34 +67,39 @@ function play(spec: Spec): Result {
       }
       if (e.e === 'kill' && e.weapon !== 'Ring') { res.takedownsByPhase[phase]++; res.lastFightPhase = phase; }
       if (e.e === 'wiped') {
-        res.wipes++;
-        const members = [...w.players.values()].filter((p) => p.team === e.team);
-        if (members.every((p) => lastCause.get(p.id) === 'ring')) res.ringWipes++;
+        res.outs++;
+        if (lastCause.get(e.id) === 'ring') res.ringOuts++;
       }
+      if (e.e === 'tower') res.towersTaken++;
     }
     for (const p of w.players.values()) {
       if (p.life.k !== 'dead' || before.get(p.id) === 'dead') continue;
       if (lastCause.get(p.id) === 'ring') res.ringDeaths++;
       else res.playerDeaths++;
     }
-    if (w.tick % Math.round(60_000 / TICK_MS) === 0) res.squadsLeftByMinute.push(royale.squads.length - royale.out.length);
+    if (w.tick % Math.round(60_000 / TICK_MS) === 0) {
+      res.aliveByMinute.push(stillIn(royale).length);
+      res.openedByMinute.push(royale.caches.filter((c) => c.open).length);
+    }
     if (w.tick % SAMPLE_TICKS === 0) {
       for (const c of w.crates) {
         if (!c.drop) continue;
         if (!dropSeen.has(c.id)) dropSeen.set(c.id, false);
         if (c.respawnAt !== null || dropSeen.get(c.id)) continue;
-        const near = new Set([...w.players.values()].filter((p) => p.life.k === 'alive' && Math.hypot(p.x - c.x, p.y - c.y) < CONTEST_PX).map((p) => p.team));
-        if (near.size >= 2) dropSeen.set(c.id, true);
+        const near = [...w.players.values()].filter((p) => p.life.k === 'alive' && Math.hypot(p.x - c.x, p.y - c.y) < CONTEST_PX);
+        if (near.length >= 2) dropSeen.set(c.id, true);
       }
     }
   }
   res.ms = w.now;
   res.drops = dropSeen.size;
   res.contested = [...dropSeen.values()].filter(Boolean).length;
+  res.opened = w.royale!.caches.filter((c) => c.open).length;
+  if (proxy !== null) res.proxyPlace = placeOf(w, w.royale!, proxy);
   if (w.match.k === 'over') {
     res.won = true;
     const royale = w.royale!;
-    res.winner = royale.squads.find((s) => !royale.out.includes(s)) ?? royale.out.at(-1)!;
+    res.winner = stillIn(royale)[0] ?? royale.out.at(-1) ?? null;
     res.survivorStages = [...w.players.values()].filter((p) => p.life.k === 'alive').map((p) => GUNS[p.gun].stage);
   }
   return res;
@@ -123,21 +130,24 @@ if (!isMainThread) {
     const won = rs.filter((x) => x.won);
     const deaths = sum(rs.map((x) => x.ringDeaths + x.playerDeaths));
     const lastTwo = won.filter((x) => x.lastFightPhase >= RING.length - 2).length;
-    const proxied = rs.filter((x) => x.proxyTeam);
+    const proxied = rs.filter((x) => x.proxy !== null);
     const stages = rs.flatMap((x) => x.survivorStages);
     console.log(`${label.padEnd(10)} matches ${rs.length}  winner ${won.length}/${rs.length}  median ${min(median(rs.map((x) => x.ms)))} min (${min(Math.min(...rs.map((x) => x.ms)))}..${min(Math.max(...rs.map((x) => x.ms)))})` +
-      `  ring deaths ${pc(sum(rs.map((x) => x.ringDeaths)) / Math.max(1, deaths))} of ${deaths}  ring wipes ${sum(rs.map((x) => x.ringWipes))}/${sum(rs.map((x) => x.wipes))}` +
+      `  ring deaths ${pc(sum(rs.map((x) => x.ringDeaths)) / Math.max(1, deaths))} of ${deaths}  ring outs ${sum(rs.map((x) => x.ringOuts))}/${sum(rs.map((x) => x.outs))}` +
       `  last fight in last two phases ${lastTwo}/${won.length}  drops contested ${sum(rs.map((x) => x.contested))}/${sum(rs.map((x) => x.drops))}` +
       `  think ${(sum(rs.map((x) => x.thinkMs)) / sum(rs.map((x) => x.ticks))).toFixed(2)} ms/tick` +
-      (proxied.length ? `  proxy wins ${proxied.filter((x) => x.winner === x.proxyTeam).length}/${proxied.length} (${pc(proxied.filter((x) => x.winner === x.proxyTeam).length / proxied.length)})` : ''));
+      (proxied.length ? `  proxy wins ${proxied.filter((x) => x.winner === x.proxy).length}/${proxied.length} (${pc(proxied.filter((x) => x.winner === x.proxy).length / proxied.length)})` +
+        `  proxy median place ${median(proxied.map((x) => x.proxyPlace ?? 0))}` : ''));
     const perMin = Array.from({ length: PHASES }, (_, i) => sum(rs.map((x) => x.takedownsByPhase[i]!)) / Math.max(1e-9, sum(rs.map((x) => x.phaseMs[i]!)) / 60_000));
     console.log(`${''.padEnd(10)} fights/min by phase ${perMin.map((f, i) => `${i < RING.length ? i + 1 : 'shut'}:${f.toFixed(1)}`).join(' ')}` +
       `  last fight phase ${won.map((x) => x.lastFightPhase + 1).join('')}` +
       `  survivor gun stage ${[0, 1, 2].map((s) => `${s}:${stages.filter((x) => x === s).length}`).join(' ')}`);
-    const minutes = Math.max(...rs.map((x) => x.squadsLeftByMinute.length));
-    console.log(`${''.padEnd(10)} squads in by minute ${Array.from({ length: minutes }, (_, m) => (sum(rs.map((x) => x.squadsLeftByMinute[m] ?? 0)) / rs.length).toFixed(1)).join(' ')}`);
+    const minutes = Math.max(...rs.map((x) => x.aliveByMinute.length));
+    const byMinute = (f: (x: Result) => readonly number[]) => Array.from({ length: minutes }, (_, m) => (sum(rs.map((x) => f(x)[m] ?? f(x).at(-1) ?? 0)) / rs.length).toFixed(1)).join(' ');
+    console.log(`${''.padEnd(10)} players in by minute ${byMinute((x) => x.aliveByMinute)}  caches opened by minute ${byMinute((x) => x.openedByMinute)}` +
+      ` (of ${(sum(rs.map((x) => x.caches)) / rs.length).toFixed(0)}; ${(sum(rs.map((x) => x.opened)) / rs.length).toFixed(1)} by the end)  towers taken ${(sum(rs.map((x) => x.towersTaken)) / rs.length).toFixed(1)}/match`);
   };
-  console.log(`bench-royale: ${specs.length} bot matches (${seeds.length} seeds x ${maps.join('/')}), ${args['no-proxy'] ? 'no proxy' : 'one 4x-health bot in one squad'}, cap ${CAP_MS / 60_000} min, ${((performance.now() - started) / 1000).toFixed(0)}s`);
+  console.log(`bench-royale: ${specs.length} bot matches (${seeds.length} seeds x ${maps.join('/')}), ${args['no-proxy'] ? 'no proxy' : 'one proxy "human" seat run by a bot'}, cap ${CAP_MS / 60_000} min, ${((performance.now() - started) / 1000).toFixed(0)}s`);
   for (const map of maps) summarize(map, results.filter((x) => x.spec.map === map));
   summarize('all', results);
 }

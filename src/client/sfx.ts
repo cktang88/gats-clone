@@ -1,4 +1,4 @@
-import { EVOLUTIONS, GUN_IDS, GUNS, MEDALS, STREAK, ZOM, type MedalTier, type GunId, type TurretKind, type WeaponId } from '../shared/defs.ts';
+import { EVOLUTIONS, GUN_IDS, GUNS, MEDALS, STREAK, ZOM, type MedalTier, type GunId, type TurretKind, type WeaponId, type LootTier } from '../shared/defs.ts';
 import { planeAt, type Snapshot } from '../shared/protocol.ts';
 import { selfOf } from './derive.ts';
 import { TICK_MS } from './interp.ts';
@@ -13,7 +13,7 @@ export type SoundId =
   | 'knock' | 'ring' | 'step' | 'stepSprint' | 'tink' | 'spawn' | 'impact:flesh' | 'impact:wall' | 'impact:crate' | 'impact:zombie'
   | 'barrel:hurt' | 'barrel:fuse' | 'barrel:burst' | 'barrel:chain'
   | 'prop:whoosh' | 'prop:hiss' | 'prop:zap' | 'prop:fire' | 'prop:glass' | 'prop:pickup' | 'prop:splat'
-  | 'plane' | 'chute' | 'crate:land' | 'crate:break' | 'crate:gold' | 'crate:supply'
+  | 'plane' | 'chute' | 'crate:land' | 'crate:break' | 'crate:gold' | 'crate:supply' | `loot:${LootTier}`
   | 'radar' | 'healPole' | 'slowmo:in' | 'slowmo:out' | 'emote' | 'confetti' | 'firework'
   | 'amb:flutter' | 'amb:caw' | 'amb:gull'
   | 'zone:tick' | 'zone:taken' | 'zone:lost' | 'zone:contest';
@@ -289,6 +289,12 @@ const RAW: Record<SoundId, Recipe> = {
   // The golden gun is a blade drawn, a bright metallic shing; a resupply is a softer three-note jingle with coins.
   'crate:gold': [whoosh(1200, 9000, 160, 0.1), ping(2093, 0, 900, 0.2), ping(3136, 30, 800, 0.16), ping(4186, 60, 700, 0.12), ping(6272, 80, 500, 0.06), shimmer(260, 0.12, 20), bell(1568, 120, 900, 0.15), ...sparkles(6, 150, 500, 3951, 0.05)],
   'crate:supply': [bell(1319, 0, 260, 0.18), bell(1568, 80, 260, 0.18), bell(1976, 160, 320, 0.18), ...ching(0.8).map((l) => ({ ...l, delayMs: (l.delayMs ?? 0) + 120 }))],
+  // A Last Standing loot cache flipping open: a latch crack, the lid's wooden thunk and a chime that grows with the tier, a rare one a
+  // two-note bell, an epic one a rising three-bell chord with a sparkling shimmer over it.
+  'loot:0': [crack(1500, 60, 0.35), thump(210, 110, 0.45), { src: 'tone', wave: 'triangle', pitchHz: [260, 420], ms: 110, gain: 0.16 }, bell(1319, 90, 220, 0.13), ...debris(3, 30, 120, 0.08)],
+  'loot:1': [crack(1600, 70, 0.4), thump(190, 130, 0.5), { src: 'tone', wave: 'triangle', pitchHz: [260, 460], ms: 120, gain: 0.16 }, bell(1319, 80, 280, 0.16), bell(1976, 170, 420, 0.17), ping(2637, 170, 480, 0.06)],
+  'loot:2': [crack(1800, 80, 0.45), thump(170, 160, 0.55), whoosh(800, 7000, 240, 0.08, 40), bell(1319, 80, 320, 0.16), bell(1661, 150, 360, 0.16), bell(1976, 220, 620, 0.19),
+    ping(2637, 220, 900, 0.1), ping(3951, 290, 760, 0.06), shimmer(320, 0.1, 140), ...sparkles(8, 200, 650, 3951, 0.05)],
   // Slow motion: a low whoosh and a heartbeat into it; a reverse swell and a tick back out.
   'slowmo:in': [{ src: 'noise', filter: 'bandpass', q: 1.1, cutoffHz: [2400, 160], ms: 700, gain: 0.5, attackMs: 60 }, { src: 'tone', wave: 'sine', pitchHz: [180, 45], ms: 700, gain: 0.45 }],
   'slowmo:out': [{ src: 'noise', filter: 'bandpass', q: 1.2, cutoffHz: [180, 3200], ms: 420, gain: 0.4, attackMs: 380 }, { src: 'tone', wave: 'sine', pitchHz: [60, 180], ms: 420, gain: 0.3, attackMs: 380 }, snap(4000, 0.2, 400, 10)],
@@ -360,7 +366,7 @@ const TRIM: Partial<Record<SoundId, number>> = {
   kill: 0.68, 'kill:2': 0.62, 'kill:3': 0.65, 'kill:4': 0.7, 'kill:5': 0.66, bounty: 0.72, boom: 0.6, radar: 0.7, healPole: 0.6, evolve: 0.81, levelup: 0.88,
   'medal:bronze': 1.72, 'medal:silver': 1.48, 'medal:gold': 1.6, fanfare: 1.15,
   // Barrels, airdrops, slow motion, emotes and the round-end party.
-  'barrel:hurt': 0.92, 'barrel:fuse': 0.37, 'barrel:burst': 0.62, 'barrel:chain': 0.45, plane: 0.4, chute: 1.15, 'crate:land': 1.2, 'crate:break': 1.72, 'crate:gold': 1.06, 'crate:supply': 0.62,
+  'barrel:hurt': 0.92, 'barrel:fuse': 0.37, 'barrel:burst': 0.62, 'barrel:chain': 0.45, plane: 0.4, chute: 1.15, 'crate:land': 1.2, 'crate:break': 1.72, 'crate:gold': 1.06, 'crate:supply': 0.62, 'loot:0': 0.9, 'loot:1': 1, 'loot:2': 1.1,
   'prop:whoosh': 0.6, 'prop:hiss': 0.5, 'prop:zap': 0.6, 'prop:fire': 0.6, 'prop:glass': 0.8, 'prop:pickup': 1.2, 'prop:splat': 1.5,
   'slowmo:in': 0.54, 'slowmo:out': 0.3, emote: 3.43, confetti: 1.76, firework: 0.17,
 };
@@ -416,7 +422,7 @@ export function minGapMs(id: SoundId): number {
 const STEP_PX = 64;
 const SPRINT_STEP_PX = 46;
 
-/** A bounty, revenge or shutdown gets the fanfare, a Last Squad knock its own thud; any other kill climbs in pitch with the streak it extends. */
+/** A bounty, revenge or shutdown gets the fanfare, a knock its own thud; any other kill climbs in pitch with the streak it extends. */
 function killSound(ev: Extract<Snapshot['events'][number], { e: 'kill' }>, streak: number): Exclude<SoundId, 'hurt'> {
   if (ev.bounty || ev.revenge || ev.ended >= STREAK.shutdownAt) return 'bounty';
   if (ev.knock) return 'knock';
@@ -457,6 +463,7 @@ export const DUCKS: Partial<Record<SoundId, { depth: number; holdMs: number }>> 
   bounty: { depth: 0.7, holdMs: 200 }, knock: { depth: 0.78, holdMs: 100 },
   'medal:silver': { depth: 0.75, holdMs: 250 }, 'medal:gold': { depth: 0.62, holdMs: 450 }, 'medal:platinum': { depth: 0.5, holdMs: 700 }, fanfare: { depth: 0.45, holdMs: 900 },
   radar: { depth: 0.2, holdMs: 300 },
+  'loot:2': { depth: 0.75, holdMs: 300 },
   evolve: { depth: 0.7, holdMs: 300 }, 'crate:gold': { depth: 0.7, holdMs: 300 }, 'slowmo:in': { depth: 0.65, holdMs: 500 },
 };
 
@@ -570,6 +577,12 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       }
       case 'radar': cues.push({ id: 'radar', x: ev.x, y: ev.y, self: ev.owner === me?.id, gain: 1, r: 0 }); break;
       case 'airdrop': cues.push(...airdropCues(ev, next, me?.name)); break;
+      // A loot cache opening, brighter by tier; your own at your ear.
+      case 'loot': cues.push({ id: `loot:${ev.tier}`, x: ev.x, y: ev.y, self: ev.by === next.self.id, gain: 1 }); break;
+      // A recon tower taken: the radar's sonar ping from the mast, at your ear when you took it.
+      case 'tower': cues.push({ id: 'radar', x: ev.x, y: ev.y, self: ev.by === next.self.id, gain: 1, r: 0 }); break;
+      // A gun taken off the floor: racked into the hands.
+      case 'took': cues.push({ id: 'foley:rack:assault', x: ev.x, y: ev.y, self: ev.id === next.self.id, gain: 1.2 }); break;
       case 'prop': cues.push(propCue(ev, me)); break;
       // An armor pack taken chimes like a cabinet's pack, at your ear when it was yours.
       case 'pack': cues.push({ id: 'prop:pickup', x: ev.x, y: ev.y, self: me !== undefined && Math.hypot(me.x - ev.x, me.y - ev.y) < 60, gain: 1 }); break;
