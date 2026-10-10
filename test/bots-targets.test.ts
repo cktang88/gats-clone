@@ -1,11 +1,12 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BOT_VIEW_ASPECT, type WallView } from '../src/shared/protocol.ts';
+import type { WallView } from '../src/shared/protocol.ts';
 import { MAPS } from '../src/shared/maps.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { IDLE_INPUT } from '../src/shared/sim/world.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { botSnapshot } from '../src/server/bot/tick.ts';
 import type { World } from '../src/shared/sim/world.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
@@ -20,18 +21,19 @@ function think(w: World, botId: number, seed: number, ticks: number) {
   const r = seeded(seed);
   let mem = newBotMemory(r);
   for (let i = 1; i < ticks; i++) {
-    mem = botThink(snapshotFor(w, botId), arenaFor(w), mem, r).mem;
+    mem = botThink(botSnapshot(w, botId), arenaFor(w), mem, r).mem;
     step(w, TICK_MS);
   }
-  return botThink(snapshotFor(w, botId), arenaFor(w), mem, r).input;
+  return botThink(botSnapshot(w, botId), arenaFor(w), mem, r).input;
 }
 
+// Each preferred enemy stands 350 px below a bot that faces along the x axis: on its 16:9 screen (394 px up and down), so in view.
 test('a bot aims at a hunted enemy in view over a nearer ordinary one', () => {
   for (let seed = 1; seed <= 5; seed++) {
     const w = emptyWorld();
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
     spawnAt(w, 1200, 1000);
-    equip(spawnAt(w, 1000, 1400), 'executioner');
+    equip(spawnAt(w, 1000, 1350), 'executioner');
     const angle = think(w, bot.id, seed, 20).angle;
     assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `seed ${seed}: aims down at the hunted enemy, angle ${angle.toFixed(2)}`);
   }
@@ -111,7 +113,7 @@ test('a bot passes over an enemy behind a crate for one in the clear', () => {
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
     addCrate(w, 1150, 1000);
     spawnAt(w, 1300, 1000);
-    spawnAt(w, 1000, 1400);
+    spawnAt(w, 1000, 1350);
     const angle = think(w, bot.id, seed, 20).angle;
     assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `seed ${seed}: aims down at the enemy in the clear, angle ${angle.toFixed(2)}`);
   }
@@ -122,7 +124,7 @@ test('a bot aims at the highest-level human in view over a nearer fresh enemy', 
     const w = emptyWorld();
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
     spawnAt(w, 1200, 1000);
-    spawnAt(w, 1000, 1400, { kind: 'human' }).level = 3;
+    spawnAt(w, 1000, 1350, { kind: 'human' }).level = 3;
     const angle = think(w, bot.id, seed, 20).angle;
     assert.ok(Math.abs(angle - Math.PI / 2) < 0.3, `seed ${seed}: aims down at the level-3 human, angle ${angle.toFixed(2)}`);
   }
@@ -133,7 +135,7 @@ test('a bot aims at the nearer of two bots whatever their levels', () => {
     const w = emptyWorld();
     const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
     spawnAt(w, 1200, 1000);
-    spawnAt(w, 1000, 1400).level = 3;
+    spawnAt(w, 1000, 1350).level = 3;
     const angle = think(w, bot.id, seed, 20).angle;
     assert.ok(Math.abs(angle) < 0.3, `seed ${seed}: aims right at the nearer level-0 bot, angle ${angle.toFixed(2)}`);
   }
@@ -175,8 +177,9 @@ test('a bot walled off from a hunted marker walks around the wall and fights ins
     const r = seeded(seed);
     let mem = newBotMemory(r);
     for (let i = 1; i <= 20 * 30 && hpOf(hunted) === fullHp; i++) {
-      // A bot sees by BOT_VIEW_ASPECT, as the server's bot tick gives it: at 16:9 a 700 px view leaves him out of sight past the wall's end.
-      const d = botThink(snapshotFor(w, bot.id, [], BOT_VIEW_ASPECT), arenaFor(w), mem, r);
+      // A bot sees by a person's 16:9 screen leaned toward its aim, as the server's bot tick gives it (`botSnapshot`): it has to come
+      // round the wall's end and turn his way to see him.
+      const d = botThink(botSnapshot(w, bot.id, []), arenaFor(w), mem, r);
       mem = d.mem;
       setInput(w, bot.id, i, d.input);
       step(w, TICK_MS);

@@ -1,8 +1,8 @@
-import type { GunId } from '../../shared/defs.ts';
+import { GUNS, type GunId } from '../../shared/defs.ts';
 import type { ZoneView } from '../../shared/protocol.ts';
 import { TICK_MS } from './aim.ts';
 import { doorLanes, openSpot, type BotArena } from './arena.ts';
-import { BLIND_AT, type Perception, type Threat } from './awareness.ts';
+import { aimsAtLead, BLIND_AT, type Perception, type Threat } from './awareness.ts';
 import { sightBlocked } from '../../shared/sim/vision.ts';
 import { coverNear, pickCover } from './cover.ts';
 import { between, clearShot, dist, isOpen, nearestOpenPoint, type Point } from './nav.ts';
@@ -266,7 +266,7 @@ function idlePlan(v: Perception, c: IntentCtx): Plan {
     const free = (ps: readonly Point[]) => { const apart = ps.filter((q) => v.allies.every((m) => dist(m, q) >= MATE_COVER_PX)); return apart.length ? apart : ps; };
     const spots = free(coverNear(c.arena.cover, openSpot(c.arena, c.rand, { at: centre, r: c.arena.size / 4 }), 300));
     const spot = spots.length ? spots[Math.floor(c.rand() * spots.length)]! : openSpot(c.arena, c.rand, { at: centre, r: c.arena.size / 4 });
-    return { k: 'takePosition', spot, facing: v.lead ?? centre };
+    return { k: 'takePosition', spot, facing: v.lead && aimsAtLead(v.lead, v.me) ? v.lead : centre };
   }
   return { k: 'patrol', goal: openSpot(c.arena, c.rand, c.rand() < 0.5 ? { at: centre, r: c.arena.size / 3 } : undefined) };
 }
@@ -420,6 +420,12 @@ const leaveTurnedFight: Interrupt = (cur, v, c) => {
   return holdPlan(v, c, t);
 };
 
+/**
+ * He stands past its gun's reach: poking at him from cover is no use, it goes in (`engage` closes to its band). A bot sees that far down
+ * its aim (the look-ahead, as a person does), so two could otherwise peek at each other from out of reach and never fire.
+ */
+const outOfReach = (v: Perception, t: Threat) => t.d > GUNS[v.me.gun].range;
+
 const INTERRUPTS: readonly Interrupt[] = [goBlind, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, leaveTurnedFight, engageOnSight, fetchSupplies, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
@@ -441,12 +447,12 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
     if (odds !== null && odds > COMMIT_ODDS) return null;
     // A fight not clearly in hand is poked from cover more readily than one going its way.
     const peekOdds = c.persona.peekOdds + (odds !== null && odds < POKE_ODDS ? POKE_MORE : 0);
-    if (c.band.rushes || t.d < c.band.headOn * 0.7 || c.rand() >= overTicks(peekOdds, c)) return null;
+    if (c.band.rushes || t.d < c.band.headOn * 0.7 || outOfReach(v, t) || c.rand() >= overTicks(peekOdds, c)) return null;
     return peekPlan(v, c, t);
   },
   peekAndHide: (cur, v, c) => {
     const t = v.threats.find((x) => x.p.id === cur.target) ?? v.threats[0];
-    if (t && t.d < c.band.headOn * 0.7) return { k: 'engage', target: t.p.id };
+    if (t && (t.d < c.band.headOn * 0.7 || (outOfReach(v, t) && !v.underFire))) return { k: 'engage', target: t.p.id };
     // He is caught out (reloading, hurt, alone against it and a mate): the poking stops and it pushes him.
     const odds = t ? oddsOn(v, c, t) : null;
     if (t && odds !== null && odds > PUSH_FROM_COVER_ODDS) return { k: 'engage', target: t.p.id };

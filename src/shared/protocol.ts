@@ -39,10 +39,10 @@ export const VIEW_ASPECT = { min: 1, max: 2.4 } as const;
 /** What a client that sent no (or a garbled) aspect is assumed to have, and what bots see by. */
 export const DEFAULT_VIEW_ASPECT = 16 / 9;
 /**
- * What bots see by: the squarest screen the view honours (`VIEW_ASPECT.min`), so a bot sees the whole view radius every way, as much as a
- * person with the biggest screen can (`BOT_VIEW` in the README). No screen shows more, so a bot still never sees what no human could.
+ * What bots see by: the typical 16:9 screen, leaned toward its aim as a person's camera is (`botSight` in server/bot/awareness.ts), so a
+ * scoped bot sees far down its aim but no further beside or behind itself than a person's screen shows (View in the README).
  */
-export const BOT_VIEW_ASPECT = VIEW_ASPECT.min;
+export const BOT_VIEW_ASPECT = DEFAULT_VIEW_ASPECT;
 export const VIEW_PRELOAD_MARGIN = 64;
 /** A non-finite aspect (a 0x0 viewport divides 0 by 0) is the default, never NaN, which would poison the camera and the server's culling. */
 export const clampAspect = (aspect: number): number => (Number.isFinite(aspect) ? Math.min(VIEW_ASPECT.max, Math.max(VIEW_ASPECT.min, aspect)) : DEFAULT_VIEW_ASPECT);

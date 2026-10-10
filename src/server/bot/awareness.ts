@@ -1,11 +1,12 @@
 import { GUNS, WORLD, type GunId, type WeaponId } from '../../shared/defs.ts';
 import { BOT_VIEW_ASPECT, viewExtents, type PlayerView, type SelfView, type Snapshot, type Team, type ZoneView } from '../../shared/protocol.ts';
+import { inSightBox, lookReach, lookSides, NO_LOOK, sightBox, type LookSides } from '../../shared/lookahead.ts';
 import type { Rect } from '../../shared/sim/movement.ts';
 import { SHARPNESS, TICK_MS } from './aim.ts';
 import type { BotArena } from './arena.ts';
 import { FLASH } from '../../shared/sim/abilities.ts';
 import { sightBlocked, type Smoke } from '../../shared/sim/vision.ts';
-import { BOT_HEARING } from '../../shared/sim/hearing.ts';
+import { BOT_EARSHOT_PX, BOT_HEARING, earDist } from '../../shared/sim/hearing.ts';
 import { clearShot, dist, type Point } from './nav.ts';
 
 type Contact = { id: number; x: number; y: number; seenTick: number; gun: GunId };
@@ -98,12 +99,45 @@ export function focus(v: Perception, target: number): Threat | undefined {
   return danger(mine.p) >= danger(top.p) && !(shoots(top) && !shoots(mine)) ? mine : top;
 }
 
+/**
+ * What a bot sees: the box a person's screen shows with the same gun, perks and aim (`sightBox`): the typical 16:9 view (`BOT_VIEW_ASPECT`)
+ * of its view radius, its scope, Optics and Recon counted as for anyone, widened toward its aim by the full lean a person's camera gets
+ * (`lookReach`, as `interestLook` gives a person's interest). A scoped sniper sees far down its aim, but beside and behind itself no further
+ * than anyone's 16:9 screen; it has to turn to see. A downed or dead bot sees by the centred view, as a person's camera leans only for a
+ * live soldier.
+ */
+export function botSight(viewRadius: number, gun: GunId, angle: number, alive = true): LookSides {
+  return sightBox(viewExtents(viewRadius, BOT_VIEW_ASPECT), alive ? lookSides(angle, lookReach(viewRadius, gun)) : NO_LOOK);
+}
+
+/** Whether `p` stands in the sight box `box` of a bot at `me`. */
+export const inBotSight = (box: LookSides, me: Point, p: Point): boolean => inSightBox(box, p.x - me.x, p.y - me.y);
+
+/**
+ * Whether a heard lead is near enough for a bot to point its gun at it (pre-aiming, or holding a spot facing it): inside the plain earshot
+ * (`BOT_EARSHOT_PX`). A loud gun's shot carries further (`BOT_HEARING.loudMul`), far enough to go and look, but a place known only by that
+ * bonus is no line to aim a scope down.
+ */
+export const aimsAtLead = (lead: Point | null, me: Point): boolean => !!lead && earDist(lead.x - me.x, lead.y - me.y) <= BOT_EARSHOT_PX;
+
+/**
+ * Where an enemy it cannot see is shooting at it from, while that is off its screen: a round fired its way lately (`SHOOTER_MS`) by someone
+ * not among the enemies in sight, from outside its sight box. A person reads that off the tracers crossing his screen and the gunfire's
+ * stereo and turns to look; so does a bot (motor.ts), which brings him into its view, where he is answered first (`focus`). Behind a wall or
+ * smoke inside its box there is nothing to turn to, so it fights on.
+ */
+export function unseenShooter(v: Perception): Point | null {
+  const s = v.shotAt;
+  if (!s || (v.tick - s.tick) * TICK_MS >= SHOOTER_MS || v.threats.some((t) => t.p.id === s.owner)) return null;
+  return inBotSight(botSight(v.self.viewRadius, v.me.gun, v.me.angle, v.me.alive), v.me, s) ? null : { x: s.x, y: s.y };
+}
+
 export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: Awareness): { awareness: Awareness; view: Perception } {
   const tick = snap.tick;
   const solids: Rect[] = [...arena.sightWalls, ...snap.crates.map(crateRect)];
-  const sight = viewExtents(snap.self.viewRadius, BOT_VIEW_ASPECT);
+  const sight = botSight(snap.self.viewRadius, me.gun, me.angle, me.alive);
   const enemy = (p: PlayerView) => p.id !== me.id && (me.team === null || p.team !== me.team);
-  const inSight = (p: PlayerView) => enemy(p) && !p.spawnShield && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH && clearShot(solids, me, p);
+  const inSight = (p: PlayerView) => enemy(p) && !p.spawnShield && inBotSight(sight, me, p) && clearShot(solids, me, p);
   // A flashed bot is blind: whatever the snapshot holds, it takes in no new sighting. Only stale memory (`prev.contacts`) is left.
   const flash = snap.self.flash ?? 0;
   const blind = flash > BLIND_AT;
@@ -135,7 +169,7 @@ export function perceive(snap: Snapshot, arena: BotArena, me: PlayerView, prev: 
   let shotAt = prev.shotAt && (tick - prev.shotAt.tick) * TICK_MS < SHOT_AT_MS ? prev.shotAt : null;
   for (const e of snap.events) {
     // Rounds fired its way: it hears where they came from, exactly enough to read the line to get off (where to search is the rough `heardNow` above).
-    if (e.e === 'shot' && !blind && hostile(e.owner, e) && (!e.silenced || dist(e, me) <= BOT_HEARING.silencedPx)) {
+    if (e.e === 'shot' && !blind && hostile(e.owner, e) && (!e.silenced || earDist(e.x - me.x, e.y - me.y) <= BOT_HEARING.silencedPx)) {
       const d = dist(e, me);
       const off = Math.atan2(me.y - e.y, me.x - e.x) - e.angle;
       if (d <= GUNS[e.gun].range && Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) < Math.atan2(WORLD.playerRadius * SHOT_AT_BODIES, d)) shotAt = { x: e.x, y: e.y, tick, owner: e.owner, gun: e.gun };

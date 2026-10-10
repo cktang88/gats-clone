@@ -1,5 +1,6 @@
 import { GUNS, rulesOf, WORLD, type AbilityId, type GunId, type PerkId, type Tier } from '../../shared/defs.ts';
-import { BOT_VIEW_ASPECT, viewExtents, type CrateView, type InputState, type Snapshot } from '../../shared/protocol.ts';
+import type { CrateView, InputState, Snapshot } from '../../shared/protocol.ts';
+import type { LookSides } from '../../shared/lookahead.ts';
 import { FLASH, GRENADE_FUSE_MS } from '../../shared/sim/abilities.ts';
 import { circleHitsRect, KNIFE_LUNGE, KNIFE_REACH, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
 import { bloomRecoverMul, settleShare, spreadFor } from '../../shared/sim/stats.ts';
@@ -10,7 +11,7 @@ import { doorLeaves, swingArcAt, swingHinges, SWING_MAX } from '../../shared/sim
 import type { MapDoor } from '../../shared/geom.ts';
 import { barrelToShoot, seenBarrels, shotWouldBurnMe } from './barrels.ts';
 import { hazardState, hazardsOf, propToShoot, seenProps, shotWouldHurtMe } from './props.ts';
-import { BLIND_AT, focus, type Perception, type Threat } from './awareness.ts';
+import { aimsAtLead, BLIND_AT, botSight, focus, inBotSight, unseenShooter, type Perception, type Threat } from './awareness.ts';
 import { sightBlocked } from '../../shared/sim/vision.ts';
 import { justLost, lane, type Intent, type IntentCtx } from './intent.ts';
 import { hiddenFromSeen } from './tactics.ts';
@@ -199,12 +200,12 @@ function awayFrom(me: Point, threat: Point, arena: BotArena, step: number): Poin
 }
 
 /** The nearest crate centre in sight, in range and in the clear, so a bot with nobody to fight still earns score. */
-function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly Rect[], range: number, sight: { halfW: number; halfH: number }): Point | null {
+function crateInSight(me: Point, crates: readonly CrateView[], walls: readonly Rect[], range: number, sight: LookSides): Point | null {
   let best: Point | null = null, bestD = Infinity;
   for (const c of crates) {
     const at = { x: c.x + c.size / 2, y: c.y + c.size / 2 };
     const d = dist(at, me);
-    if (d > range || d >= bestD || Math.abs(at.x - me.x) > sight.halfW || Math.abs(at.y - me.y) > sight.halfH) continue;
+    if (d > range || d >= bestD || !inBotSight(sight, me, at)) continue;
     if (!clearShot([...walls, ...crates.filter((o) => o.id !== c.id).map(crateRect)], me, at)) continue;
     best = at;
     bestD = d;
@@ -806,7 +807,9 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   const drive = keysToward({ ...m, detour }, me, way.at, v.tick);
   const gun = GUNS[me.gun];
 
-  const t: Threat | undefined = intent.k === 'engage' || intent.k === 'peekAndHide' || intent.k === 'flank' ? focus(v, intent.target) : v.threats[0];
+  // Shot at from off its screen, it turns to where the rounds come from before it fights on (`unseenShooter`): a quick turn, as on a startle.
+  const turnTo = intent.k !== 'blinded' ? unseenShooter(v) : null;
+  const t: Threat | undefined = turnTo ? undefined : intent.k === 'engage' || intent.k === 'peekAndHide' || intent.k === 'flank' ? focus(v, intent.target) : v.threats[0];
   const aimSurvivesCover = (id: number) => intent.k === 'peekAndHide' && intent.target === id;
   const held = (id: number) => m.engaged?.id === id && (v.tick - m.engagedSeen <= REACQUIRE_TICKS || aimSurvivesCover(id));
   let engaged = t ? null : m.engaged && held(m.engaged.id) ? m.engaged : null;
@@ -817,8 +820,8 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
   // With nobody in sight but someone about, it pre-aims where he would come from (`watchPoint`: the edge of the cover he is behind, or the
   // way a shot came), whatever it is doing, as a person keeps his crosshair on the angle rather than on his own feet.
   const watch = intent.k !== 'blinded' && !t ? c.tac?.watch ?? null : null;
-  const faceAt = (intent.k !== 'blinded' ? t?.p : undefined) ?? watch ?? s.face ?? v.lastSeen ?? v.lead;
-  const startled = t !== undefined && faceAt === t.p && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) > STARTLE_RAD;
+  const faceAt = (intent.k !== 'blinded' ? t?.p : undefined) ?? turnTo ?? watch ?? s.face ?? v.lastSeen ?? (aimsAtLead(v.lead, me) ? v.lead : null);
+  const startled = turnTo !== null || (t !== undefined && faceAt === t.p && Math.abs(wrapAngle(Math.atan2(t.p.y - me.y, t.p.x - me.x) - before.angle)) > STARTLE_RAD);
   let gaze: Gaze = faceAt ? { k: 'point', at: { x: faceAt.x, y: faceAt.y }, minPx: LOOK_HOLD_INSIDE_PX, hand: startled ? HANDS.startle : HANDS.calm, sigma: 0, fire: false, follow: t !== undefined && faceAt === t.p } : { k: 'ahead' };
   const barrels = seenBarrels(snap.barrels);
   const props = seenProps(snap.props);
@@ -836,7 +839,7 @@ export function act(intent: Intent, v: Perception, c: IntentCtx, m: Motor, snap:
     track = { id: t.p.id, sharp, shoot: shot ? { x: shot.x, y: shot.y } : null, fire: !blocked };
     if (v.tick >= engaged.noticeAtTick) threat = { d: t.d };
   } else if (s.crates && snap.self.ammo >= snap.self.mag / 2 && !snap.self.reloading) {
-    const crate = crateInSight(me, snap.crates, [...c.arena.walls, ...c.arena.barrels], gun.range * 0.95, viewExtents(snap.self.viewRadius, BOT_VIEW_ASPECT));
+    const crate = crateInSight(me, snap.crates, [...c.arena.walls, ...c.arena.barrels], gun.range * 0.95, botSight(snap.self.viewRadius, me.gun, me.angle));
     if (crate) gaze = { k: 'point', at: crate, minPx: 0, hand: HANDS.calm, sigma: 0, fire: true };
   }
   // Blind or half-blind, it still has a trigger: it rakes the spot the enemy was last in, with an error that only a flash gives.

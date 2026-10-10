@@ -2,9 +2,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setInput, step } from '../src/shared/sim.ts';
-import { snapshotFor } from '../src/shared/sim/snapshot.ts';
+import { botSnapshot } from '../src/server/bot/tick.ts';
 import type { Player, World } from '../src/shared/sim/world.ts';
-import { BOT_VIEW_ASPECT } from '../src/shared/protocol.ts';
 import { botThink, newBotMemory, type BotMemory } from '../src/server/bots.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from '../src/server/bot/awareness.ts';
@@ -21,7 +20,7 @@ const bearing = (a: { x: number; y: number }, b: { x: number; y: number }) => Ma
 /** One think, as `botThink` makes it (sightings and all), with `seen` laid over what it read, on a reacting think unless `strategic`. */
 function decide(w: World, id: number, cur: Plan | Intent, opts: { persona?: Personality; seen?: Sighting[]; strategic?: boolean; aware?: Awareness } = {}): Intent {
   const persona = opts.persona ?? PERSONALITIES.cautious;
-  const snap = snapshotFor(w, id, w.events, BOT_VIEW_ASPECT);
+  const snap = botSnapshot(w, id, w.events);
   const me = snap.players.find((p) => p.id === id)!;
   const { view: raw, awareness } = perceive(snap, arenaFor(w), me, opts.aware ?? freshAwareness());
   const read = readTactics(null, raw, awareness);
@@ -137,7 +136,7 @@ function corner(seed: number, comeBack: { x: number; y: number }): { offEdge: nu
   for (let i = 1; i <= 100; i++) {
     if (foe.life.k === 'alive') foe.life.hp = full;
     if (i === 40) { foe.x = comeBack.x; foe.y = comeBack.y; }
-    const d = botThink(snapshotFor(w, bot.id, w.events, BOT_VIEW_ASPECT), arenaFor(w), mem, r);
+    const d = botThink(botSnapshot(w, bot.id, w.events), arenaFor(w), mem, r);
     mem = d.mem;
     setInput(w, bot.id, i, d.input);
     step(w, TICK_MS);

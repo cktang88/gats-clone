@@ -205,7 +205,7 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     ...(w.run && siegeViews(w, w.run, inView)),
     ...(w.royale && { royale: royaleView(w, w.royale, me) }),
     ...(w.range && { targets: targetViews(w), range: rangeView(w, me.id) }),
-    ...(me.kind === 'bot' && { heard: heardShots(w, me, events, stats.viewRadius) }),
+    ...(me.kind === 'bot' && { heard: heardShots(w, me, events) }),
   };
 }
 

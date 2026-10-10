@@ -61,6 +61,24 @@ export function lookSides(angle: number, reach: number): LookSides {
 }
 
 /**
+ * A view box round an eye: how far it reaches left, right, up and down, the centred view (`viewExtents`) widened on the aimed sides by the
+ * lean (`lookSides`). A person's screen shows this much ground round them (the server sends it, the camera leans over it), and a bot sees
+ * by exactly the same box for its gun, perks and aim (`botSight` in server/bot/awareness.ts).
+ */
+export const sightBox = (half: { halfW: number; halfH: number }, look: LookSides): LookSides =>
+  ({ l: half.halfW + look.l, r: half.halfW + look.r, u: half.halfH + look.u, d: half.halfH + look.d });
+
+/**
+ * How far off `dx`, `dy` is, measured in the shape of a screen `aspect` wide to 1 tall: up and down counts `aspect` times over, so a
+ * reach of `px` is an ellipse `px` across and `px / aspect` up and down, the screen's own shape. Bots hear, and count enemies about them,
+ * by it (`botEarshot`, `othersOn`), so they sense no further above or below them than a person's screen shows against its width.
+ */
+export const screenDist = (dx: number, dy: number, aspect: number): number => Math.hypot(dx, dy * aspect);
+
+/** Whether a point `dx`, `dy` from the eye lies inside `box`. */
+export const inSightBox = (box: LookSides, dx: number, dy: number): boolean => dx <= box.r && -dx <= box.l && dy <= box.d && -dy <= box.u;
+
+/**
  * The widening held open while a client's camera eases away from an old lean: each side decays no faster than the camera's slowest
  * follow (`LOOK_AHEAD.rate`), so it always covers where the camera still is, and never drops below what the current aim wants.
  */

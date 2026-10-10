@@ -3,14 +3,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { WeaponId } from '../src/shared/defs.ts';
 import { step } from '../src/shared/sim.ts';
-import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { effectiveStats } from '../src/shared/sim/stats.ts';
 import { rand, type World } from '../src/shared/sim/world.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
-import { focus, freshAwareness, perceive, type Awareness } from '../src/server/bot/awareness.ts';
+import { focus, freshAwareness, perceive, unseenShooter, type Awareness } from '../src/server/bot/awareness.ts';
 import { bandFor, nextIntent, PERSONALITIES, PERSONALITY_IDS, startIntent, type Intent, type IntentCtx, type Plan } from '../src/server/bot/intent.ts';
 import { clearShot } from '../src/server/bot/nav.ts';
-import { TACTICAL_TICKS, thinkBots } from '../src/server/bot/tick.ts';
+import { botSnapshot, TACTICAL_TICKS, thinkBots } from '../src/server/bot/tick.ts';
 import { newBotMemory, type BotMemory } from '../src/server/bots.ts';
 import { flank } from '../scripts/lib/flank.ts';
 import { emptyWorld, setWalls, spawnAt, TICK_MS } from './helpers.ts';
@@ -21,7 +20,7 @@ const seeded = (seed: number) => { let x = seed; return () => ((x = (x * 16807) 
 const SLAB = { x: 1040, y: 900, w: 30, h: 130 };
 
 function view(w: World, id: number, aware: Awareness = freshAwareness()) {
-  const snap = snapshotFor(w, id);
+  const snap = botSnapshot(w, id);
   return perceive(snap, arenaFor(w), snap.players.find((p) => p.id === id)!, aware).view;
 }
 
@@ -66,16 +65,31 @@ test('a rusher caught in blown cover pushes the enemy who caught it; a dry gun r
   assert.ok(reload.k === 'reloadInCover' || reload.k === 'engage', reload.k);
 });
 
-test('a bot answers the enemy shooting at it before the one it was fighting', () => {
+test('a bot answers the enemy shooting at it before the one it was fighting, turning to find him when he shoots from off its screen', () => {
   const w = emptyWorld();
   const bot = spawnAt(w, 1000, 1000, { loadout: { weapon: 'assault' } });
+  bot.angle = 0;
   const target = spawnAt(w, 1300, 1000);
-  const shooter = spawnAt(w, 1000, 1420);
+  const shooter = spawnAt(w, 1000, 1300);
   const calm = view(w, bot.id);
   assert.equal(focus(calm, target.id)?.p.id, target.id, 'keeps its own target over another it merely sees');
-  const hit = view(w, bot.id, { ...freshAwareness(), hitTick: w.tick, hitBy: { owner: shooter.id, tick: w.tick } });
+  const struck = { ...freshAwareness(), hitTick: w.tick, hitBy: { owner: shooter.id, tick: w.tick } };
+  const hit = view(w, bot.id, struck);
   assert.equal(hit.threats[0]?.p.id, shooter.id, 'the one hitting it comes first');
   assert.equal(focus(hit, target.id)?.p.id, shooter.id, 'and it turns on him');
+  assert.equal(unseenShooter(hit), null, 'he is on its screen: nothing to turn to');
+
+  // 420 px beside it while it aims along the x axis he is off its 16:9 screen: it cannot see him, but it reads where his rounds come from.
+  Object.assign(shooter, { x: 1000, y: 1420 });
+  const shotAt = { x: shooter.x, y: shooter.y, tick: w.tick, owner: shooter.id, gun: shooter.gun };
+  const blind = view(w, bot.id, { ...struck, shotAt });
+  assert.ok(!blind.threats.some((t) => t.p.id === shooter.id), 'off its screen it does not see him');
+  assert.deepEqual(unseenShooter(blind), { x: shooter.x, y: shooter.y }, 'so it turns to where the rounds came from');
+  bot.angle = Math.PI / 2;
+  const turned = view(w, bot.id, { ...struck, shotAt });
+  assert.equal(turned.threats[0]?.p.id, shooter.id, 'turned his way, it sees him first');
+  assert.equal(focus(turned, target.id)?.p.id, shooter.id, 'and answers him');
+  assert.equal(unseenShooter(turned), null);
 });
 
 test('an enemy stepping out from behind a wall in its view wakes a bot that tick; one standing hidden there does not keep waking it', () => {
@@ -117,7 +131,9 @@ const runs = (scenario: 'cover' | 'side', guns: readonly WeaponId[]) =>
 test('a bot flanked in cover turns, fires back and gets off its spot within a person\'s reaction, and does not stand there', () => {
   for (const { gun, persona, side, r } of runs('cover', ['pistol', 'smg', 'assault'])) {
     const at = `${gun} ${persona} side ${side}`;
-    assert.ok(r.face !== null && r.face <= 300, `${at}: faces him ${r.face}ms after he has a line`);
+    // He first has his line from about 410 px off its side (his camera leans toward it), just past its own 16:9 screen's 394: it sees him
+    // as he steps onto its screen, or turns on his first round, nine or ten ticks on (seven while bots saw a square view).
+    assert.ok(r.face !== null && r.face <= 334, `${at}: faces him ${r.face}ms after he has a line`);
     assert.ok(r.fire !== null && r.fire <= 600, `${at}: fires back ${r.fire}ms after`);
     assert.ok(r.move !== null && r.move <= 400, `${at}: off its spot ${r.move}ms after`);
     assert.ok((r.still ?? 1) <= 0.5, `${at}: stood still ${((r.still ?? 1) * 100).toFixed(0)}% of the next 2 s`);
@@ -127,7 +143,8 @@ test('a bot flanked in cover turns, fires back and gets off its spot within a pe
 test('a bot holding a spot turns on an enemy who steps out at its side without a 180-degree snap, but well inside half a second', () => {
   for (const { gun, persona, side, r } of runs('side', ['pistol', 'assault'])) {
     const at = `${gun} ${persona} side ${side}`;
-    assert.ok(r.face !== null && r.face >= 150 && r.face <= 300, `${at}: faces him ${r.face}ms after he has a line`);
-    assert.ok(r.fire !== null && r.fire <= 450, `${at}: fires ${r.fire}ms after`);
+    // As above: he steps out about 410 px beside it, a few px off its 16:9 screen, so it takes him in a tick or two after he has his line.
+    assert.ok(r.face !== null && r.face >= 150 && r.face <= 334, `${at}: faces him ${r.face}ms after he has a line`);
+    assert.ok(r.fire !== null && r.fire <= 500, `${at}: fires ${r.fire}ms after`);
   }
 });

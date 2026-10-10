@@ -10,6 +10,8 @@ import { falloffMul } from '../../shared/sim/stats.ts';
 import { TICK_MS, wrapAngle } from './aim.ts';
 import type { Awareness, Perception, Threat } from './awareness.ts';
 import { clearShot, dist, type Point } from './nav.ts';
+import { BOT_VIEW_ASPECT } from '../../shared/protocol.ts';
+import { screenDist } from '../../shared/lookahead.ts';
 
 /** An enemy as the bot last saw him: where, facing which way, whether he stood (or crept) still, and the tick his reload ends (if he was reloading). */
 export type Sighting = { id: number; x: number; y: number; angle: number; still: boolean; tick: number; reloadEnd: number | null; gun: GunId };
@@ -158,15 +160,20 @@ const MATES_PX = 500;
 const OTHERS_PX = 750;
 const NUMBERS_WEIGHT = 0.45;
 
-/** The enemies besides `t` that can get on this bot: in sight within `OTHERS_PX` (0.6 if turned away, fighting someone else), or seen there in the last 2.5 s (half). */
+/**
+ * The enemies besides `t` that can get on this bot: in sight within `OTHERS_PX` (0.6 if turned away, fighting someone else), or seen there in
+ * the last 2.5 s (half). Those in sight are already on its screen-shaped sight box; one only remembered counts within the screen's shape
+ * (`screenDist`): 750 px to either side, 422 above or below.
+ */
 export function othersOn(v: Perception, t: Threat | null, seen: readonly Sighting[]): number {
+  const near = (p: Point) => screenDist(p.x - v.me.x, p.y - v.me.y, BOT_VIEW_ASPECT) <= OTHERS_PX;
   let n = 0;
   for (const x of v.threats) {
     if (x === t || x.d > OTHERS_PX) continue;
     n += Math.abs(wrapAngle(Math.atan2(v.me.y - x.p.y, v.me.x - x.p.x) - x.p.angle)) < Math.PI / 4 ? 1 : 0.6;
   }
   for (const s of seen) {
-    if (s.id === t?.p.id || v.threats.some((x) => x.p.id === s.id) || (v.tick - s.tick) * TICK_MS > 2500 || dist(s, v.me) > OTHERS_PX) continue;
+    if (s.id === t?.p.id || v.threats.some((x) => x.p.id === s.id) || (v.tick - s.tick) * TICK_MS > 2500 || !near(s)) continue;
     n += 0.5;
   }
   return n;

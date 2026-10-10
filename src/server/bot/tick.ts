@@ -1,15 +1,16 @@
 import { GUNS, WORLD, type GunId } from '../../shared/defs.ts';
-import { BOT_VIEW_ASPECT, viewExtents, type GameEvent, type Snapshot } from '../../shared/protocol.ts';
+import { BOT_VIEW_ASPECT, VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents, type GameEvent, type Snapshot } from '../../shared/protocol.ts';
+import { lookReach, type LookSides } from '../../shared/lookahead.ts';
 import { canRespawn, respawn, setInput } from '../../shared/sim.ts';
 import { flashAmount } from '../../shared/sim/abilities.ts';
 import { build, upgrade } from '../../shared/sim/run.ts';
-import { snapshotFor } from '../../shared/sim/snapshot.ts';
-import { abilityOf, choosePick } from '../../shared/sim/stats.ts';
+import { interestLook, snapshotFor } from '../../shared/sim/snapshot.ts';
+import { abilityOf, choosePick, effectiveStats } from '../../shared/sim/stats.ts';
 import { segmentBlocked, segmentEntersRectAt } from '../../shared/sim/movement.ts';
 import { crateRect, IDLE_INPUT, isEnemy, type Player, type World } from '../../shared/sim/world.ts';
 import { botThink, randomLoadout, type BotDecision, type BotMemory } from '../bots.ts';
 import { arenaFor, type BotArena } from './arena.ts';
-import { BLIND_AT, freshAwareness } from './awareness.ts';
+import { BLIND_AT, botSight, freshAwareness, inBotSight } from './awareness.ts';
 import { freshMotor, motorTick, motorWake } from './motor.ts';
 import { SLOW_GUN_MS } from './evade.ts';
 
@@ -39,9 +40,29 @@ export type BotTickOptions = {
 export const TACTICAL_TICKS = 6;
 export const PLAN_EVERY = 3;
 export const OFFSCREEN_SLOWER = 3;
-/** Past this far from every human a bot is off every screen: the widest view (a sniper's, on a wide screen) with room to spare. */
-export const OFFSCREEN_PX = WORLD.viewRadius * 2;
 const OFFSCREEN_THINK_EVERY = 3;
+
+/**
+ * The most a human's 16:9 screen could show round him whatever way he aims: his view radius across (scope and perks counted) and the
+ * screen's height, each widened by his gun's full lean (`lookReach`), with a margin. Past this from every human a bot is off every screen.
+ * A plain view with an assault rifle reaches about 1140 px to either side and 830 up and down, a fully scoped sniper's about 1750 and 1320.
+ */
+function screenReach(h: Player): { x: number; y: number } {
+  const r = effectiveStats(h).viewRadius, lean = lookReach(r, h.gun), half = viewExtents(r, BOT_VIEW_ASPECT), pad = VIEW_PRELOAD_MARGIN + WORLD.playerRadius;
+  return { x: half.halfW + lean + pad, y: half.halfH + lean + pad };
+}
+
+/**
+ * The snapshot a bot thinks on: the server's interest for a person with its gun, perks and aim on a 16:9 screen, the lean and all
+ * (`interestLook`), so it holds everything the bot's sight box (`botSight`) can take in and nothing a person's screen would not show.
+ * A Zombies squad bot fights the horde beside people, not against them, and keeps the square view it was tuned on (siege.ts reads its
+ * own sight off it).
+ */
+export function botSnapshot(w: World, id: number, events: readonly GameEvent[] = w.events): Snapshot {
+  const me = w.players.get(id);
+  if (w.run) return snapshotFor(w, id, events, VIEW_ASPECT.min);
+  return snapshotFor(w, id, events, BOT_VIEW_ASPECT, me ? interestLook(w, me) : undefined);
+}
 
 type Wake = 'tactical' | 'strategic' | null;
 
@@ -72,9 +93,9 @@ function shotAt(e: Extract<GameEvent, { e: 'shot' }>, me: Player): boolean {
 const zonesKey = (w: World) => w.zones.map((z) => z.owner ?? '-').join();
 
 /** Enemies standing in a bot's view box (not counting walls): a change wakes it to look properly. */
-function enemiesInView(w: World, me: Player, sight: { halfW: number; halfH: number }): number {
+function enemiesInView(w: World, me: Player, sight: LookSides): number {
   let n = 0;
-  for (const p of w.players.values()) if (p.life.k === 'alive' && isEnemy(me, p) && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH) n++;
+  for (const p of w.players.values()) if (p.life.k === 'alive' && isEnemy(me, p) && inBotSight(sight, me, p)) n++;
   return n;
 }
 
@@ -90,11 +111,11 @@ function inSightLine(w: World, arena: BotArena, me: Player, p: Player): boolean 
   return true;
 }
 
-const sightable = (w: World, me: Player, p: Player, sight: { halfW: number; halfH: number }) =>
-  p.life.k === 'alive' && w.now >= p.life.shieldUntil && isEnemy(me, p) && Math.abs(p.x - me.x) <= sight.halfW && Math.abs(p.y - me.y) <= sight.halfH;
+const sightable = (w: World, me: Player, p: Player, sight: LookSides) =>
+  p.life.k === 'alive' && w.now >= p.life.shieldUntil && isEnemy(me, p) && inBotSight(sight, me, p);
 
 /** The enemies a bot has a line on in its view box, by id: what it last thought on (see `Beat.inSight`). */
-function enemiesInSight(w: World, arena: BotArena, me: Player, sight: { halfW: number; halfH: number }): number[] {
+function enemiesInSight(w: World, arena: BotArena, me: Player, sight: LookSides): number[] {
   const out: number[] = [];
   for (const p of w.players.values()) if (sightable(w, me, p, sight) && inSightLine(w, arena, me, p)) out.push(p.id);
   return out;
@@ -105,7 +126,7 @@ function enemiesInSight(w: World, arena: BotArena, me: Player, sight: { halfW: n
  * or it came round his. That is a sighting, and wakes it at once, the same tick a person would see him, rather than at its next think.
  * Only those it could not see are traced, so a bot in a fight with the enemy it already sees pays nothing for it.
  */
-function newSighting(w: World, arena: BotArena, me: Player, sight: { halfW: number; halfH: number }, seen: readonly number[]): boolean {
+function newSighting(w: World, arena: BotArena, me: Player, sight: LookSides, seen: readonly number[]): boolean {
   for (const p of w.players.values()) if (!seen.includes(p.id) && sightable(w, me, p, sight) && inSightLine(w, arena, me, p)) return true;
   return false;
 }
@@ -115,8 +136,8 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
   const respawned: number[] = [];
   let picked = 0;
   const history = remember(w);
-  const humans = [...w.players.values()].filter((p) => p.kind === 'human');
-  const onScreen = (p: Player) => watched || humans.some((h) => (h.team !== null && h.team === p.team) || Math.hypot(h.x - p.x, h.y - p.y) <= OFFSCREEN_PX);
+  const humans = [...w.players.values()].filter((p) => p.kind === 'human').map((h) => ({ h, reach: screenReach(h) }));
+  const onScreen = (p: Player) => watched || humans.some(({ h, reach }) => (h.team !== null && h.team === p.team) || (Math.abs(h.x - p.x) <= reach.x && Math.abs(h.y - p.y) <= reach.y));
   const tiered = w.run === null && w.royale === null;
   const hits: Extract<GameEvent, { e: 'dmg' }>[] = [], shots: Extract<GameEvent, { e: 'shot' }>[] = [];
   for (const e of w.events) {
@@ -154,13 +175,13 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
       onDecision?.(id, snap, mem, d, back);
     };
     const think = (tier: Wake) => {
-      const snap = snapshotFor(w, id, eventsSince(history, mem.beat?.thought), BOT_VIEW_ASPECT);
+      const snap = botSnapshot(w, id, eventsSince(history, mem.beat?.thought));
       const strategic = tier === 'strategic';
       const d = botThink(snap, arena, mem, rand, tiered ? { strategic, lastPlan: mem.beat?.planned } : {});
       if (tiered && p) {
-        const sight = viewExtents(snap.self.viewRadius, BOT_VIEW_ASPECT);
+        const view = snap.self.viewRadius, sight = botSight(view, p.gun, p.angle);
         const blinded = Math.round(flashAmount(p, w.now) * 100) / 100 > BLIND_AT;
-        d.mem = { ...d.mem, beat: { thought: w.tick, planned: strategic ? w.tick : mem.beat?.planned ?? w.tick, seen: enemiesInView(w, p, sight), inSight: blinded ? [] : enemiesInSight(w, arena, p, sight), zones, sight } };
+        d.mem = { ...d.mem, beat: { thought: w.tick, planned: strategic ? w.tick : mem.beat?.planned ?? w.tick, seen: enemiesInView(w, p, sight), inSight: blinded ? [] : enemiesInSight(w, arena, p, sight), zones, view } };
       }
       finish(d, snap);
     };
@@ -183,9 +204,11 @@ export function thinkBots(w: World, mems: Map<number, BotMemory>, rand: () => nu
       // As the snapshot rounds it, so the think it wakes sees the same flash.
       const blind = Math.round(flashAmount(p, w.now) * 100) / 100 > BLIND_AT;
       const now = motorWake(mem.motor, p, w.tick, arena, doorOpen, slow === 1);
-      const inView = slow === 1 ? enemiesInView(w, p, beat.sight) : beat.seen;
+      // Its sight box follows its gun as it turns between thinks: an enemy it turns onto is news, as one walking into its view is.
+      const sight = botSight(beat.view, p.gun, p.angle);
+      const inView = slow === 1 ? enemiesInView(w, p, sight) : beat.seen;
       if (now === 'strategic' || zones !== beat.zones || (mem.intent?.k === 'blinded' && !blind)) wake = 'strategic';
-      else if (now || blind !== (mem.intent?.k === 'blinded') || lost(mem) || (slow === 1 && (fired(id, mem) || inView > beat.seen || (!blind && newSighting(w, arena, p, beat.sight, beat.inSight ?? [])))) || news(p, mem)) wake ??= 'tactical';
+      else if (now || blind !== (mem.intent?.k === 'blinded') || lost(mem) || (slow === 1 && (fired(id, mem) || inView > beat.seen || (!blind && newSighting(w, arena, p, sight, beat.inSight ?? [])))) || news(p, mem)) wake ??= 'tactical';
       // One leaving its view (or falling) lowers the count, so the next to come into it is news too, not only one past the count it last thought on.
       if (inView < beat.seen) beat = { ...beat, seen: inView };
     }
