@@ -104,8 +104,8 @@ export type Player = {
   /** Where enemy minimaps last placed this player while hunted; refreshed on a timer and by unsilenced fire (not with Ninja). */
   huntedPing: (Pose & { at: number }) | null;
   abilityReadyAt: number;
-  /** A flashbang's blinding: gone at `until`, `ms` long in all (see `flashAmount`). Set by `flashPlayers`. */
-  flash?: { until: number; ms: number };
+  /** Until when an enemy's radar sensor has this player on everyone's minimap (see `RADAR`); 0 for never. */
+  taggedUntil: number;
   /** The tier-2 perks this life's pick offers, drawn from the world's rng at spawn. */
   tier2Offer: readonly PerkId[];
 };
@@ -165,9 +165,9 @@ export type Airdrops = { due: number[]; flight: Flight | null };
 
 export type Thrown =
   | { id: number; kind: 'grenade' | 'fragGrenade' | 'gasGrenade'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
-  | { id: number; kind: 'flashbang' | 'smokeGrenade'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
-  /** A smoke cloud: it blooms, drifts at (vx, vy) and thins away (see `smokeShape`). */
-  | { id: number; kind: 'smokeCloud'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; bornAt: number; expiresAt: number }
+  | { id: number; kind: 'radar'; owner: number; team: Team; x: number; y: number; vx: number; vy: number; explodeAt: number }
+  /** A heal pole planted where its owner stood (see `HEAL_POLE`). */
+  | { id: number; kind: 'healPole'; owner: number; team: Team; x: number; y: number; bornAt: number; expiresAt: number }
   | { id: number; kind: 'landMine'; owner: number; team: Team; x: number; y: number; armedAt: number; expiresAt: number }
   /** A gas cloud: it hurts whoever is in it in pulses (`dotPulses`), on a clock from `bornAt`. */
   | { id: number; kind: 'gasCloud'; owner: number; team: Team; x: number; y: number; bornAt: number; expiresAt: number }

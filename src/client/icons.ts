@@ -35,8 +35,8 @@ export const PERK_ICONS: Record<PerkId, string> = {
   knife: 'M3 21l5-5M7 17l-2-2M8 16L20 4c0 7-4 12-9 14z',
   engineer: 'M3 5h18v14H3zM3 12h18M10 5v7M15 12v7M7 12v7',
   dash: 'M2 8h6M1 12h9M2 16h6M12 5l7 7-7 7M16 5l7 7-7 7',
-  flashbang: 'M8 8h8v14H8zM9.5 5h5v3h-5zM12 1v2M5 3l2 2M19 3l-2 2M3 9h2M19 9h2',
-  smokeGrenade: 'M6 20h12a4 4 0 0 0 0-8 5 5 0 0 0-9.5-1.5A4 4 0 0 0 6 20zM9 8a3 3 0 0 1 6 0M12 2v3',
+  radar: 'M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2',
+  healPole: 'M10 2h4v4h4v4h-4v12h-4V10H6V6h4z',
 };
 
 /** What an evolution changes (see `TRAITS` in shared/roles.ts), drawn on the evolve pick. */

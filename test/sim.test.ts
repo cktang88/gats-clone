@@ -289,15 +289,18 @@ test('ability respects its cooldown', () => {
   assert.equal(built(), 2, 'ready again after cooldown: a second wall beside the first');
 });
 
-test('engineer wall stops bullets in the aim direction', () => {
+test('the shield (engineer) lets its owner shoot out and stops the enemy shooting back in', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const b = spawnAt(w, 800, 500);
   grantPerks(w, a, ['extended', 'thickSkin', 'engineer']);
   press(w, a, { ability: true, angle: 0 });
   step(w, TICK_MS);
+  const full = hpOf(a);
+  shootOnce(w, b, Math.PI, 800);
+  assert.equal(hpOf(a), full, 'stopped coming in');
   shootOnce(w, a, 0, 800);
-  assert.equal(hpOf(b), WORLD.baseHp);
+  assert.ok(hpOf(b) < WORLD.baseHp, 'passes going out');
 });
 
 test('frag grenade damages a nearby enemy', () => {

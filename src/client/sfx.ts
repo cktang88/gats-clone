@@ -14,7 +14,7 @@ export type SoundId =
   | 'barrel:hurt' | 'barrel:fuse' | 'barrel:burst' | 'barrel:chain'
   | 'prop:whoosh' | 'prop:hiss' | 'prop:zap' | 'prop:fire' | 'prop:glass' | 'prop:pickup' | 'prop:splat'
   | 'plane' | 'chute' | 'crate:land' | 'crate:break' | 'crate:gold' | 'crate:supply'
-  | 'flashbang' | 'flashRing' | 'smoke' | 'slowmo:in' | 'slowmo:out' | 'emote' | 'confetti' | 'firework'
+  | 'radar' | 'healPole' | 'slowmo:in' | 'slowmo:out' | 'emote' | 'confetti' | 'firework'
   | 'amb:flutter' | 'amb:caw' | 'amb:gull'
   | 'zone:tick' | 'zone:taken' | 'zone:lost' | 'zone:contest';
 
@@ -198,10 +198,9 @@ const RAW: Record<SoundId, Recipe> = {
     air(500, 70, 950, 0.25, 120),
     ...debris(9, 180, 620, 0.2), ping(2200, 260, 90, 0.04), ping(3100, 420, 70, 0.03),
   ],
-  // A flashbang: a hard white crack, then (for whoever it caught) a thin tinnitus ring that rings out under the muffled mix. Smoke is a long soft hiss.
-  flashbang: [snap(3200, 0.7, 0, 22), crack(4200, 120, 0.7), { src: 'tone', wave: 'sine', pitchHz: [220, 70], ms: 260, gain: 0.5 }, air(3000, 400, 420, 0.3, 10), ping(5200, 20, 500, 0.06)],
-  flashRing: [ping(3900, 0, 2600, 0.16), ping(4310, 0, 2200, 0.08), ping(7800, 30, 1400, 0.04)],
-  smoke: [{ src: 'noise', filter: 'bandpass', q: 0.7, cutoffHz: [2600, 900], ms: 900, gain: 0.3, attackMs: 60 }, thump(120, 220, 0.3), air(1500, 300, 700, 0.12, 80)],
+  // A radar sensor's sweep: a sonar ping that falls away, with a soft electronic chirp under it. A heal pole: a warm two-note chime.
+  radar: [ping(1760, 0, 900, 0.16), ping(1320, 120, 700, 0.08), { src: 'tone', wave: 'sine', pitchHz: [900, 420], ms: 320, gain: 0.25 }],
+  healPole: [thump(160, 180, 0.35), ping(880, 0, 600, 0.12), ping(1320, 90, 700, 0.1)],
   slash: [
     { src: 'noise', filter: 'bandpass', q: 2.5, cutoffHz: [5200, 1400], ms: 150, gain: 0.55 },
     { src: 'tone', wave: 'triangle', pitchHz: [1100, 500], ms: 60, gain: 0.12, delayMs: 50 },
@@ -358,7 +357,7 @@ const TRIM: Partial<Record<SoundId, number>> = {
   // Quieter than the shots: the spawn thump (the reload foley is trimmed in foley.ts).
   spawn: 0.39, wallUp: 0.47,
   // Kills sit under the medals, which sit under the lifetime fanfare and the platinum.
-  kill: 0.68, 'kill:2': 0.62, 'kill:3': 0.65, 'kill:4': 0.7, 'kill:5': 0.66, bounty: 0.72, boom: 0.6, flashbang: 0.7, flashRing: 0.5, smoke: 0.6, evolve: 0.81, levelup: 0.88,
+  kill: 0.68, 'kill:2': 0.62, 'kill:3': 0.65, 'kill:4': 0.7, 'kill:5': 0.66, bounty: 0.72, boom: 0.6, radar: 0.7, healPole: 0.6, evolve: 0.81, levelup: 0.88,
   'medal:bronze': 1.72, 'medal:silver': 1.48, 'medal:gold': 1.6, fanfare: 1.15,
   // Barrels, airdrops, slow motion, emotes and the round-end party.
   'barrel:hurt': 0.92, 'barrel:fuse': 0.37, 'barrel:burst': 0.62, 'barrel:chain': 0.45, plane: 0.4, chute: 1.15, 'crate:land': 1.2, 'crate:break': 1.72, 'crate:gold': 1.06, 'crate:supply': 0.62,
@@ -457,7 +456,7 @@ export const DUCKS: Partial<Record<SoundId, { depth: number; holdMs: number }>> 
   kill: { depth: 0.78, holdMs: 100 }, 'kill:2': { depth: 0.78, holdMs: 100 }, 'kill:3': { depth: 0.78, holdMs: 100 }, 'kill:4': { depth: 0.76, holdMs: 100 }, 'kill:5': { depth: 0.74, holdMs: 120 },
   bounty: { depth: 0.7, holdMs: 200 }, knock: { depth: 0.78, holdMs: 100 },
   'medal:silver': { depth: 0.75, holdMs: 250 }, 'medal:gold': { depth: 0.62, holdMs: 450 }, 'medal:platinum': { depth: 0.5, holdMs: 700 }, fanfare: { depth: 0.45, holdMs: 900 },
-  flashbang: { depth: 0.55, holdMs: 400 }, flashRing: { depth: 0.3, holdMs: 1800 },
+  radar: { depth: 0.2, holdMs: 300 },
   evolve: { depth: 0.7, holdMs: 300 }, 'crate:gold': { depth: 0.7, holdMs: 300 }, 'slowmo:in': { depth: 0.65, holdMs: 500 },
 };
 
@@ -569,7 +568,7 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
         if (bursts === 2) cues.push({ id: 'barrel:chain', x: ev.x, y: ev.y, self: false, gain: 1 });
         break;
       }
-      case 'flashburst': cues.push({ id: 'flashbang', x: ev.x, y: ev.y, self: false, gain: 1, r: 0 }); break;
+      case 'radar': cues.push({ id: 'radar', x: ev.x, y: ev.y, self: ev.owner === me?.id, gain: 1, r: 0 }); break;
       case 'airdrop': cues.push(...airdropCues(ev, next, me?.name)); break;
       case 'prop': cues.push(propCue(ev, me)); break;
       // A target clatters down and pings back up on its spring.
@@ -612,11 +611,11 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
     if (ev.kind === 'building' && !cues.some((c) => c.id === 'wallHit')) cues.push({ id: 'wallHit', x: ev.x, y: ev.y, self: false, gain: 1 });
     if (ev.kind === 'player' && ev.victim === next.self.id && ev.attacker === null && next.run && !cues.some((c) => c.id === 'bite')) mine('bite');
   }
-  // Caught by a flashbang: a ring in the ears, as the page muffles the mix until it passes.
-  if ((next.self.flash ?? 0) > (prev?.self.flash ?? 0) + 0.05) mine('flashRing');
+  // Caught by an enemy radar: one sharp ping, so you know you are on their map.
+  if (next.self.tagged && !prev?.self.tagged) mine('radar');
   if (!prev) return cues;
   cues.push(...zoneCues(prev, next, next.self.viewRadius));
-  for (const t of next.thrown) if (t.kind === 'smokeCloud' && !prev.thrown.some((o) => o.id === t.id)) cues.push({ id: 'smoke', x: t.x, y: t.y, self: false, gain: 1 });
+  for (const t of next.thrown) if (t.kind === 'healPole' && !prev.thrown.some((o) => o.id === t.id)) cues.push({ id: 'healPole', x: t.x, y: t.y, self: t.owner === next.self.id, gain: 1 });
   // A barrel just lit: it hisses until its fuse runs out.
   const lit = (next.barrels ?? []).find((b) => b[3] === 0 && (prev.barrels?.find((p) => p[0] === b[0])?.[3] ?? 0) > 0);
   if (lit) cues.push({ id: 'barrel:fuse', x: lit[1], y: lit[2], self: false, gain: 1 });

@@ -52,7 +52,7 @@ const goalOf = (i: Intent): Point | null => {
     case 'patrol': return i.goal;
     case 'resupply': return i.at;
     case 'takePosition': case 'peekAndHide': case 'reloadInCover': case 'retreatAndHeal': case 'hold': return i.spot;
-    case 'search': case 'flank': case 'engage': case 'blinded': return null;
+    case 'search': case 'flank': case 'engage': return null;
   }
 };
 

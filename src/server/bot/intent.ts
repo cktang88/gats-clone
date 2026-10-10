@@ -2,8 +2,7 @@ import { GUNS, type GunId } from '../../shared/defs.ts';
 import type { ZoneView } from '../../shared/protocol.ts';
 import { TICK_MS, type SkillKnobs } from './aim.ts';
 import { doorLanes, openSpot, type BotArena } from './arena.ts';
-import { aimsAtLead, BLIND_AT, type Perception, type Threat } from './awareness.ts';
-import { sightBlocked } from '../../shared/sim/vision.ts';
+import { aimsAtLead, type Perception, type Threat } from './awareness.ts';
 import { coverNear, pickCover } from './cover.ts';
 import { between, clearShot, dist, isOpen, nearestOpenPoint, type Point } from './nav.ts';
 import type { Supply } from './supplies.ts';
@@ -102,8 +101,6 @@ export type Plan =
   /** `committed`: sent at him after holding an angle he never walked into, so it takes the fight it finds (no holding off again). */
   | { k: 'flank'; target: number; via: Point; lastKnown: Point; committed?: boolean }
   | { k: 'search'; at: Point; giveUpAt: number; committed?: boolean }
-  /** Flashed: blind until it wears off. `spray` fires at where the enemy last was, `fallBack` backs away from it, `hold` stands its ground. */
-  | { k: 'blinded'; mode: 'spray' | 'fallBack' | 'hold'; at: Point }
   /** Off to a pack on the floor (walking over it takes it) or a cabinet (`open`: it walks to `at`, against a face, and it opens as the bot comes in reach), with nobody to fight. */
   | { k: 'resupply'; at: Point; id: number; open: boolean };
 
@@ -133,7 +130,7 @@ const overTicks = (p: number, c: IntentCtx) => 1 - (1 - p) ** sincePlan(c);
 const cameRound = (at: number, c: IntentCtx) => c.tick - sincePlan(c) < at && at <= c.tick;
 
 const MIN_COMMIT_MS: Record<IntentKind, number> = {
-  patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500, blinded: 0, resupply: 0, hold: 1200,
+  patrol: 0, takePosition: 7000, engage: 1200, peekAndHide: 2500, reloadInCover: 0, retreatAndHeal: 3000, flank: 3500, search: 2500, resupply: 0, hold: 1200,
 };
 /** How long a bot holds an angle on an enemy it would rather not fight before it moves on him another way (see `hold`). */
 const HOLD_MS: readonly [number, number] = [2500, 4500];
@@ -288,8 +285,6 @@ function idlePlan(v: Perception, c: IntentCtx): Plan {
 function lostSight(v: Perception, c: IntentCtx, target: number): Plan {
   const last = v.lastSeen;
   if (!last) return idlePlan(v, c);
-  // It lost him in smoke: he is still there, but pushing into a cloud is walking blind, so it holds and waits for him to come out.
-  if (sightBlocked(v.smokes, v.me.x, v.me.y, last.x, last.y)) return { k: 'takePosition', spot: v.me, facing: last };
   // He was last seen planted with this way pre-aimed: walking round his corner is walking into his crosshair. It goes round another way,
   // or holds the angle on him from cover until he moves.
   const held = holdsAngle(c.tac?.seen.find((s) => s.id === last.id), v.me, v.tick) && reads(c, c.skill?.readsHeld);
@@ -404,15 +399,6 @@ const investigateGunfire: Interrupt = (cur, v, c) => {
   return searchPlan(v, c, v.lead);
 };
 
-/** Flashed: what a person does with a white screen, by temperament: the aggressive spray where the enemy was, the careful back off, anyone with nothing to go on stands still. */
-const goBlind: Interrupt = (cur, v, c) => {
-  if (v.flash <= BLIND_AT || cur.k === 'blinded') return null;
-  const known = v.lastSeen && v.tick - v.lastSeen.seenTick < ticks(4000) ? v.lastSeen : null;
-  if (!known) return { k: 'blinded', mode: 'hold', at: v.me };
-  const spray = c.rand() < (c.persona.pushOdds >= 1 ? 0.7 : c.persona.peekOdds >= 0.5 ? 0.15 : 0.35);
-  return { k: 'blinded', mode: spray ? 'spray' : 'fallBack', at: known };
-};
-
 /**
  * Nobody to fight and short of health or rounds: it goes for the pack or cabinet it needs (supplies.ts), from a patrol, a post, a search, or a
  * retreat nobody is chasing. An enemy in sight takes it straight back to the fight (`engageOnSight` counts a supply run as calm).
@@ -441,7 +427,7 @@ const leaveTurnedFight: Interrupt = (cur, v, c) => {
  */
 const outOfReach = (v: Perception, t: Threat) => t.d > GUNS[v.me.gun].range;
 
-const INTERRUPTS: readonly Interrupt[] = [goBlind, fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, leaveTurnedFight, engageOnSight, fetchSupplies, investigateGunfire];
+const INTERRUPTS: readonly Interrupt[] = [fleeLosingFight, turnOnPursuerOrRehide, reloadWhenDry, coverBlown, leaveTurnedFight, engageOnSight, fetchSupplies, investigateGunfire];
 
 const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => Plan | null } = {
   patrol: (cur, v, c) => {
@@ -507,10 +493,6 @@ const RULES: { [K in IntentKind]: (cur: Of<K>, v: Perception, c: IntentCtx) => P
     const last = v.lastSeen;
     return last && last.id === cur.target ? { ...(c.rand() < 0.5 + c.persona.flankOdds ? flankPlan(v, c, cur.target, last) : searchPlan(v, c, last)), committed: true } : idlePlan(v, c);
   },
-  blinded: (cur, v, c) => {
-    if (v.flash > BLIND_AT) return null;
-    return cur.mode === 'spray' ? searchPlan(v, c, cur.at) : idlePlan(v, c);
-  },
   resupply: (cur, v, c) => {
     const s = c.supply;
     // Taken, gone, or no longer needed: back to its business. A cabinet it opened becomes the pack to walk over.
@@ -547,7 +529,7 @@ function advancePeekPhase(cur: Intent, v: Perception, c: IntentCtx): Intent {
 }
 
 /**
- * The intent for this think. The interrupts (a flash, a losing fight, an empty gun, an enemy in sight, gunfire) are reactions and run on
+ * The intent for this think. The interrupts (a losing fight, an empty gun, an enemy in sight, gunfire) are reactions and run on
  * every think; the rules that move a settled intent on to the next (arrived, lost him, healed, waited long enough) are the bot's plan,
  * and run only on a strategic think (`c.strategic`, a couple of times a second), as a person re-plans rather than re-decides every frame.
  */
