@@ -4,7 +4,7 @@ import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
 import { buildingView, buildRefusal, buildsNow, cellRect, linesOf, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
-import { armorWatch, tickArmor, tickTraps, tickUtilities, trapWatch } from './utility.ts';
+import { tickTraps, tickUtilities, trapWatch } from './utility.ts';
 import { circleBlocked, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
 import { tickDowned } from './downed.ts';
@@ -335,10 +335,9 @@ export function tickRun(w: World, dtMs: number) {
       if (w.now >= phase.restartAt) restartRun(w);
       return;
   }
-  const traps = trapWatch(w), armor = armorWatch(w);
+  const traps = trapWatch(w);
   tickHorde(w, run, dtMs);
   tickTraps(w, dtMs, traps);
-  tickArmor(w, armor);
   tickUtilities(w, run, dtMs);
   tickTurrets(w, run, MAPS[w.map].siege!.core, dtMs);
   tickSquad(w, run, dtMs);

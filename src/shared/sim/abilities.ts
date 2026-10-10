@@ -122,7 +122,7 @@ export const ABILITIES: Record<AbilityId, (w: World, p: Player) => boolean> = {
   },
   knife: (w, p) => {
     const targets = [
-      ...[...w.players.values()].filter((v) => v.life.k === 'alive' && isEnemy(p, v)).map((v) => ({
+      ...[...w.players.values()].filter((v) => v.life.k === 'alive' && isEnemy(p, v) && !areFriends(w, p.id, v.id)).map((v) => ({
         x: v.x, y: v.y, strike: () => damagePlayer(w, v, KNIFE_DAMAGE, { attacker: p, team: p.team, label: 'Knife', piercing: true, via: 'knife', fromX: p.x, fromY: p.y }),
       })),
       ...w.zombies.map((z) => ({ x: z.x, y: z.y, strike: () => damageZombie(w, z, KNIFE_DAMAGE, p) })),

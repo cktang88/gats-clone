@@ -31,7 +31,7 @@ function isHidden(w: World, p: Player): boolean {
 }
 
 /** Hunted as `me` sees it: an enemy holding a stage-2 gun, or me holding one. A teammate's never reads as a threat. */
-const huntedFor = (w: World, me: Player, p: Player) => isHunted(w, p) && (p.id === me.id || isEnemy(me, p));
+const huntedFor = (w: World, me: Player, p: Player) => isHunted(w, p) && (p.id === me.id || (isEnemy(me, p) && !areFriends(w, me.id, p.id)));
 
 /** `[elapsedMs, totalMs]` through a reload that ends at `until`, whole ms, clamped into the reload. */
 export function reloadClock(until: number, now: number, total: number): [number, number] {
@@ -230,7 +230,7 @@ function royaleView(w: World, r: Royale, me: Player): RoyaleView {
     result: resultFor(w, r, me),
     caches: r.caches.map((c): CacheView => [
       c.id, Math.round(c.x), Math.round(c.y), c.tier, c.open ? 1 : 0,
-      !c.open && c.by != null ? Math.round(Math.min(1, (w.now - (c.since ?? w.now)) / LOOT.openMs) * 50) / 50 : 0, c.gun ? 1 : 0,
+      !c.open && c.by != null ? Math.round(Math.min(1, (w.now - (c.since ?? w.now)) / LOOT.openMs) * 50) : 0, c.gun ? 1 : 0,
     ]),
     guns: r.guns.map((g): FloorGunView => [g.id, Math.round(g.x), Math.round(g.y), g.gun]),
     plates: r.plates.map((a): FloorPlateView => [a.id, Math.round(a.x), Math.round(a.y)]),

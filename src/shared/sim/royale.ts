@@ -4,7 +4,7 @@ import { ringAt, type Circle, type RingView, type RoundWinner, type RoyaleResult
 import { die, kill } from './combat.ts';
 import { DOT_SHARE, dotPulses } from './dot.ts';
 import { circleBlocked, dist2, rectsOverlap } from './movement.ts';
-import { abilityOf, addScore, effectiveStats, freshLife, levelForScore, reopenUselessAttachment, resetProgress } from './stats.ts';
+import { abilityOf, addScore, effectiveStats, freshLife, isHunted, levelForScore, reopenUselessAttachment, resetProgress } from './stats.ts';
 import { crackSupply } from './airdrop.ts';
 import { coverRects, crateRect, freshFeats, newId, rand, solidRects, type Cache, type Player, type Pose, type Ring, type Royale, type RoyaleStats, type Tower, type World } from './world.ts';
 
@@ -96,7 +96,7 @@ export function newRoyale(w: World): Royale {
     startedAt: w.now,
     ring: { k: 'waiting', phase: 0, circle, next, shrinkAt: w.now + RING[0]!.waitMs },
     // A new match on a new map (the map changes after the round has started) takes in everyone standing.
-    entrants: [...w.players.values()].filter((p) => p.life.k === 'alive').map((p) => p.id), out: [], caches, towers, guns: [], plates: [], tookAt: new Map(), redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(),
+    entrants: [...w.players.values()].filter((p) => p.life.k === 'alive').map((p) => p.id), out: [], caches, towers, guns: [], plates: [], tookAt: new Map(), useHeld: new Set(), redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(),
   };
   scheduleDrop(w, r, next);
   return r;
@@ -326,15 +326,17 @@ function tickLoot(w: World, r: Royale) {
 
 /**
  * A living player pressing E (use) within `LOOT.takePx` of a gun on the floor takes the nearest one, with a full magazine of it, and
- * leaves the gun they had in its place; one take per `takeCooldownMs`, so holding E does not swap back and forth. An attachment the new
- * gun cannot use comes off, and the next evolve pick follows the new gun.
+ * leaves the gun they had in its place. One take per press: E must be let go before the next (`useHeld`), so holding it does not swap
+ * back and forth, and at most one per `takeCooldownMs`. An attachment the new gun cannot use comes off, a burst or spray of the old gun
+ * stops there, the next evolve pick follows the new gun, and a final-stage gun taken is announced as hunted, as evolving to one is.
  */
 function tickGuns(w: World, r: Royale) {
   if (!r.guns.length) return;
   const reach = (LOOT.takePx + WORLD.playerRadius) ** 2;
   for (const p of w.players.values()) {
     const life = p.life;
-    if (life.k !== 'alive' || !p.input.use || w.now - (r.tookAt.get(p.id) ?? -Infinity) < LOOT.takeCooldownMs) continue;
+    if (!p.input.use) { r.useHeld.delete(p.id); continue; }
+    if (life.k !== 'alive' || r.useHeld.has(p.id) || w.now - (r.tookAt.get(p.id) ?? -Infinity) < LOOT.takeCooldownMs) continue;
     const near = r.guns.filter((g) => dist2(g.x, g.y, p.x, p.y) <= reach);
     if (!near.length) continue;
     const g = near.reduce((a, b) => (dist2(b.x, b.y, p.x, p.y) < dist2(a.x, a.y, p.x, p.y) ? b : a));
@@ -345,8 +347,13 @@ function tickGuns(w: World, r: Royale) {
     reopenUselessAttachment(p);
     life.ammo = effectiveStats(p).mag;
     life.reloadUntil = null;
+    life.burstLeft = 0;
+    life.spray = 0;
+    life.spin = 0;
     r.tookAt.set(p.id, w.now);
+    r.useHeld.add(p.id);
     w.events.push({ e: 'took', id: p.id, gun: g.gun, left, x: g.x, y: g.y });
+    if (isHunted(w, p) && GUNS[left].stage !== 2) w.queuedEvents.push({ e: 'hunted', id: p.id, name: p.name });
   }
 }
 

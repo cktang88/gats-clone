@@ -1148,7 +1148,7 @@ body.phone-hud .medal-score { font-size: 14px; animation: none; }
  * and Try again (More opens the tiles, records and nemesis); Loadout is weapon, color and armor as three labelled rows of
  * touch-sized chips, with Respawn always in view under them. The touch controls fold away while you are dead.
  */
-.hud.no-touch-controls :is(.touch-buttons, .touch-emote, .touch-radio, .chat-pip) { display: none !important; }
+.hud.no-touch-controls :is(.touch-buttons, .touch-emote, .touch-radio, .touch-take, .chat-pip) { display: none !important; }
 .death.compact { padding: 0; align-items: center; justify-content: center; background: rgba(12, 13, 16, 0.55); box-shadow: 0 0 0 100vmax rgba(12, 13, 16, 0.55); }
 .death.compact .death-card { width: 100%; --cut: 10px; }
 .death.compact .death-body { padding: 14px 16px 2px; }

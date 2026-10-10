@@ -1,3 +1,4 @@
+import { syncTakeButton } from './takebutton.ts';
 import { COLORS, GUNS, ROYALE, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type GunId } from '../shared/defs.ts';
 import { MAPS, CRATE_SIZE } from '../shared/maps.ts';
 import type { BulletView, PlayerView, RunView, Snapshot, ThrownView, WallView } from '../shared/protocol.ts';
@@ -184,7 +185,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawProps(ctx, snap, now, view);
   if (royale?.caches?.length) drawCaches(ctx, royale.caches, now, view);
   if (royale?.plates?.length) drawFloorPlates(ctx, royale.plates, mine && mine.alive ? mine : null, now, view);
-  if (royale?.guns?.length) drawFloorGuns(ctx, royale.guns, mine && mine.alive ? mine : null, now, view);
+  const takeable = royale?.guns?.length ? drawFloorGuns(ctx, royale.guns, mine && mine.alive ? mine : null, now, view) : null;
+  syncTakeButton(takeable ? GUNS[takeable].name : null);
   drawRadios(ctx, now, view, dark, reducedMotion());
   if (snap.targets) { const at = serverNow(s.snaps, now); drawTargets(ctx, snap, at === null ? null : at - INTERP_DELAY_MS, now, view); }
   drawBeacon(ctx, snap.airdrop, airClock, now, view);

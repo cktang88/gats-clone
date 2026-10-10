@@ -1,4 +1,5 @@
 import { circleHitsRect, segmentBlocked, type Rect } from '../../shared/sim/movement.ts';
+import { roundPasses } from '../../shared/protocol.ts';
 
 export type Point = { x: number; y: number };
 
@@ -353,5 +354,12 @@ function smooth(nav: NavGrid, from: Point, cells: Point[]): Point[] {
 }
 
 export function clearShot(rects: readonly Rect[], a: Point, b: Point): boolean {
-  return !segmentBlocked(rects, a.x, a.y, b.x - a.x, b.y - a.y);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  return !segmentBlocked(shotWalls(rects, dx, dy), a.x, a.y, dx, dy);
+}
+
+/** The walls a round flying along (dx, dy) meets: all but a one-way Shield it would pass out through (`roundPasses`). */
+export function shotWalls(rects: readonly Rect[], dx: number, dy: number): readonly Rect[] {
+  const oneWay = (r: Rect): r is Rect & { out: readonly [number, number] } => 'out' in r && !!(r as { out?: unknown }).out;
+  return rects.some(oneWay) ? rects.filter((r) => !(oneWay(r) && roundPasses(r, dx, dy))) : rects;
 }

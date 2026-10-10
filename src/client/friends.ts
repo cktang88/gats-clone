@@ -1,4 +1,4 @@
-import type { ClientMsg } from '../shared/protocol.ts';
+import { FRIEND_INVITE_SHOWN_MS, type ClientMsg } from '../shared/protocol.ts';
 
 /**
  * Friends in a match, the page's side: the small menu a click on a board name opens beside the leaderboard (Add friend, or
@@ -11,8 +11,7 @@ import type { ClientMsg } from '../shared/protocol.ts';
  * and each swallows its mousedown so it never takes the keyboard's Space from the ability.
  */
 
-/** How long an invite waits for an answer before its plate goes. */
-export const FRIEND_INVITE_SHOWN_MS = 20_000;
+export { FRIEND_INVITE_SHOWN_MS };
 
 export type BoardPick = { id: number; name: string; human: boolean; x: number; y: number; w: number; h: number; right: number };
 
@@ -117,6 +116,8 @@ export function createFriendsUi(deps: Deps) {
       tray.append(el);
       invites.set(from, { el, timer: setTimeout(() => dropInvite(from), FRIEND_INVITE_SHOWN_MS) });
     },
+    /** Your friends now, by player id. */
+    ids: (): ReadonlySet<number> => friends,
     /** The server's list of your friends. */
     setFriends(ids: readonly number[]) {
       friends = new Set(ids);

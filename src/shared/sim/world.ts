@@ -216,11 +216,12 @@ type Flow = { wallsVersion: number; buildingsVersion: number; cost: Uint16Array 
 
 /**
  * `survivors` never come back: mending the core shelters the rest but raises no one. `harm` is what the core has taken toward the next survivor lost.
- * `lost` counts tonight's, or last night's by day; `ready` holds the humans ready for night.
+ * `lost` counts tonight's, or last night's by day; `ready` holds the humans ready for night. `bitten` is all the core has taken this run.
  */
 export type Run = {
   core: { hp: number };
   harm: number;
+  bitten: number;
   survivors: number;
   lost: number;
   ready: Set<number>;
@@ -274,6 +275,8 @@ export type Royale = {
   plates: FloorPlate[];
   /** When each player last took a gun off the floor, so one press of E takes one gun. */
   tookAt: Map<number, number>;
+  /** Players whose E has stayed down since they last took a gun: they let go before taking another. */
+  useHeld: Set<number>;
   redeployAt: Map<number, number>;
   drops: Drop[];
   stats: Map<number, RoyaleStats>;
@@ -399,7 +402,7 @@ export function createWorld(mode: ModeId, seed: number, map: MapId): World {
 
 export function newRun(now: number): Run {
   return {
-    core: { hp: ZOM.coreHp }, harm: 0, survivors: ZOM.survivors, lost: 0, ready: new Set(), scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
+    core: { hp: ZOM.coreHp }, harm: 0, bitten: 0, survivors: ZOM.survivors, lost: 0, ready: new Set(), scrap: ZOM.startScrap, night: 1, phase: { k: 'day', endsAt: now + ZOM.dayMs },
     startedAt: now, flow: null, stats: new Map(),
     turretKills: byTurret(() => Object.fromEntries(ZOMBIE_KINDS.map((k) => [k, 0])) as Record<ZombieKind, number>), bastionKills: 0, bastionFireAt: 0, share: 1,
   };
@@ -594,7 +597,9 @@ function defendedPoints(solids: readonly Rect[], core: Center, size: number): Po
  */
 export function friendSpawn(w: World, id: number): Pose | null {
   if (w.royale) return null;
-  const standing = friendsOf(w, id).map((f) => w.players.get(f)).filter((f): f is Player => f?.life.k === 'alive');
+  // In a team mode only a friend on your own side: one who crossed to another friend's team is among your enemies now.
+  const team = w.players.get(id)?.team ?? null;
+  const standing = friendsOf(w, id).map((f) => w.players.get(f)).filter((f): f is Player => f?.life.k === 'alive' && (team === null || f.team === team));
   if (!standing.length) return null;
   const friend = standing[Math.floor(rand(w) * standing.length)]!;
   const { size } = MAPS[w.map];

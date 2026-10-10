@@ -65,9 +65,10 @@ export function setInput(w: World, id: number, seq: number, input: InputState, v
   p.rewindCapMs = rewindCapMs;
 }
 
+/** Never in Zombies, where the run brings the dead back (paid for in survivors by night, free at dawn: see run.ts). */
 export function canRespawn(w: World, id: number): boolean {
   const p = w.players.get(id);
-  return !!p && p.life.k === 'dead' && w.now >= p.life.respawnAt;
+  return !!p && !w.run && p.life.k === 'dead' && w.now >= p.life.respawnAt;
 }
 
 export function respawn(w: World, id: number, loadout: Loadout): boolean {
