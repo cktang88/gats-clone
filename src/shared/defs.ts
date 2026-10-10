@@ -364,7 +364,7 @@ export const COLORS: Record<ColorId, string> = {
 export const PERK_TIERS = {
   1: ['optics', 'thermal', 'ghillie', 'piercing', 'extended', 'grip', 'silencer', 'lightweight', 'longRange', 'quickReload', 'choke'],
   2: ['shield', 'thickSkin', 'firstAid', 'marathon', 'steadyHands', 'secondWind', 'adrenaline', 'bloodlust', 'recon', 'ninja', 'overclock', 'demolitions', 'fastHands', 'tracker', 'brace'],
-  3: ['grenade', 'fragGrenade', 'gasGrenade', 'landMine', 'knife', 'engineer', 'dash', 'radar', 'healPole'],
+  3: ['fragGrenade', 'gasGrenade', 'claymore', 'knife', 'engineer', 'dash', 'radar', 'healPole'],
 } as const;
 export type Tier = keyof typeof PERK_TIERS;
 export type PerkId = (typeof PERK_TIERS)[Tier][number];
@@ -397,19 +397,18 @@ export const PERK_INFO: Record<PerkId, { name: string; desc: string }> = {
   fastHands: { name: 'Fast hands', desc: 'Reload 25% faster, and an evolution refills your magazine' },
   tracker: { name: 'Tracker', desc: 'Enemies you damage show on your minimap for 4s' },
   brace: { name: 'Brace', desc: 'Take 60% less knockback and deal 15% more' },
-  grenade: { name: 'Grenade', desc: 'Thrown explosive' },
   fragGrenade: { name: 'Frag grenade', desc: 'Explodes into shrapnel' },
   gasGrenade: { name: 'Gas grenade', desc: 'Lingering damage cloud' },
-  landMine: { name: 'Land mine', desc: 'Hidden explosive at your feet, two at a time' },
+  claymore: { name: 'Claymore', desc: 'A hidden trap facing your aim: anyone stepping in front of it eats a fan of shrapnel. Two at a time' },
   knife: { name: 'Knife', desc: 'Lunge melee strike' },
-  engineer: { name: 'Shield', desc: 'A one-way energy wall where you aim, 12s: you shoot out through it, nothing shoots in' },
+  engineer: { name: 'Shield', desc: 'A one-way energy wall where you aim, 10s: you shoot out through it, nothing shoots in' },
   dash: { name: 'Dash', desc: 'Burst of speed' },
   radar: { name: 'Radar', desc: 'Throw a sensor: every enemy in a wide ring shows on everyone\'s minimap for 30s' },
   healPole: { name: 'Heal pole', desc: 'Plant a pole that heals you, your team and friends close by for 8s' },
 };
 
 export const ABILITY_COOLDOWN_MS: Record<AbilityId, number> = {
-  grenade: 6000, fragGrenade: 7000, gasGrenade: 8000, landMine: 9000, knife: 4000, engineer: 10000, dash: 3500, radar: 15000, healPole: 16000,
+  fragGrenade: 7000, gasGrenade: 8000, claymore: 9000, knife: 4000, engineer: 30000, dash: 3500, radar: 15000, healPole: 16000,
 };
 
 export const PLAYER_KINDS = ['human', 'bot'] as const;

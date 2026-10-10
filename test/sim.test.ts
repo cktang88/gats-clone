@@ -191,7 +191,7 @@ test('TDM grenades spare teammates', () => {
   const a = spawnAt(w, 500, 500, { team: 'red' });
   const mate = spawnAt(w, 700, 480, { team: 'red' });
   const foe = spawnAt(w, 700, 520, { team: 'blue' });
-  grantPerks(w, a, ['extended', 'thickSkin', 'grenade']);
+  grantPerks(w, a, ['extended', 'thickSkin', 'fragGrenade']);
   press(w, a, { ability: true, angle: 0, aimDist: 200 });
   run(w, 2000);
   assert.equal(hpOf(mate), WORLD.baseHp);
@@ -284,9 +284,13 @@ test('ability respects its cooldown', () => {
   assert.equal(built(), 1, 'held key during cooldown builds nothing');
   assert.equal(w.wallsVersion, version);
   assert.ok(snapshotFor(w, a.id).self.abilityReadyIn > 0);
-  // Just past the cooldown and well before the first wall expires (so its expiry cannot stand in for a new build).
-  run(w, ABILITY_COOLDOWN_MS.engineer - 2000 + 2 * TICK_MS);
-  assert.equal(built(), 2, 'ready again after cooldown: a second wall beside the first');
+  const first = w.walls.find((x) => x.built)!;
+  // The shield drops before its cooldown ends, so one is never up all the time; then the key builds a fresh one.
+  run(w, ABILITY_COOLDOWN_MS.engineer - 2000 - 2 * TICK_MS);
+  assert.equal(built(), 0, 'the first shield is gone before the cooldown ends');
+  run(w, 4 * TICK_MS);
+  assert.equal(built(), 1, 'ready again after cooldown: a new shield');
+  assert.notEqual(w.walls.find((x) => x.built), first);
 });
 
 test('the shield (engineer) lets its owner shoot out and stops the enemy shooting back in', () => {
@@ -317,11 +321,11 @@ test('enemy land mine is hidden but its owner sees it', () => {
   const w = emptyWorld();
   const a = spawnAt(w, 500, 500);
   const b = spawnAt(w, 800, 500);
-  grantPerks(w, a, ['extended', 'thickSkin', 'landMine']);
+  grantPerks(w, a, ['extended', 'thickSkin', 'claymore']);
   press(w, a, { ability: true });
   step(w, TICK_MS);
-  assert.equal(snapshotFor(w, a.id).thrown.filter((t) => t.kind === 'landMine').length, 1);
-  assert.equal(snapshotFor(w, b.id).thrown.filter((t) => t.kind === 'landMine').length, 0);
+  assert.equal(snapshotFor(w, a.id).thrown.filter((t) => t.kind === 'claymore').length, 1);
+  assert.equal(snapshotFor(w, b.id).thrown.filter((t) => t.kind === 'claymore').length, 0);
 });
 
 test('snapshot culls out-of-view enemies; firing never puts an enemy on the minimap, only a hunted ping or a Tracker mark does', () => {

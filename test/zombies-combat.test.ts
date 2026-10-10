@@ -115,10 +115,10 @@ test('knife, gas and land mines work on zombies too', () => {
 
   const mineWorld = nightWorld();
   const miner = spawnAt(mineWorld, X, Y);
-  mineWorld.thrown.push({ id: newId(mineWorld), kind: 'landMine', owner: miner.id, team: miner.team, x: X, y: Y + 400, armedAt: 0, expiresAt: Infinity });
+  mineWorld.thrown.push({ id: newId(mineWorld), kind: 'claymore', owner: miner.id, team: miner.team, x: X, y: Y + 400, angle: Math.PI / 2, armedAt: 0, expiresAt: Infinity });
   const stepper = addZombie(mineWorld, 'brute', X, Y + 410, 1000);
-  run(mineWorld, TICK_MS);
-  assert.ok(stepper.hp < 1000, 'the mine went off under the zombie');
+  run(mineWorld, TICK_MS * 4);
+  assert.ok(stepper.hp < 1000, 'the claymore went off in the zombie\'s face');
   assert.equal(mineWorld.thrown.length, 0);
 });
 

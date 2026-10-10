@@ -569,12 +569,15 @@ export function drawAirdropMap(ctx: CanvasRenderingContext2D, air: AirdropView |
  * The Shield ability's barrier: a pane of blue energy, bright along the face rounds leave by, with chevrons pointing the way they
  * pass (`out`): its owner's side shoots out through it, and nothing shoots back in.
  */
-export function drawShields(ctx: CanvasRenderingContext2D, walls: readonly { x: number; y: number; w: number; h: number; out?: readonly [number, number] }[], now: number) {
+export function drawShields(ctx: CanvasRenderingContext2D, walls: readonly { x: number; y: number; w: number; h: number; out?: readonly [number, number]; ends?: number }[], now: number, serverAt: number | null = null) {
   for (const wall of walls) {
     if (!wall.out) continue;
     const [ox, oy] = wall.out;
     const pulse = 0.5 + 0.5 * Math.sin(now / 260);
+    const left = wall.ends !== undefined && serverAt !== null ? Math.max(0, wall.ends - serverAt) : null;
     ctx.save();
+    // Its last three seconds it flickers, faster as it runs out, so nobody is surprised when it drops.
+    if (left !== null && left < 3000) ctx.globalAlpha = Math.sin(now / (40 + left / 25)) > -0.3 ? 1 : 0.35;
     ctx.fillStyle = `rgba(90, 190, 255, ${0.28 + 0.1 * pulse})`;
     ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
     ctx.strokeStyle = 'rgba(150, 220, 255, 0.55)';
@@ -605,6 +608,19 @@ export function drawShields(ctx: CanvasRenderingContext2D, walls: readonly { x: 
       ctx.lineTo(tx - ox * s + oy * s, ty - oy * s + ox * s);
     }
     ctx.stroke();
+    // The seconds it has left, small over its middle.
+    if (left !== null) {
+      ctx.globalAlpha = 1;
+      ctx.font = '800 13px "Barlow Condensed", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(20, 24, 30, 0.85)';
+      const label = `${Math.ceil(left / 1000)}`;
+      ctx.strokeText(label, cx0, cy0);
+      ctx.fillStyle = '#e6f8ff';
+      ctx.fillText(label, cx0, cy0);
+    }
     ctx.restore();
   }
 }

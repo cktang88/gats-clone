@@ -120,7 +120,7 @@ test('a dash stops at a thin built wall instead of passing through it', () => {
 test('an owner keeps at most two mines, the third replacing the oldest, and loses them all on death', () => {
   const w = emptyWorld();
   const miner = spawnAt(w, 500, 500);
-  grantPerks(w, miner, ['extended', 'thickSkin', 'landMine']);
+  grantPerks(w, miner, ['extended', 'thickSkin', 'claymore']);
   const plant = (x: number) => {
     miner.x = x;
     miner.abilityReadyAt = 0;
@@ -128,7 +128,7 @@ test('an owner keeps at most two mines, the third replacing the oldest, and lose
     step(w, TICK_MS);
     press(w, miner, {});
   };
-  const mineXs = () => w.thrown.filter((t) => t.kind === 'landMine').map((t) => t.x);
+  const mineXs = () => w.thrown.filter((t) => t.kind === 'claymore').map((t) => t.x);
   plant(500);
   plant(700);
   plant(900);

@@ -91,13 +91,13 @@ test('a grenade glances off a polygon face instead of stopping dead, and a flat 
   const w = emptyWorld();
   const slope = part(SLOPE);
   w.walls = [{ ...slope, built: false, material: 'concrete', expiresAt: Infinity }];
-  w.thrown.push({ id: 1, kind: 'grenade', owner: 0, team: null, x: 800, y: 1000, vx: 600, vy: 0, explodeAt: 99999 });
+  w.thrown.push({ id: 1, kind: 'fragGrenade', owner: 0, team: null, x: 800, y: 1000, vx: 600, vy: 0, explodeAt: 99999 });
   for (let i = 0; i < 40; i++) tickThrown(w, 1 / 30);
   const g = w.thrown[0]!;
   assert.ok('vx' in g && Math.hypot(g.vx, g.vy) < 600 && Math.hypot(g.vx, g.vy) > 0, 'glanced off, slower');
   assert.ok(!circleHitsRect(g.x, g.y, 1, slope), 'still outside');
   w.walls = [{ x: 900, y: 900, w: 40, h: 200, built: false, material: 'concrete', expiresAt: Infinity }];
-  w.thrown = [{ id: 2, kind: 'grenade', owner: 0, team: null, x: 800, y: 1000, vx: 600, vy: 0, explodeAt: 99999 }];
+  w.thrown = [{ id: 2, kind: 'fragGrenade', owner: 0, team: null, x: 800, y: 1000, vx: 600, vy: 0, explodeAt: 99999 }];
   for (let i = 0; i < 10; i++) tickThrown(w, 1 / 30);
   const f = w.thrown[0]!;
   assert.ok('vx' in f && f.vx === 0);
