@@ -235,12 +235,18 @@ export function drawZombieCorpses(ctx: CanvasRenderingContext2D, corpses: readon
   if (!corpses.length || alpha <= 0) return;
   // The steady dead go in one batch; the few fading out right now each get their own alpha.
   const fadeFrom = now - ZOMBIE_CORPSE.lifeMs;
-  if (corpses.some((c) => c.born < fadeFrom)) {
-    drawZombieCorpses(ctx, corpses.filter((c) => c.born >= fadeFrom), alpha, now, pxPerUnit);
-    // Drawn as it lay at the moment it began to fade (a frozen `now`, so it is not counted as fading again), at its fading alpha.
-    for (const c of corpses) if (c.born < fadeFrom) drawZombieCorpses(ctx, [c], alpha * Math.max(0, 1 - (fadeFrom - c.born) / ZOMBIE_CORPSE.fadeMs), c.born + ZOMBIE_CORPSE.lifeMs, pxPerUnit);
-    return;
+  if (!corpses.some((c) => c.born < fadeFrom)) return drawCorpseBatch(ctx, corpses, alpha, now, pxPerUnit);
+  drawCorpseBatch(ctx, corpses.filter((c) => c.born >= fadeFrom), alpha, now, pxPerUnit);
+  // Drawn as it lay at the moment it began to fade (a frozen `now`), at its fading alpha. Straight to the batch, never back through the split:
+  // `born + lifeMs - lifeMs` can round above `born` on a fractional clock, which once recursed until the stack ran out.
+  for (const c of corpses) {
+    const a = alpha * Math.max(0, 1 - (fadeFrom - c.born) / ZOMBIE_CORPSE.fadeMs);
+    if (c.born < fadeFrom && a > 0) drawCorpseBatch(ctx, [c], a, c.born + ZOMBIE_CORPSE.lifeMs, pxPerUnit);
   }
+}
+
+function drawCorpseBatch(ctx: CanvasRenderingContext2D, corpses: readonly ZombieCorpse[], alpha: number, now: number, pxPerUnit: number) {
+  if (!corpses.length) return;
   const grow = (c: ZombieCorpse) => 0.4 + 0.6 * Math.min(1, Math.max(0, now - c.born) / ZOMBIE_CORPSE.poolMs);
   ctx.globalAlpha = alpha;
   for (const [style, scale] of [[ICHOR, 1], [ICHOR_DARK, 0.6]] as const) {
