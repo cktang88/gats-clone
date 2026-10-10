@@ -55,7 +55,7 @@ import { drawCorpses, drawZombieCorpses, liveCorpses, zombieField } from './corp
 import { flinchOf, flinchOffset } from './flinch.ts';
 import { drawFloor as drawGunFloor, drawTop as drawGunTop, gunFxOf, noteMap as noteGunMap } from './gunfx.ts';
 import { drawDropsWorld, drawRingWorld } from './royale.ts';
-import { drawCacheFloor, drawCaches, drawTowerFloor, drawTowerFx, drawTowerOverlay, drawTowers, towersNeedClock } from './lootart.ts';
+import { drawCacheFloor, drawCacheOverlay, drawCaches, drawTowerFloor, drawTowerFx, drawTowerOverlay, drawTowers, towersNeedClock } from './lootart.ts';
 import { drawBlastFx, drawBlastRing, drawDashTrails, drawExplosiveRounds, drawGasCloud, drawScorches, drawThrownBody } from './blastdraw.ts';
 import { trackDash } from './blastfx.ts';
 import { boltScene, dropCarried, reloadScene, selfReload, stepBolt, stepReload, type ReloadFrame } from './reloadanim.ts';
@@ -230,6 +230,7 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
     drawRingWorld(ctx, snap.royale, clockNow, tl, br);
     drawDropsWorld(ctx, snap.royale, clockNow, now, ROYALE.dropSize);
   }
+  if (royale?.caches?.length) drawCacheOverlay(ctx, royale.caches, view);
   if (royale?.towers?.length) drawTowerOverlay(ctx, royale.towers, towersNeedClock(royale.towers) ? clockNow ?? serverNow(s.snaps, now) : null, now, view);
   // Tonight's dead lie over the night shade, so the horde's toll stays readable in the dark.
   const field = zombieField(s.zombieCorpses, snap.run?.phase === 'night', now);

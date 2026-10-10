@@ -226,7 +226,7 @@ function royaleView(w: World, r: Royale, me: Player): RoyaleView {
     ],
     watch: r.watching.get(me.id) ?? null,
     result: resultFor(w, r, me),
-    caches: r.caches.map((c): CacheView => (!c.open && c.by != null ? [c.id, Math.round(c.x), Math.round(c.y), c.tier, 0, Math.round(Math.min(1, (w.now - (c.since ?? w.now)) / LOOT.openMs) * 10) / 10] : [c.id, Math.round(c.x), Math.round(c.y), c.tier, c.open ? 1 : 0])),
+    caches: r.caches.map((c): CacheView => (!c.open && c.by != null ? [c.id, Math.round(c.x), Math.round(c.y), c.tier, 0, Math.round(Math.min(1, (w.now - (c.since ?? w.now)) / LOOT.openMs) * 50) / 50] : [c.id, Math.round(c.x), Math.round(c.y), c.tier, c.open ? 1 : 0])),
     towers: r.towers.map((t) => ({
       x: Math.round(t.x), y: Math.round(t.y), readyAt: w.now < t.readyAt ? t.readyAt : 0,
       ...(t.holder !== null && { holder: t.holder, progress: Math.round(Math.min(1, (w.now - t.since) / TOWER.holdMs) * 20) / 20 }),

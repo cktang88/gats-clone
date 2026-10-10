@@ -370,6 +370,32 @@ export const towersNeedClock = (towers: readonly TowerView[] | undefined) => !!t
  * Over the night shade, so they read in the dark: the progress arc round a tower's circle while someone takes it, and the seconds until a
  * resting tower is ready again on a plate above its dish (`serverNow` null when that cannot be known; then the plate is left off).
  */
+/**
+ * A cache being opened (`CacheView`'s `opening`, 0..1): a ring of its tier's colour fills round it over `LOOT.openMs`, with the seconds
+ * left on a plate above, so the one opening it and anyone watching can see how long they have. Drawn over the night shade.
+ */
+export function drawCacheOverlay(ctx: CanvasRenderingContext2D, caches: readonly CacheView[], view: View) {
+  for (const [, x, y, tier, opened, opening] of caches) {
+    if (opened || opening === undefined || !visible(view, x, y, LOOT.size * 3)) continue;
+    const p = Math.max(0, Math.min(1, opening)), r = LOOT.size * 1.25;
+    const color = LOOT_LOOK[tier].glow;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(10, 12, 18, 0.55)';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, TAU);
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + p * TAU);
+    ctx.stroke();
+    ctx.restore();
+    plate(ctx, `OPENING ${Math.max(1, Math.ceil(((1 - p) * LOOT.openMs) / 1000))}s`, x, y - r - 20, color);
+  }
+}
+
 export function drawTowerOverlay(ctx: CanvasRenderingContext2D, towers: readonly TowerView[], serverNow: number | null, now: number, view: View) {
   for (const t of towers) {
     if (!visible(view, t.x, t.y, TOWER.radius + MAST.h)) continue;

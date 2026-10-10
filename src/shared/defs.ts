@@ -1075,7 +1075,7 @@ export const ROYALE = {
  * tier and resupplies them in full. Everyone starts a life with no armor, so caches are where it comes from.
  */
 export const LOOT = {
-  count: 64, spacing: 260, openPx: 56, openMs: 800, size: 30,
+  count: 64, spacing: 260, openPx: 56, openMs: 5000, size: 30,
   tiers: [
     { name: 'Common', weight: 0.64, score: 90, heal: 0, armorUp: 0, pick: false },
     { name: 'Rare', weight: 0.29, score: 220, heal: 45, armorUp: 1, pick: false },
