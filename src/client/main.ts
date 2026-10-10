@@ -19,7 +19,8 @@ import { addFeedback, NO_FEEDBACK } from './feedback.ts';
 import { addCareerToast, addMoments, NO_MOMENTS } from './moments.ts';
 import { createMedalToasts } from './medaltoasts.ts';
 import { freshLog, loadBests, logSnapshot, recapOf, saveBests } from './records.ts';
-import { ABILITY_SCORE, abilityHint, buildChipAt, drawHud, drawnPhoneLayout, drawSticks, hudScaleFor, noteAbilityDenied, noteTopup, phoneBoardTap, setHudInsets } from './hud.ts';
+import { ABILITY_SCORE, abilityHint, boardNameAt, buildChipAt, drawnBoardNames, drawHud, drawnPhoneLayout, drawSticks, hudScaleFor, noteAbilityDenied, noteTopup, phoneBoardTap, setBoardHover, setHudFriends, setHudInsets } from './hud.ts';
+import { createFriendsUi } from './friends.ts';
 import { applyPhoneHud } from './phonehud.ts';
 import { createAutoFullscreen, requestFullscreen } from './fullscreen.ts';
 import { crosshairShown, installCursorLayer } from './cursorlayer.ts';
@@ -318,6 +319,7 @@ function onClose(ws: WebSocket, code: number) {
 function leave() {
   const ws = state.phase === 'menu' ? (state.status.kind === 'connecting' ? state.status.ws : null) : state.phase === 'reconnecting' ? state.dial : state.s.ws;
   setState({ phase: 'menu', status: { kind: 'idle' } });
+  friendsUi.reset();
   ws?.close();
 }
 
@@ -356,7 +358,10 @@ function onServerMsg(ws: WebSocket, msg: ServerMsg) {
       s.moments = addCareerToast(s.moments, m.badge, m.score, now); playCues(s, [{ id: 'fanfare', ...s.lastSelf, self: true, gain: 1 }], WORLD.viewRadius);
     },
     error: (m) => { s.chat.push({ from: '', text: m.message, team: null, at: now }); },
-    welcome: (m) => { s.myId = m.id; s.walls = m.walls; s.worldSize = m.worldSize; s.mapId = m.map; enterMap(m.map); },
+    friendInvite: (m) => friendsUi.onInvite(m.from, m.name),
+    friends: (m) => friendsUi.setFriends(m.ids),
+    friendNote: (m) => { s.chat.push({ from: '', text: m.text, team: null, at: now }); },
+    welcome: (m) => { friendsUi.reset(); s.myId = m.id; s.walls = m.walls; s.worldSize = m.worldSize; s.mapId = m.map; enterMap(m.map); },
     progress: (m) => onProgress(m),
     equipped: (m) => wardrobe.onEquipped(m.equipped),
   });
@@ -1010,8 +1015,17 @@ for (const [id, action] of [['touch-ability', 'ability'], ['touch-reload', 'relo
   });
   for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) button.addEventListener(type, () => held.delete(action));
 }
-window.addEventListener('mousemove', (e) => { const p = plock.move(e); wheel.move(p.x, p.y); mouse.x = p.x; mouse.y = p.y; mouseAiming = true; });
+window.addEventListener('mousemove', (e) => {
+  const p = plock.move(e); wheel.move(p.x, p.y); mouse.x = p.x; mouse.y = p.y; mouseAiming = true;
+  setBoardHover(state.phase === 'playing' ? boardNameAt(mouse.x, mouse.y)?.id ?? null : null);
+});
 canvas.addEventListener('mousedown', (e) => {
+  // A name on the board is a button: it opens the friend menu instead of firing, and a click anywhere else closes that menu.
+  if (state.phase === 'playing' && e.button === 0 && !pause.isOpen()) {
+    const pick = boardNameAt(mouse.x, mouse.y);
+    if (pick) return friendsUi.openMenu(pick);
+    if (friendsUi.isMenuOpen()) return friendsUi.closeMenu();
+  }
   if (state.phase === 'playing' && state.s.building) return buildClick(state.s, e);
   if (e.button !== 0) return;
   firing = true;
@@ -1158,6 +1172,12 @@ const wheel = createEmoteWheel(hudEl, (id) => {
   playClick(s);
 });
 /** The pause and settings overlay (Esc, the cog, or Start on a pad): the match keeps running, your soldier takes no input. */
+const friendsUi = createFriendsUi({
+  send: (msg) => { const s = sessionOf(state); if (s) send(s.ws, msg); },
+  onChange: (ids) => setHudFriends(ids),
+});
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') friendsUi.closeMenu(); }, { capture: true });
+
 const pause = createPauseMenu(hudEl, {
   audio,
   info: () => {
@@ -1220,6 +1240,7 @@ if (params.has('dev')) {
 }
 const shooting = createShooting({ hands, playCues, recoil: (gun, angle) => { if (!reducedMotion() && shakeScale() > 0) kick = addKick(kick, gun, angle, shakeScale()); } });
 installDevProbe({ ctx, drawFrame, session: () => drawnSessionOf(state), camera: () => aimCamera, ghost: () => ghost });
+if (params.has('dev')) Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { friends: { board: () => drawnBoardNames(), myId: () => sessionOf(state)?.myId ?? null } });
 if (params.has('dev')) Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { phone: { layout: () => drawnPhoneLayout(), fullscreenArmed: () => autoFullscreen.armed() } });
 if (params.has('dev')) Object.assign(((window as unknown as { skirmishDev?: object }).skirmishDev ??= {}), { pause: { open: () => pause.open(), close: () => pause.close(), isOpen: () => pause.isOpen(), probe: () => pause.probe(), quality: () => qualityProbe(), held: () => [...held], firing: () => firing }, music: musicProbe });
 renderMuted($('muted'), muted, toggleMuted);

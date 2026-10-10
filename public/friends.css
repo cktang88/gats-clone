@@ -1,0 +1,41 @@
+/* Friends (src/client/friends.ts): the menu a board name opens beside the leaderboard, and the invite plates. */
+.friend-menu {
+  position: fixed; z-index: 60; transform: translateY(-50%);
+  min-width: calc(150px * var(--ui, 1)); padding: calc(8px * var(--ui, 1)) calc(10px * var(--ui, 1)) calc(10px * var(--ui, 1));
+  background: #2a2f38; color: #ece6d6; border: 2px solid #1c1f26; border-right: 5px solid #ff7eb6; border-radius: 6px;
+  box-shadow: 5px 6px 0 rgba(5, 6, 9, 0.55); font: 700 calc(14px * var(--ui, 1))/1.25 var(--display);
+}
+.friend-menu-name { padding-right: calc(22px * var(--ui, 1)); margin-bottom: calc(8px * var(--ui, 1)); font-size: calc(16px * var(--ui, 1)); letter-spacing: 0.02em; overflow-wrap: anywhere; }
+.friend-menu-close {
+  position: absolute; top: calc(4px * var(--ui, 1)); right: calc(6px * var(--ui, 1)); padding: 0 calc(4px * var(--ui, 1));
+  background: none; border: 0; color: #a39d8e; font: 800 calc(18px * var(--ui, 1))/1 var(--display); cursor: pointer;
+}
+.friend-menu-close:hover { color: #ece6d6; }
+.friend-menu-note { margin-bottom: calc(6px * var(--ui, 1)); color: #a39d8e; font-weight: 600; }
+.friend-menu-note.is-friend { color: #ff7eb6; font-weight: 800; }
+.friend-btn {
+  display: block; width: 100%; padding: calc(7px * var(--ui, 1)) calc(10px * var(--ui, 1));
+  background: #ff7eb6; color: #1c1f26; border: 2px solid #1c1f26; border-radius: 5px; box-shadow: 0 3px 0 #1c1f26;
+  font: 800 calc(14px * var(--ui, 1))/1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
+}
+.friend-btn:hover { filter: brightness(1.08); }
+.friend-btn.is-quiet { background: #3a404b; color: #ece6d6; }
+.friend-btn.is-sent { background: #3a404b; color: #a39d8e; cursor: default; box-shadow: none; }
+
+.friend-invites {
+  position: fixed; z-index: 65; top: calc(70px * var(--ui, 1) + var(--st, 0px)); left: 50%; transform: translateX(-50%);
+  display: grid; gap: calc(8px * var(--ui, 1)); width: min(calc(330px * var(--ui, 1)), calc(100vw - 24px)); pointer-events: none;
+}
+.friend-invite {
+  pointer-events: auto; padding: calc(10px * var(--ui, 1)) calc(12px * var(--ui, 1));
+  background: #2a2f38; color: #ece6d6; border: 2px solid #1c1f26; border-left: 6px solid #ff7eb6; border-radius: 6px;
+  box-shadow: 6px 8px 0 rgba(5, 6, 9, 0.55); font: 700 calc(15px * var(--ui, 1))/1.3 var(--display); animation: friend-in 0.18s ease-out;
+}
+.friend-invite-line { margin-bottom: calc(8px * var(--ui, 1)); overflow-wrap: anywhere; }
+.friend-invite-line b { color: #ff7eb6; }
+.friend-invite-row { display: grid; grid-template-columns: 1fr 1fr; gap: calc(8px * var(--ui, 1)); }
+@keyframes friend-in { from { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .friend-invite { animation: none; } }
+
+/* The board's top right is the leaderboard's: on a desktop Esc opens the pause menu, so the cog only shows on touch screens. */
+@media not (pointer: coarse) { .pause-cog { display: none; } }

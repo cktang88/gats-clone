@@ -140,17 +140,23 @@ function drawGunAt(ctx: CanvasRenderingContext2D, c: Corpse, gun: { x: number; y
 }
 
 function drawBody(ctx: CanvasRenderingContext2D, c: Corpse, at: { x: number; y: number }, drop: number, pxPerUnit: number) {
-  const fall = c.angle + (seeded(c, 14) - 0.5) * 1.2;
-  // The soldier lies where they fell, greyed out, arms flung wide and the head lolled, then crossed out.
+  // Knocked down by the hit, the body falls the way it travelled (head first along the blow), or the way it faced when that is unknown.
+  const fall = (c.blow ?? c.angle) + (seeded(c, 14) - 0.5) * 0.7;
+  const stretch = easeOut(drop);
+  // The soldier lies flat where they fell, greyed out, legs out behind, arms flung wide and the head lolled.
   drawFallenSoldier(ctx, deadHex(c.color, c.blast), at.x, at.y, R, {
-    angle: fall, splay: [(seeded(c, 17) - 0.3) * 1.1, (seeded(c, 18) - 0.3) * 1.1], loll: (seeded(c, 19) - 0.5) * 0.3, scale: 1 + 0.12 * (1 - drop), helmet: cosLook(c.cos).helmet, camo: cosLook(c.cos).camo,
+    angle: fall, splay: [(seeded(c, 17) - 0.3) * 1.1, (seeded(c, 18) - 0.3) * 1.1], loll: (seeded(c, 19) - 0.5) * 0.3, scale: 1 + 0.12 * (1 - drop),
+    stretch, legs: [0.08 + seeded(c, 15) * 0.3, 0.08 + seeded(c, 13) * 0.3], helmet: cosLook(c.cos).helmet, camo: cosLook(c.cos).camo,
   }, pxPerUnit);
-  const arm = R * (0.32 + seeded(c, 16) * 0.06);
+  // Eyes crossed out on the head, so the dead never read as a living player lying low.
+  const arm = R * (0.16 + seeded(c, 16) * 0.03);
   ctx.save();
   ctx.translate(at.x, at.y);
   ctx.rotate(fall);
+  ctx.scale(1 + 0.12 * (1 - drop), 1 + 0.12 * (1 - drop));
+  ctx.translate(R * 0.76, (seeded(c, 19) - 0.5) * 0.3 * R);
   ctx.lineCap = 'round';
-  for (const [width, color] of [[7, 'rgba(255, 255, 255, 0.55)'], [4.5, INK]] as const) {
+  for (const [width, color] of [[5, 'rgba(255, 255, 255, 0.55)'], [3, INK]] as const) {
     ctx.lineWidth = width;
     ctx.strokeStyle = color;
     ctx.beginPath();

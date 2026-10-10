@@ -13,7 +13,7 @@ import { MODES, tickMatch } from './sim/modes.ts';
 import { clamp, moveStep, walks } from './sim/movement.ts';
 import { abilityCooldownMs, abilityOf, bloomRecoverMul, effectiveStats, freshLife, hasPerk, isDeployed, isHunted, isSteady, PERK_RULES, resetProgress, rushMul, settleShare, spreadFor, sprintWanted, easeDownTicks, easeSpread, easedSpread } from './sim/stats.ts';
 import { consumePresses, pullTrigger } from './sim/trigger.ts';
-import { crateRect, freshFeats, IDLE_INPUT, newId, solidRects, spawnPoint, type Bullet, type Player, type World } from './sim/world.ts';
+import { crateRect, freshFeats, friendSpawn, IDLE_INPUT, newId, solidRects, spawnPoint, unfriend, friendsOf, type Bullet, type Player, type World } from './sim/world.ts';
 
 /** An unsilenced shot gives a still ghillie away for this long (it is never a minimap mark: enemies only hear it). */
 const REVEAL_MS = 2000;
@@ -38,7 +38,8 @@ function spawn(w: World, p: Player, loadout: Loadout, at?: { x: number; y: numbe
   resetProgress(p, w);
   p.lifeKills = 0;
   p.feats = freshFeats();
-  const pos = at ?? spawnPoint(w, p.team);
+  // A player with a friend standing comes back right beside them.
+  const pos = at ?? friendSpawn(w, p.id) ?? spawnPoint(w, p.team);
   p.x = pos.x;
   p.y = pos.y;
   p.life = freshLife(p, w.now);
@@ -49,6 +50,7 @@ export function removePlayer(w: World, id: number): void {
   if (!p) return;
   // A knocked player's life has not ended in a death yet: leaving ends it, and it is paid like a standing one's.
   if (p.life.k !== 'dead') w.lifeRecords.push({ id, name: p.name, kills: p.lifeKills, score: p.score, died: false });
+  for (const f of friendsOf(w, id)) unfriend(w, id, f);
   w.players.delete(id);
 }
 

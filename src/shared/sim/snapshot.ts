@@ -16,7 +16,7 @@ import { zombieMaxHp } from './run.ts';
 import { rangeView, targetViews } from './targets.ts';
 import { buildingView, tenths } from './build.ts';
 import { placeOf, redeploysOpen, resultFor, ringView } from './royale.ts';
-import { isEnemy, sameTeam, type Player, type Royale, type Run, type World } from './world.ts';
+import { areFriends, isEnemy, sameTeam, type Player, type Royale, type Run, type World } from './world.ts';
 
 const GHILLIE_STILL_MS = 600;
 const HIDDEN_REVEAL_DIST = 140;
@@ -102,7 +102,7 @@ function selfView(w: World, p: Player): SelfView {
   };
 }
 
-const leaderboard = (w: World): LeaderRow[] => rankRows([...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, deaths: p.deaths, team: p.team })));
+const leaderboard = (w: World): LeaderRow[] => rankRows([...w.players.values()].map((p) => ({ id: p.id, name: p.name, score: p.score, kills: p.kills, deaths: p.deaths, team: p.team, ...(p.kind === 'human' && { human: true as const }) })));
 
 function matchView(w: World): MatchView {
   const untilChange = w.mapChangeAt - w.now;
@@ -189,8 +189,9 @@ export function snapshotFor(w: World, id: number, events: readonly GameEvent[] =
     if (marked) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, marked: true });
     else if (huntedFor(w, me, p)) {
       if (p.huntedPing) minimap.push({ x: p.huntedPing.x, y: p.huntedPing.y, team: p.team, pingAge: w.now - p.huntedPing.at });
-    // Enemies are not on the minimap just for firing: only a Tracker mark or a hunted ping shows one (teammates always show).
-    } else if (sameTeam(me, p)) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
+    // Enemies are not on the minimap just for firing: only a Tracker mark or a hunted ping shows one (teammates and friends always show).
+    } else if (areFriends(w, me.id, p.id)) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null, friend: true });
+    else if (sameTeam(me, p)) minimap.push({ x: p.x, y: p.y, team: p.team, pingAge: null });
   }
   // A horde draws more hits than the wire can carry, so each player hears only of their own hits on zombies.
   // A medal, and what a pickup gave, is news only to the player who earned it.

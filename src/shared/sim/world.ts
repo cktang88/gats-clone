@@ -272,6 +272,8 @@ export type World = {
   rng: number;
   nextId: number;
   players: Map<number, Player>;
+  /** Friendships made in this match (the room makes and ends them): each player's friends, kept both ways. Friends never hurt each other, always show on each other's minimap, and come back beside each other. */
+  friends: Map<number, Set<number>>;
   bullets: Bullet[];
   crates: Crate[];
   barrels: Barrel[];
@@ -330,10 +332,36 @@ export const friendly = (team: Team, p: Player) => team !== null && team === p.t
 export const sameTeam = (a: Player, b: Player) => friendly(a.team, b);
 export const isEnemy = (a: Player, b: Player) => a.id !== b.id && !sameTeam(a, b);
 
+/** Whether players `a` and `b` are friends (see `World.friends`). */
+export const areFriends = (w: World, a: number, b: number): boolean => a !== b && (w.friends.get(a)?.has(b) ?? false);
+
+/** Makes `a` and `b` friends, both ways. */
+export function befriend(w: World, a: number, b: number): void {
+  if (a === b) return;
+  for (const [x, y] of [[a, b], [b, a]] as const) {
+    const set = w.friends.get(x) ?? new Set<number>();
+    set.add(y);
+    w.friends.set(x, set);
+  }
+}
+
+/** Ends the friendship of `a` and `b`, both ways. */
+export function unfriend(w: World, a: number, b: number): void {
+  for (const [x, y] of [[a, b], [b, a]] as const) {
+    const set = w.friends.get(x);
+    if (!set) continue;
+    set.delete(y);
+    if (!set.size) w.friends.delete(x);
+  }
+}
+
+/** `id`'s friends (empty for none). */
+export const friendsOf = (w: World, id: number): number[] => [...(w.friends.get(id) ?? [])];
+
 export function createWorld(mode: ModeId, seed: number, map: MapId): World {
   const w: World = {
     mode, map, mapChangeAt: Infinity, rotationSeed: seed | 0, rotationAt: 0, now: 0, tick: 0, rng: seed | 0, nextId: 1,
-    players: new Map(), bullets: [], crates: [], barrels: [], props: [], emps: new Map(), chains: new Map(), airdrops: { due: [], flight: null }, walls: [], wallsVersion: 0, doors: [], doorsVersion: 0, thrown: [],
+    players: new Map(), friends: new Map(), bullets: [], crates: [], barrels: [], props: [], emps: new Map(), chains: new Map(), airdrops: { due: [], flight: null }, walls: [], wallsVersion: 0, doors: [], doorsVersion: 0, thrown: [],
     zones: [], teamScore: { red: 0, blue: 0 }, match: { k: 'playing' }, events: [], queuedEvents: [], lifeRecords: [], firstBlood: false, history: [],
     zombies: [], buildings: [], floor: [], buildingsVersion: 0, run: null, royale: null,
   };
@@ -560,6 +588,26 @@ function defendedPoints(solids: readonly Rect[], core: Center, size: number): Po
   }
   // A ring built tight around the core leaves no fully clear cell inside; standing room inside still beats the far side of the wall.
   return points.length ? points : walkable;
+}
+
+/**
+ * Where `id` comes back beside a standing friend: a clear spot a couple of body widths from one of them, picked from the world's rng.
+ * Null with no friend standing, and in Last Squad, which brings everyone back beside their own squad.
+ */
+export function friendSpawn(w: World, id: number): Pose | null {
+  if (w.royale) return null;
+  const standing = friendsOf(w, id).map((f) => w.players.get(f)).filter((f): f is Player => f?.life.k === 'alive');
+  if (!standing.length) return null;
+  const friend = standing[Math.floor(rand(w) * standing.length)]!;
+  const { size } = MAPS[w.map];
+  const solids = solidRects(w), r = WORLD.playerRadius + SPAWN_CLEARANCE;
+  const turn = rand(w) * Math.PI * 2;
+  for (let i = 0; i < 8; i++) {
+    const a = turn + (i * Math.PI) / 4, d = WORLD.playerRadius * 2.6;
+    const x = friend.x + Math.cos(a) * d, y = friend.y + Math.sin(a) * d;
+    if (x >= r && y >= r && x <= size - r && y <= size - r && !circleBlocked(solids, x, y, r)) return { x, y };
+  }
+  return clearPointNear(solids, friend.x, friend.y, r, size);
 }
 
 /** The nearest point to (x, y), on a grid of ZOM.cell steps, where a circle of radius `r` stands clear of every solid, such as when a squad's walls cover its spawn strips. */

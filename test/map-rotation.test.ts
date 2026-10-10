@@ -86,7 +86,7 @@ test('FFA: the first human to the kill target wins the round, and the next round
   run(w, TICK_MS);
   const over = snapshotFor(w, viewer!.id);
   assert.equal(over.match.winner?.name, leader!.name);
-  assert.deepEqual(over.leaderboard[0], { id: leader!.id, name: leader!.name, score: leader!.score, kills: WORLD.ffaWinKills, deaths: 0, team: null }, 'the leaderboard ranks by kills');
+  assert.deepEqual(over.leaderboard[0], { id: leader!.id, name: leader!.name, score: leader!.score, kills: WORLD.ffaWinKills, deaths: 0, team: null, human: true }, 'the leaderboard ranks by kills');
   assert.equal(w.map, first, 'the map holds during the end-of-round banner');
   run(w, WORLD.roundRestartMs + 100);
   assert.deepEqual([w.match.k, w.map, leader!.kills], ['playing', second, 0]);

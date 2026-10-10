@@ -8,7 +8,7 @@ import type { ServerMsg } from '../shared/protocol.ts';
 export type ServerMsgHandlers = { [K in ServerMsg['t']]: (msg: Extract<ServerMsg, { t: K }>) => void };
 
 /** Every message type the page accepts off the socket. */
-export const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'emote', 'radio', 'badge', 'error', 'progress', 'equipped']);
+export const SERVER_MSG_TYPES: ReadonlySet<string> = new Set<ServerMsg['t']>(['welcome', 'walls', 'snap', 'chat', 'emote', 'radio', 'badge', 'error', 'progress', 'equipped', 'friendInvite', 'friends', 'friendNote']);
 
 export function parseServerMsg(data: unknown): ServerMsg | null {
   if (typeof data !== 'string') return null;

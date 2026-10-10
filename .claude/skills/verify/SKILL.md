@@ -97,6 +97,14 @@ node .claude/skills/verify/scripts/zombies-ui.ts "$RUN" [step ...]
 
 One muted headless Chrome plays a zombies squad through real input. Steps: `menu badlink squad build turrets night` by default, plus `ready` (after `night`), and `variety` (the three wall tiers, upgrades by U, chip and click, and every buildable, with a closeup of each at 3x device pixels), `downed`, `report`, `horde` and `victory`, which need scratch copies (about 3000 starting scrap and a long day, fragile humans and a weak core, a mixed first night, a one-night run). It starts a squad from the menu, follows its invite link, builds and takes down a wall and puts up a sentry with real keys and clicks, reads the ghost and callouts from `skirmishDev.zombies()`, and plays night 1 to dawn, watching the turrets fire and reloading one with E. It checks the warning and dawn forecasts against the night table and that night 1's zombies come only from the forecast side. Its log is `$RUN/evidence/zombies-ui.log`. The recipes and scratch values are in [the zombies feature file](features/zombies.md). `SQUAD=1 frametime.ts` measures frame cost in a squad.
 
+### Friends
+
+```bash
+node .claude/skills/verify/scripts/friends.ts "$RUN"
+```
+
+Two muted headless Chromes join FFA. The first hovers and clicks the second's name on the board (`skirmishDev.friends.board()` lists where each name is drawn), checks the menu opens beside the board without firing, presses Add friend; the second presses Accept on its invite plate. It checks the invite and both `friends` lists on the sockets, the friend mark in the first page's minimap snapshots, and that the desktop shows no pause cog. Run it on a scratch copy with `minPlayers` at `0` in `WORLD` (the copy recipe in [the progression recipe](features/progression-death-modes.md); `tar` works where `rsync` is missing) so the two people are the whole board. Its log is `$RUN/evidence/friends.log`, with `friends-hover`, `friends-menu`, `friends-invite`, `friends-board-heart` and `friends-full` screenshots.
+
 ### Two players
 
 ```bash

@@ -543,22 +543,56 @@ export function drawSoldier(ctx: CanvasRenderingContext2D, color: string, x: num
 }
 
 /**
- * A fallen soldier, for corpses: the same torso and helmet as the living, lying at `angle` with the arms flung out at
- * `splay` (radians off straight sideways, one per arm) and the head lolled `loll` radii to one side. `scale` swells the
- * body a little while it drops.
+ * A fallen soldier, for corpses, lying flat on the ground along `angle` (the head's end): a long contact shadow, the legs
+ * stretched out behind to two boots, the arms flung out at `splay` (radians off straight sideways, one per arm), the same
+ * torso as the living, and the head past the shoulders, lolled `loll` radii to one side. `scale` swells the body a little
+ * while it drops, and `stretch` (0..1) is how far the legs have slid out from under it.
  */
-export function drawFallenSoldier(ctx: CanvasRenderingContext2D, color: string, x: number, y: number, radius: number, pose: { angle: number; splay: readonly [number, number]; loll: number; scale: number; helmet?: string; camo?: string }, pxPerUnit: number) {
+export function drawFallenSoldier(ctx: CanvasRenderingContext2D, color: string, x: number, y: number, radius: number, pose: { angle: number; splay: readonly [number, number]; loll: number; scale: number; stretch?: number; legs?: readonly [number, number]; helmet?: string; camo?: string }, pxPerUnit: number) {
   const R = radius, ink = SOLDIER.ink * R;
+  const stretch = pose.stretch ?? 1;
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(pose.scale, pose.scale);
   ctx.rotate(pose.angle);
+  // Flat on the ground, the whole length of the body darkens the floor under it.
+  ctx.fillStyle = CONTACT;
+  ctx.beginPath();
+  ctx.ellipse(-R * 0.4, 0, R * (0.95 + 0.55 * stretch), R * 0.78, 0, 0, TAU);
+  ctx.fill();
+  // The legs, out behind the hips and a little apart, each ending in a boot.
+  const legs = ([1, -1] as const).map((side, i) => {
+    const hip = { x: -R * 0.42, y: side * R * 0.24 };
+    const len = R * (0.55 + 0.6 * stretch), out = (pose.legs?.[i] ?? 0.2) * stretch;
+    return { hip, foot: { x: hip.x - Math.cos(out) * len, y: hip.y + side * Math.sin(out) * len }, a: Math.PI - side * out };
+  });
+  ctx.lineCap = 'round';
+  for (const [width, style] of [[SOLDIER.arm * R * 1.7 + ink * 2, INK], [SOLDIER.arm * R * 1.7, shade(color, 0.62)]] as const) {
+    ctx.lineWidth = width;
+    ctx.strokeStyle = style;
+    ctx.beginPath();
+    for (const { hip, foot } of legs) {
+      ctx.moveTo(hip.x, hip.y);
+      ctx.lineTo(foot.x, foot.y);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = GEAR.boot;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = ink * 2;
+  ctx.beginPath();
+  for (const { foot, a } of legs) {
+    const bx = foot.x + Math.cos(a) * R * 0.06, by = foot.y + Math.sin(a) * R * 0.06;
+    ctx.moveTo(bx + Math.cos(a) * SOLDIER.boot.rx * R, by + Math.sin(a) * SOLDIER.boot.rx * R);
+    ctx.ellipse(bx, by, SOLDIER.boot.rx * R, SOLDIER.boot.ry * R * 1.15, a, 0, TAU);
+  }
+  ctx.stroke();
+  ctx.fill();
   const arms = ([1, -1] as const).map((side, i) => {
     const sx = SOLDIER.shoulder.x * R, sy = side * SOLDIER.shoulder.y * R;
     const a = side * (Math.PI / 2 + pose.splay[i]!);
-    return { from: { x: sx, y: sy }, to: { x: sx + Math.cos(a) * R * 0.75, y: sy + Math.sin(a) * R * 0.75 } };
+    return { from: { x: sx, y: sy }, to: { x: sx + Math.cos(a) * R * 0.85, y: sy + Math.sin(a) * R * 0.85 } };
   });
-  ctx.lineCap = 'round';
   for (const [width, style] of [[SOLDIER.arm * R + ink * 2, INK], [SOLDIER.arm * R, shade(color, 0.86)]] as const) {
     ctx.lineWidth = width;
     ctx.strokeStyle = style;
@@ -583,7 +617,8 @@ export function drawFallenSoldier(ctx: CanvasRenderingContext2D, color: string, 
   ctx.rotate(-pose.angle);
   drawTurned(ctx, torsoSprite(color, R, 'none', index, pxPerUnit, pose.camo), R * TORSO_REACH + 2, rest);
   ctx.rotate(pose.angle);
-  const hx = SOLDIER.head.cx * R + R * 0.08, hy = pose.loll * R;
+  // Lying down, the head rests past the shoulders instead of on top of them.
+  const hx = R * 0.76, hy = pose.loll * R;
   ctx.translate(hx, hy);
   ctx.rotate(-pose.angle);
   drawTurned(ctx, headSprite(color, R, index, pxPerUnit, pose.helmet), headHalf(R, pose.helmet), rest);
