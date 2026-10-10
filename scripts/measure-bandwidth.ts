@@ -52,9 +52,15 @@ for (let i = 0; i < humans; i++) {
 }
 
 await new Promise((r) => setTimeout(r, WARMUP_MS));
+// What crossed the socket, frames and any permessage-deflate compression included, as against the decoded messages tallied below.
+const socketBytes = () => sockets.reduce((n, ws) => n + ((ws as unknown as { _socket?: { bytesRead: number } })._socket?.bytesRead ?? 0), 0);
+const readBefore = socketBytes();
+const cpuBefore = process.cpuUsage();
 measuring = true;
 await new Promise((r) => setTimeout(r, seconds * 1000));
 measuring = false;
+const onWire = (socketBytes() - readBefore) / sockets.length / seconds;
+const cpu = process.cpuUsage(cpuBefore);
 
 const perClient = tallies.map((t) => t.bytes / seconds);
 const avg = perClient.reduce((a, b) => a + b, 0) / perClient.length;
@@ -63,6 +69,8 @@ const fields = new Map<string, number>();
 for (const t of tallies) for (const [k, v] of t.fields) fields.set(k, (fields.get(k) ?? 0) + v);
 console.log(`room=${room} humans=${humans} players>=${Math.max(humans, WORLD.minPlayers)} seconds=${seconds}`);
 console.log(`bytes/sec per client: avg ${(avg / 1024).toFixed(1)} KB/s, min ${(Math.min(...perClient) / 1024).toFixed(1)}, max ${(Math.max(...perClient) / 1024).toFixed(1)}`);
+console.log(`on the wire per client: ${(onWire / 1024).toFixed(1)} KB/s (${server.deflate ? 'permessage-deflate' : 'uncompressed'})`);
+console.log(`process CPU (server and these clients): ${(((cpu.user + cpu.system) / 1000 / (seconds * 1000)) * 100).toFixed(1)}% of a core`);
 console.log(`snapshots/sec per client: ${(snaps / tallies.length / seconds).toFixed(1)}, avg snapshot ${(avg * seconds / (snaps / tallies.length)).toFixed(0)} B`);
 const gaps = tallies.flatMap((t) => t.snapAt.slice(1).map((at, i) => at - t.snapAt[i]!));
 console.log(`snapshot arrival gaps: median ${median(gaps).toFixed(1)}ms p95 ${quantile(gaps, 0.95).toFixed(1)}ms max ${quantile(gaps, 1).toFixed(1)}ms`);

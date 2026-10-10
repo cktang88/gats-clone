@@ -25,8 +25,16 @@ import { planTicks } from './clock.ts';
  * `mailer` sends password-reset links (null or absent: email is not configured, and a reset request only logs that).
  * `publicUrl` is the origin those links point at (`PUBLIC_URL`); never taken from a request's Host header, which a client sets.
  */
-export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean; mailer?: Mailer | null; publicUrl?: string };
-export type RunningServer = { port: number; rooms: ReadonlyMap<string, Room>; close(): Promise<void> };
+export type ServerOptions = { port: number; dataDir: string; publicDir?: string; stepsPerTick?: number; limits?: Partial<Limits>; trustProxy?: boolean; mailer?: Mailer | null; publicUrl?: string; deflate?: boolean };
+export type RunningServer = { port: number; rooms: ReadonlyMap<string, Room>; deflate: boolean; close(): Promise<void> };
+
+/**
+ * SKIRMISH_DEFLATE=1 (or `deflate: true`) compresses on the socket (permessage-deflate, which every browser speaks): one snapshot is
+ * much like the last, so with the window kept between messages a ~1.1 KB snapshot goes out as ~150 bytes, 35-50 KB/s a player down
+ * to 4-6 KB/s, for about 1% of a core per player. It is off by default: zlib runs off the event loop, and on a saturated loop a
+ * socket's queue of messages waiting to be compressed grows past `maxBufferedBytes` and the stall rule cuts the player off.
+ */
+const PER_MESSAGE_DEFLATE = { zlibDeflateOptions: { level: 1, memLevel: 8 }, serverMaxWindowBits: 12, clientNoContextTakeover: true, threshold: 64 } as const;
 
 const PUBLIC_DIR = resolve(import.meta.dirname, '../../public');
 const MAX_BODY = 4096;
@@ -365,7 +373,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (!res.headersSent) json(res, 500, { error: 'Internal error' });
     });
   });
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
+  const deflate = opts.deflate ?? process.env.SKIRMISH_DEFLATE === '1';
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 4096, perMessageDeflate: deflate && PER_MESSAGE_DEFLATE });
   wss.on('error', (err) => console.error('websocket server error', err));
   http.on('upgrade', (req, socket, head) => {
     // A target like `//[` is no URL; thrown here, outside any promise, it would take the whole process down.
@@ -457,6 +466,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   return {
     port: (http.address() as AddressInfo).port,
     rooms,
+    deflate,
     async close() {
       clearTimeout(timer);
       gcObserver?.disconnect();
