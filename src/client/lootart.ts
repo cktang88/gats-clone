@@ -1,5 +1,5 @@
 import { LOOT, TOWER, type LootTier } from '../shared/defs.ts';
-import type { CacheView, FloorGunView, Snapshot, TowerView } from '../shared/protocol.ts';
+import type { CacheView, FloorArmorView, FloorGunView, Snapshot, TowerView } from '../shared/protocol.ts';
 import { GUNS, WORLD } from '../shared/defs.ts';
 import { drawDroppedGun } from './gunart.ts';
 import { setLight } from './lighting.ts';
@@ -435,6 +435,36 @@ export function drawFloorGuns(ctx: CanvasRenderingContext2D, guns: readonly Floo
     const d = Math.hypot(me.x - x, me.y - y);
     if (d > nameAt) continue;
     plate(ctx, d <= reach ? `[E] TAKE ${GUNS[gun].name.toUpperCase()}` : GUNS[gun].name, x, y - 30, color, d <= reach ? 1 : 0.8);
+  }
+}
+
+const ARMOR_LOOK: Record<string, string> = { light: '#d6dde4', medium: '#8fb3ff', heavy: '#ffb347' };
+
+/** Armor dropped by the dead: a small box with a vest stencilled on it in its tier's colour, and its tier named when you are close. */
+export function drawFloorArmors(ctx: CanvasRenderingContext2D, armors: readonly FloorArmorView[], me: { x: number; y: number } | null, now: number, view: View) {
+  for (const [id, x, y, tier] of armors) {
+    if (!visible(view, x, y, 60)) continue;
+    const color = ARMOR_LOOK[tier] ?? '#d6dde4';
+    ctx.save();
+    ctx.fillStyle = 'rgba(10, 12, 18, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(x + 3, y + 10, 15, 5, 0, 0, TAU);
+    ctx.fill();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = INK;
+    ctx.fillStyle = '#4f5661';
+    ctx.fillRect(x - 13, y - 9, 26, 18);
+    ctx.strokeRect(x - 13, y - 9, 26, 18);
+    // A vest: shoulders, a neck cut and a plate, in the tier's colour, gently glowing.
+    ctx.fillStyle = color;
+    ctx.globalAlpha *= 0.75 + 0.25 * breath(now, id);
+    ctx.beginPath();
+    ctx.moveTo(x - 7, y - 6); ctx.lineTo(x - 2.5, y - 6); ctx.lineTo(x, y - 3); ctx.lineTo(x + 2.5, y - 6); ctx.lineTo(x + 7, y - 6);
+    ctx.lineTo(x + 7, y + 6); ctx.lineTo(x - 7, y + 6); ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    if (me && Math.hypot(me.x - x, me.y - y) < 200) plate(ctx, `${tier.toUpperCase()} ARMOR`, x, y - 24, color, 0.85);
   }
 }
 

@@ -1,4 +1,4 @@
-import { GUNS, LOOT, TOWER, WORLD } from '../../shared/defs.ts';
+import { ARMOR_IDS, GUNS, LOOT, TOWER, WORLD } from '../../shared/defs.ts';
 import { ringAt, type CacheView, type Circle, type PlayerView, type RingView, type RoyaleView, type Snapshot, type TowerView } from '../../shared/protocol.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { skillKnobs, TICK_MS } from './aim.ts';
@@ -94,6 +94,15 @@ function towerPost(t: TowerView, me: PlayerView, circle: Circle, arena: BotArena
 
 type Errand = { k: 'drop' | 'loot' | 'gun' | 'roam'; at: Point } | { k: 'tower'; at: Point; facing: Point };
 
+/** Armor on the floor in a better tier than its own, inside the circle and within `GUN_REACH_PX`: the nearest such (walking over it takes it). */
+export function betterArmor(royale: RoyaleView, me: PlayerView, circle: Circle): Point | null {
+  const mine = ARMOR_IDS.indexOf(me.armorTier);
+  const ups = (royale.armors ?? []).filter((a) => ARMOR_IDS.indexOf(a[3]) > mine && inside({ x: a[1], y: a[2] }, circle, EDGE_PX) && dist(me, { x: a[1], y: a[2] }) < GUN_REACH_PX);
+  if (!ups.length) return null;
+  const a = ups.reduce((p, q) => (dist(me, { x: q[1], y: q[2] }) < dist(me, { x: p[1], y: p[2] }) ? q : p));
+  return { x: a[1], y: a[2] };
+}
+
 /** How far a bot walks for a better gun lying on the floor. */
 const GUN_REACH_PX = 900;
 /** A gun on the floor at a higher stage than the one in hand, inside the circle and in reach: the nearest such. */
@@ -110,6 +119,8 @@ function errandFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: C
   if (drop) return { k: 'drop', at: { x: drop.x, y: drop.y } };
   const gun = betterGun(royale, me, circle);
   if (gun) return { k: 'gun', at: gun };
+  const armor = betterArmor(royale, me, circle);
+  if (armor) return { k: 'gun', at: armor };
   const tower = towerTarget(royale, me, circle, now);
   if (tower) { const post = towerPost(tower, me, circle, arena); return { k: 'tower', at: post.spot, facing: post.facing }; }
   const cache = lootTarget(snap, royale, me, circle);

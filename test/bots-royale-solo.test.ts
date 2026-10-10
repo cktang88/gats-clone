@@ -96,3 +96,11 @@ test('a bot walks to a better gun lying on the floor and takes it, leaving its o
   assert.ok(Number.isFinite(took), `took the gun (has ${bot.gun})`);
   assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['pistol'], 'its old gun lies where it stood');
 });
+
+test('a bot with no armor walks over to an armor box a dead player left, and wears it', () => {
+  const w = soloWorld();
+  const bot = spawnAt(w, 1200, 1200, { kind: 'bot' });
+  w.royale!.armors = [{ id: 900_020, x: 1550, y: 1350, tier: 'medium' }];
+  const mems = new Map([[bot.id, newBotMemory(() => 0.5)]]);
+  assert.ok(Number.isFinite(drive(w, mems, 15_000, () => bot.loadout.armor === 'medium')), `wears ${bot.loadout.armor}`);
+});

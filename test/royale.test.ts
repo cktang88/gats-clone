@@ -293,14 +293,36 @@ test('weapon cases hold guns of their tier: a class gun, a first evolution, a fi
   assert.equal(LOOT.count, 48);
 });
 
-test('the dead drop an evolved gun for whoever kills them; a class gun stays with the body', () => {
+test('the dead drop their gun and a box of armor, light at least, so every kill pays', () => {
   const w = brWorld();
   const shooter = solo(w, 1000, 1000);
   const victim = solo(w, 1200, 1000);
   victim.gun = 'handCannon';
   shootUntilDead(w, shooter, victim);
-  assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['handCannon']);
-  const plain = solo(w, 1200, 1300);
-  shootUntilDead(w, shooter, plain, Math.atan2(300, 200));
-  assert.equal(w.royale!.guns.length, 1, 'no class gun is dropped');
+  assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['handCannon'], 'the gun they held');
+  assert.deepEqual(w.royale!.armors.map((a) => a.tier), ['light'], 'no armor on them still drops a light box');
+  const armored = solo(w, 1200, 1300);
+  armored.loadout = { ...armored.loadout, armor: 'heavy' };
+  shootUntilDead(w, shooter, armored, Math.atan2(300, 200));
+  assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['handCannon', 'pistol'], 'a class gun drops too');
+  assert.deepEqual(w.royale!.armors.map((a) => a.tier), ['light', 'heavy'], 'their own tier');
+});
+
+test('armor on the floor is taken by walking over it, only by one it puts in a better tier or whose plates it fills', () => {
+  const w = brWorld();
+  const p = solo(w, 1000, 1000);
+  const r = w.royale!;
+  r.armors = [{ id: 1, x: 1010, y: 1000, tier: 'medium' }];
+  const events = collect(w, TICK_MS * 2);
+  assert.equal(p.loadout.armor, 'medium');
+  assert.ok(p.life.k === 'alive' && p.life.armor === 40);
+  assert.equal(r.armors.length, 0);
+  assert.ok(events.some((e) => e.e === 'gain' && e.from === 'body' && e.armorTo === 'medium'));
+  r.armors = [{ id: 2, x: 1010, y: 1000, tier: 'light' }];
+  run(w, 200);
+  assert.equal(r.armors.length, 1, 'a worse box is left for someone else');
+  if (p.life.k === 'alive') p.life.armor = 10;
+  r.armors = [{ id: 3, x: 1010, y: 1000, tier: 'medium' }];
+  run(w, 100);
+  assert.ok(p.life.k === 'alive' && p.life.armor === 40, 'the same tier fills the plates');
 });

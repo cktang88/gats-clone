@@ -273,7 +273,7 @@ export type GameEvent =
   | { e: 'pack'; k: 'pick'; x: number; y: number };
 
 /** Where a `gain` came from: a health or ammo pack, a supply plane's crate, a Last Squad drop, an armor pack. */
-export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop' | 'armor' | 'loot';
+export type GainSource = 'medic' | 'ammo' | 'airdrop' | 'drop' | 'armor' | 'loot' | 'body';
 
 export type Circle = { x: number; y: number; r: number };
 /**
@@ -292,6 +292,8 @@ export const ringAt = (ring: RingView, now: number): Circle => {
 export type RoyaleResult = { place: number; of: number; kills: number; loot: number };
 /** A loot cache: `[id, x, y, tier, opened, opening, weapon]`: opened 1 once someone has; `opening` (0..1) how far whoever stands at it is through opening it; `weapon` 1 for a weapon case. */
 export type CacheView = [id: number, x: number, y: number, tier: LootTier, opened: 0 | 1, opening: number, weapon: 0 | 1];
+/** Armor dropped by the dead: `[id, x, y, tier]`. */
+export type FloorArmorView = [id: number, x: number, y: number, tier: ArmorId];
 /** A gun lying on the floor: `[id, x, y, gun]`. */
 export type FloorGunView = [id: number, x: number, y: number, gun: GunId];
 /** A recon tower: ready again at server time `readyAt` (0 when ready), and how far (0..1) its holder is through taking it (absent when nobody is). */
@@ -306,7 +308,7 @@ export type RoyaleView = {
   round: number;
   ring: RingView; redeploys: boolean; alive: number; total: number; redeployAt: number | null;
   drops: { x: number; y: number; landsAt: number }[]; watch: number | null; result: RoyaleResult | null;
-  caches: CacheView[]; towers: TowerView[]; guns: FloorGunView[];
+  caches: CacheView[]; towers: TowerView[]; guns: FloorGunView[]; armors: FloorArmorView[];
 };
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */
