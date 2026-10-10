@@ -2,7 +2,8 @@ import { ARMOR_IDS, COLOR_IDS, GUNS, isPerkId, pickOptions, WEAPON_IDS, type Bui
 import type { InputState, Loadout, Snapshot } from '../shared/protocol.ts';
 import type { BotArena } from './bot/arena.ts';
 import { freshAwareness, perceive, type Awareness } from './bot/awareness.ts';
-import { bandFor, GUN_BAND, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
+import { skillFor, skillKnobs, skillOf, type Skill } from './bot/aim.ts';
+import { bandFor, GUN_BAND, nextIntent, PERSONALITIES, PERSONALITY_IDS, roleFor, skilledPersona, startIntent, type Intent, type IntentCtx, type PersonalityId } from './bot/intent.ts';
 import { act, freshMotor, type Motor } from './bot/motor.ts';
 import { crawlThink, royaleThink } from './bot/royale.ts';
 import { supplyFor } from './bot/supplies.ts';
@@ -12,6 +13,8 @@ import { DEAD_ZONE, siegeThink, type SiegeMemory } from './bot/siege.ts';
 
 export type BotMemory = {
   persona: PersonalityId;
+  /** How good a player it is (`BOT_SKILL` in bot/aim.ts): drawn once for its name in its room and kept across its lives. Absent, a veteran. */
+  skill?: Skill;
   intent: Intent | null;
   awareness: Awareness;
   motor: Motor;
@@ -66,8 +69,14 @@ function choosePickOption(options: readonly PickOption[], gun: GunId, persona: P
   return options.find((o) => (roll -= weight(o)) < 0) ?? pick(options, rand);
 }
 
-export function newBotMemory(rand: () => number): BotMemory {
-  return { persona: pick(PERSONALITY_IDS, rand), intent: null, awareness: freshAwareness(), motor: freshMotor() };
+/**
+ * A fresh bot's memory: its temper drawn from `rand`, and its skill hashed from its name and the room's seed (`skillFor`: the same name in
+ * the same room is the same player each time it joins), or given (`skill`), or else drawn from `rand` after its temper.
+ */
+export function newBotMemory(rand: () => number, who: { name: string; seed: number } | { skill: Skill } | null = null): BotMemory {
+  const persona = pick(PERSONALITY_IDS, rand);
+  const skill = who === null ? skillOf(rand()) : 'skill' in who ? who.skill : skillFor(who.name, who.seed);
+  return { persona, skill, intent: null, awareness: freshAwareness(), motor: freshMotor() };
 }
 
 export function randomLoadout(rand: () => number): Loadout {
@@ -95,8 +104,9 @@ export function botThink(snap: Snapshot, arena: BotArena, mem: BotMemory, rand: 
   const { awareness } = perceived;
   // What it read off each enemy it saw, whom it shoots first, and where it pre-aims (see tactics.ts); a fresh life starts a fresh read.
   const { view, tactics } = readTactics(mem.intent ? mem.tactics ?? null : null, perceived.view, awareness);
-  const persona = PERSONALITIES[mem.persona];
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier, supply: supplyFor(snap, me, (p) => isOpen(arena.nav, p)), tac: tactics };
+  const skill = skillKnobs(mem.skill);
+  const persona = skilledPersona(PERSONALITIES[mem.persona], skill);
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: roleFor(me.id, me.team), band: bandFor(view.me.gun, persona), arena, rand, ...tier, supply: supplyFor(snap, me, (p) => isOpen(arena.nav, p)), tac: tactics, skill };
   const intent = nextIntent(mem.intent ?? startIntent({ k: 'patrol', goal: me }, ctx), view, ctx);
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
   return { input, pick: choice, mem: { ...mem, intent, awareness, motor, tactics } };

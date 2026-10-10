@@ -7,6 +7,7 @@ import type { InputState, Snapshot, WallView } from '../src/shared/protocol.ts';
 import { setInput, step } from '../src/shared/sim.ts';
 import { snapshotFor } from '../src/shared/sim/snapshot.ts';
 import { botThink, newBotMemory } from '../src/server/bots.ts';
+import { VETERAN } from '../src/server/bot/aim.ts';
 import { arenaFor } from '../src/server/bot/arena.ts';
 import { emptyWorld, grantPerks, setWalls, spawnAt, TICK_MS } from './helpers.ts';
 
@@ -111,7 +112,7 @@ test('a bot throws a grenade where a moving target will be when it lands', () =>
     grantPerks(w, bot, ['extended', 'thickSkin', 'grenade']);
     const target = spawnAt(w, 1350, 850);
     const r = seeded(seed);
-    let mem = newBotMemory(r);
+    let mem = newBotMemory(r, { skill: VETERAN });
     for (let i = 0; i < 30; i++) {
       const d = botThink(snapshotFor(w, bot.id), arenaFor(w), mem, r);
       mem = d.mem;

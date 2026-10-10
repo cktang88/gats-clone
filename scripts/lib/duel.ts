@@ -5,6 +5,7 @@ import { addPlayer, step } from '../../src/shared/sim.ts';
 import { effectiveStats } from '../../src/shared/sim/stats.ts';
 import { createWorld, rand } from '../../src/shared/sim/world.ts';
 import { newBotMemory, type BotMemory } from '../../src/server/bots.ts';
+import { VETERAN } from '../../src/server/bot/aim.ts';
 import { PERSONALITY_IDS } from '../../src/server/bot/intent.ts';
 import { thinkBots } from '../../src/server/bot/tick.ts';
 
@@ -30,7 +31,7 @@ export function duel(spec: DuelSpec): DuelResult {
     const p = addPlayer(w, gun, { weapon: GUNS[gun].base, armor: spec.armor, color: 'red' }, { at: { x, y: mid } });
     p.gun = gun;
     if (p.life.k === 'alive') Object.assign(p.life, { ammo: effectiveStats(p).mag, shieldUntil: -Infinity });
-    mems.set(p.id, { ...newBotMemory(r), persona: personas[mems.size]! });
+    mems.set(p.id, { ...newBotMemory(r, { skill: VETERAN }), persona: personas[mems.size]! });
     return p;
   };
   const [left, right] = spec.swap ? [spec.b, spec.a] : [spec.a, spec.b];

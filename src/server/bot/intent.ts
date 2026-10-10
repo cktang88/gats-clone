@@ -1,6 +1,6 @@
 import { GUNS, type GunId } from '../../shared/defs.ts';
 import type { ZoneView } from '../../shared/protocol.ts';
-import { TICK_MS } from './aim.ts';
+import { TICK_MS, type SkillKnobs } from './aim.ts';
 import { doorLanes, openSpot, type BotArena } from './arena.ts';
 import { aimsAtLead, BLIND_AT, type Perception, type Threat } from './awareness.ts';
 import { sightBlocked } from '../../shared/sim/vision.ts';
@@ -41,6 +41,18 @@ export const PERSONALITIES: Record<PersonalityId, Personality> = {
   cautious: { rangeMul: 1, retreatHp: 0.2, healedHp: 0.45, peekMs: [700, 1200], hideMs: [500, 900], peekOdds: 0.4, flankOdds: 0.2, pushOdds: 0.85, sidestepOdds: 0.5, plantsFromCover: false, commitMul: 1.2, evasion: 1, dodgeMs: [700, 2000], reactMul: 0.95, takesOdds: -0.05 },
   marksman: { rangeMul: 1.15, retreatHp: 0.15, healedHp: 0.4, peekMs: [900, 1500], hideMs: [400, 800], peekOdds: 0.5, flankOdds: 0.1, pushOdds: 0.7, sidestepOdds: 0.2, plantsFromCover: true, commitMul: 1.3, evasion: 0.65, dodgeMs: [600, 1500], reactMul: 0.85, takesOdds: -0.2 },
 };
+
+/**
+ * A temper played at a skill (`BOT_SKILL` in aim.ts): a rookie takes worse fights (`oddsShift`), goes round less (`flankMul`). Its slower
+ * reaction and hand are in its aim (`skilled`). A veteran's temper is the temper itself.
+ */
+export function skilledPersona(p: Personality, k: SkillKnobs | undefined): Personality {
+  if (!k || (k.oddsShift === 0 && k.flankMul === 1)) return p;
+  return { ...p, takesOdds: p.takesOdds + k.oddsShift, flankOdds: p.flankOdds * k.flankMul };
+}
+
+/** Whether a bot of this skill reads it this think (a check a veteran always makes); draws from the random stream only below a veteran. */
+const reads = (c: IntentCtx, odds: number | undefined) => odds === undefined || odds >= 1 || c.rand() < odds;
 
 /**
  * How far from an enemy a gun wants to fight, by what the gun is for (src/shared/roles.ts): `max` is the farthest it will let a fight sit before it
@@ -109,6 +121,8 @@ export type IntentCtx = {
   supply?: Supply | null;
   /** Its read of the fight (tactics.ts): sightings and where it pre-aims; absent in a test or a mode that gives it none. */
   tac?: Tactics;
+  /** Its skill's knobs (`BOT_SKILL` in aim.ts); absent, a veteran's. `persona` already carries the skill's share of the temper (`skilledPersona`). */
+  skill?: SkillKnobs;
 };
 
 /** The ticks since this bot last planned (1 when it plans every tick). */
@@ -278,7 +292,7 @@ function lostSight(v: Perception, c: IntentCtx, target: number): Plan {
   if (sightBlocked(v.smokes, v.me.x, v.me.y, last.x, last.y)) return { k: 'takePosition', spot: v.me, facing: last };
   // He was last seen planted with this way pre-aimed: walking round his corner is walking into his crosshair. It goes round another way,
   // or holds the angle on him from cover until he moves.
-  const held = holdsAngle(c.tac?.seen.find((s) => s.id === last.id), v.me, v.tick);
+  const held = holdsAngle(c.tac?.seen.find((s) => s.id === last.id), v.me, v.tick) && reads(c, c.skill?.readsHeld);
   if (c.rand() < c.persona.flankOdds || (held && c.rand() < 0.5)) return flankPlan(v, c, target, last);
   if (held) {
     const spot = pickCover(c.arena.cover, c.arena.nav, v.solids, v.me, [last], { reach: COVER_REACH_PX, range: c.band.ideal, peek: false, taken: v.allies, takenPx: MATE_COVER_PX })?.spot ?? v.me;
@@ -343,7 +357,8 @@ const coverBlown: Interrupt = (cur, v, c) => {
   if (!spot) return null;
   const open = v.threats.filter((t) => clearShot(v.solids, spot, t.p));
   const t = open[0];
-  if (!t) return null;
+  // A rookie is slower to see that someone has come round its cover: it notices on a think only at its skill's odds.
+  if (!t || !reads(c, c.skill?.flankRead)) return null;
   const all = v.threats.map(pos);
   if (cur.k === 'reloadInCover' || cur.k === 'retreatAndHeal') {
     const hide = hideFrom(v, c, pos(t));
@@ -521,7 +536,7 @@ function advancePeekPhase(cur: Intent, v: Perception, c: IntentCtx): Intent {
   const unansweredPeek = !answered && cur.phase === 'peek' && !v.underFire && v.threats.some((t) => t.p.id === cur.target);
   if (unansweredPeek) return cur;
   // He holds the angle it would peek into (planted, aimed at its peek): it waits him out a little, then goes round another way.
-  if (cur.phase === 'hide' && !caught && holdsAngle(seen, cur.peek, v.tick)) {
+  if (cur.phase === 'hide' && !caught && holdsAngle(seen, cur.peek, v.tick) && reads(c, c.skill?.readsHeld)) {
     const waits = cur.waits ?? 0;
     if (waits >= PEEK_WAITS && seen) return startIntent(flankPlan(v, c, cur.target, seen), c);
     return { ...cur, waits: waits + 1, phaseUntil: v.tick + ticks(between(PEEK_WAIT_MS, c.rand)) };

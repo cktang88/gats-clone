@@ -6,6 +6,11 @@ import type { InputState } from '../src/shared/protocol.ts';
 import { step } from '../src/shared/sim.ts';
 import { easedSpread, effectiveStats } from '../src/shared/sim/stats.ts';
 import { emptyWorld, equip, press, spawnAt, TICK_MS } from './helpers.ts';
+import { addPlayer } from '../src/shared/sim.ts';
+import { createWorld, rand } from '../src/shared/sim/world.ts';
+import { newBotMemory, randomLoadout, type BotMemory } from '../src/server/bots.ts';
+import { BOT_SKILL, skillOf } from '../src/server/bot/aim.ts';
+import { thinkBots } from '../src/server/bot/tick.ts';
 
 /**
  * One fixed run of a soldier `kind` against a victim `victim`, in a fresh world: the same loadout, perks, spot and inputs every time, a
@@ -62,4 +67,30 @@ test('the one rule between them: a bot\'s damage to a person counts 0.75, every 
   assert.equal(on('human', 'human'), base, 'person on person');
   assert.equal(on('human', 'bot'), base, 'person on bot');
   assert.ok(Math.abs(on('bot', 'human') - BOT_DAMAGE_TO_HUMAN * base) < 1e-6, `bot on person ${on('bot', 'human')} vs ${BOT_DAMAGE_TO_HUMAN} x ${base}`);
+});
+
+test('skill is a bot\'s brain only: rookies, regulars and veterans carry a person\'s gun and body stats, through a fight and their respawns', () => {
+  // The knobs are the AI's (aim, reaction, hand, lead, trigger discipline, tactics, ability use), never a stat the sim reads.
+  const knobs = ['aimMul', 'reactMul', 'turnMul', 'lagMul', 'lead', 'sprayMul', 'patienceMul', 'readsHeld', 'oddsShift', 'flankMul', 'flankRead', 'abilityOdds'];
+  for (const tier of ['rookie', 'regular', 'veteran'] as const) assert.deepEqual(Object.keys(BOT_SKILL[tier]).sort(), [...knobs].sort(), tier);
+  const w = createWorld('FFA', 11, 'plaza');
+  const r = () => rand(w);
+  const mems = new Map<number, BotMemory>();
+  for (let i = 0; i < 12; i++) mems.set(addPlayer(w, `bot${i}`, randomLoadout(r)).id, newBotMemory(r, { skill: skillOf((i % 3) * 0.4 + 0.05) }));
+  assert.deepEqual(new Set([...mems.values()].map((m) => m.skill!.tier)), new Set(['rookie', 'regular', 'veteran']));
+  const check = () => {
+    for (const id of mems.keys()) {
+      const bot = w.players.get(id)!;
+      // A person standing in for him: the same loadout, gun and perks.
+      const person = { ...bot, kind: 'human' as const };
+      assert.deepEqual(effectiveStats(bot), effectiveStats(person), `${bot.name} (${mems.get(id)!.skill!.tier}) on ${bot.gun}`);
+    }
+  };
+  check();
+  for (let t = 0; t < 30 * 40; t++) {
+    thinkBots(w, mems, r);
+    step(w, TICK_MS);
+    if (t % 150 === 0) check();
+  }
+  check();
 });

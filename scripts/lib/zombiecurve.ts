@@ -2,6 +2,7 @@ import { WORLD } from '../../src/shared/defs.ts';
 import { addPlayer, step } from '../../src/shared/sim.ts';
 import { createWorld, rand } from '../../src/shared/sim/world.ts';
 import { newBotMemory, randomLoadout, type BotMemory } from '../../src/server/bots.ts';
+import { VETERAN } from '../../src/server/bot/aim.ts';
 import { thinkBots } from '../../src/server/bot/tick.ts';
 
 const TICK_MS = 1000 / WORLD.tickHz;
@@ -27,7 +28,7 @@ export function playCurve(seed: number, humans: number, mode: CurveMode, untilNi
   for (let i = 0; i < SEATS; i++) {
     const human = i < humans;
     const p = addPlayer(w, `${human ? 'h' : 'bot'}${i}`, randomLoadout(r), { kind: human ? 'human' : 'bot' });
-    bots.set(p.id, newBotMemory(r));
+    bots.set(p.id, newBotMemory(r, { skill: VETERAN }));
     if (human) roles.set(p.id, mode === 'build' && i === 0 ? 'always' : 'never');
   }
   let built = 0, night = 1, coreAt = w.run!.core.hp;

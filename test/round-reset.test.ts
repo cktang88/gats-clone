@@ -52,7 +52,9 @@ test('a room rotating through maps holds no more after seven maps than after one
   assert.equal(last.sizes.players, first.sizes.players, 'the same seats');
   assert.ok(last.botMemKb <= first.botMemKb * 1.6 + 8, `bot memories ${first.botMemKb} KB -> ${last.botMemKb} KB: ${msg()}`);
   // Nav grids: the maps' layouts are kept (one per map, built up front in production), and the per-room copies and path memos are not.
-  const gridsBound = first.grids + (last.layouts - first.layouts) * 2 + 24;
+  // Each kept layout also keeps up to `LEAF_NAVS_KEPT` grids with door leaves stamped in (arena.ts), so how many show depends on which
+  // doors the bots happened to swing on each map: the slack covers a few of those, a leak would blow through it.
+  const gridsBound = first.grids + (last.layouts - first.layouts) * 2 + 32;
   assert.ok(last.grids <= gridsBound, `live nav grids ${first.grids} -> ${last.grids} (bound ${gridsBound}): ${msg()}`);
   assert.ok(last.paths <= 256 * (last.layouts + 8), `path memos ${last.paths}`);
 });

@@ -1,10 +1,10 @@
 import { COLOR_IDS, ZOM } from '../../shared/defs.ts';
 import { ringAt, type Circle, type InputState, type PlayerView, type RingView, type RoyaleView, type Snapshot } from '../../shared/protocol.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
-import { TICK_MS } from './aim.ts';
+import { skillKnobs, TICK_MS } from './aim.ts';
 import { openSpot, type BotArena } from './arena.ts';
 import { perceive } from './awareness.ts';
-import { bandFor, nextIntent, PERSONALITIES, startIntent, type Intent, type IntentCtx } from './intent.ts';
+import { bandFor, nextIntent, PERSONALITIES, skilledPersona, startIntent, type Intent, type IntentCtx } from './intent.ts';
 import { act } from './motor.ts';
 import { dist, isOpen, type Point } from './nav.ts';
 
@@ -77,10 +77,11 @@ export function crawlThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, m
 export function royaleThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, arena: BotArena, mem: BotMemory, rand: () => number): Omit<BotDecision, 'pick'> {
   const now = snap.tick * TICK_MS;
   const { awareness, view } = perceive(snap, arena, me, mem.awareness);
-  const persona = PERSONALITIES[mem.persona];
+  const skill = skillKnobs(mem.skill);
+  const persona = skilledPersona(PERSONALITIES[mem.persona], skill);
   const { circle, urgent } = goalCircle(royale.ring, me, snap.self.speed, now);
   const home = { at: anchorFor(snap, royale, me, circle, arena), r: HOME_R, face: { x: circle.x, y: circle.y } };
-  const ctx: IntentCtx = { tick: snap.tick, persona, role: null, band: bandFor(view.me.gun, persona), arena, rand, home };
+  const ctx: IntentCtx = { tick: snap.tick, persona, role: null, band: bandFor(view.me.gun, persona), arena, rand, home, skill };
   const current = ringAt(royale.ring, now);
   const outside = !inside(me, circle, EDGE_PX) && (urgent || dist(me, current) > current.r);
   const fighting = view.threats.some((t) => t.p.alive);
