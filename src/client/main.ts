@@ -23,7 +23,7 @@ import { ABILITY_SCORE, abilityHint, boardNameAt, buildChipAt, drawnBoardNames, 
 import { createFriendsUi } from './friends.ts';
 import { applyPhoneHud } from './phonehud.ts';
 import { createAutoFullscreen, requestFullscreen } from './fullscreen.ts';
-import { crosshairShown, installCursorLayer } from './cursorlayer.ts';
+import { crosshairShown, drawPointer, installCursorLayer, pointerFor, type PointerKind } from './cursorlayer.ts';
 import { dismissHomeScreenHint, installTouchGuards, measureLayout, shouldShowHomeScreenHint } from './viewport.ts';
 import { canvasBox, fitCanvas } from './canvasfit.ts';
 import { buttonFaces, createTouchButtons } from './touchbuttons.ts';
@@ -721,11 +721,31 @@ function frame(now: number) {
   noteFrameCost(performance.now() - start);
 }
 
+/**
+ * How the desktop cursor looks (cursorlayer.ts `pointerFor`): the crosshair over the game, an arrow over the UI, a hand over what
+ * takes a click, a name on the board included. Looked up often while the mouse moves and a few times a second while it rests,
+ * since a popup can open under a cursor that stays still.
+ */
+let pointer: PointerKind = 'crosshair';
+const pointerSeen = { x: NaN, y: NaN, at: -Infinity };
+function pointerNow(): PointerKind {
+  if (state.phase !== 'playing') return 'crosshair';
+  const t = performance.now();
+  // At most every 50 ms while the mouse moves (a hit test can force a layout), every 150 ms while it rests.
+  if (t - pointerSeen.at > (mouse.x !== pointerSeen.x || mouse.y !== pointerSeen.y ? 50 : 150)) {
+    Object.assign(pointerSeen, { x: mouse.x, y: mouse.y, at: t });
+    pointer = boardNameAt(mouse.x, mouse.y) ? 'hand' : pointerFor(document.elementFromPoint(mouse.x, mouse.y), canvas);
+  }
+  return pointer;
+}
+
 function drawFrame(realNow: number) {
   // A hit-stop holds what is drawn on one instant for a few ms; the snapshots, inputs and sounds keep the real clock.
   const now = stepClock(stopClock, realNow);
   // The crosshair rides its own layer above every DOM overlay (cursorlayer.ts); a touch screen keeps its reticle on the canvas.
   const top = touchScreen ? undefined : cursorLayer.frame(mouse, crosshairShown({ phase: state.phase, touch: touchScreen, mouseAiming, paused: pause.isOpen(), rangeOpen: rangeUi.isOpen() }), state.phase !== 'menu');
+  // Over a piece of the UI the cursor is a plain one, drawn where the crosshair would be (the OS cursor stays hidden under the lock).
+  const plain = top && cursorLayer.probe().shown ? pointerNow() : 'crosshair';
   musicUpdate(state, realNow, firing);
   radioUpdate(state, realNow, sendRadio);
   const s = drawnSessionOf(state);
@@ -803,7 +823,7 @@ function drawFrame(realNow: number) {
   // The shader pass takes the finished world; the HUD then draws over a cleared canvas, crisp and unprocessed.
   const glWorld = processFrame(canvas, { night: nightAmount(), storm: !!snap.royale }, now, view.w, view.h, view.dpr);
   if (glWorld) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); }
-  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building ? spreadOf(s.firing) : null;
+  const spread = state.phase === 'playing' && mouseAiming && me?.alive && !s.building && plain === 'crosshair' ? spreadOf(s.firing) : null;
   drawScreenPulse(ctx, view.w, view.h, view.dpr, realNow, !glWorld);
   if (me?.alive) drawHeartbeat(ctx, view.w, view.h, view.dpr, now, me.hp / me.maxHp);
   // The crosshair's hit marker is killfx's, so the HUD is handed a feedback without one.
@@ -812,7 +832,8 @@ function drawFrame(realNow: number) {
   drawHud(ctx, view.dpr, shakenCamera, snap, s, now, mouse, spread, fullBoard, top);
   drawLightingDev(ctx, view.dpr);
   s.feedback = fb;
-  if (state.phase === 'playing') drawHitMarker(top?.ctx ?? ctx, top ? top.local(mouse) : mouse, fb.hitmarker, realNow);
+  if (state.phase === 'playing' && plain === 'crosshair') drawHitMarker(top?.ctx ?? ctx, top ? top.local(mouse) : mouse, fb.hitmarker, realNow);
+  if (top && plain !== 'crosshair') drawPointer(top.css(), plain, mouse.x, mouse.y);
   if (state.phase === 'playing') drawSticks(ctx, sticks, view.dpr, view.w, view.h, touchScreen);
   medalToasts(state.phase === 'menu' ? [] : s.moments.medals, now);
   xpCard.update(realNow);

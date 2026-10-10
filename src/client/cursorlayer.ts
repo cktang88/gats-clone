@@ -57,6 +57,58 @@ export function layerBox(at: Point, dpr: number, k = 1): LayerBox {
   return { x: (Math.round(at.x * d) - half) / d, y: (Math.round(at.y * d) - half) / d, px: half * 2, css: (half * 2) / d };
 }
 
+/**
+ * What the cursor is over decides how it looks: the crosshair over the game, a plain arrow over any other piece of the UI (a
+ * popup, the chat, a panel), and a pointing hand over something that takes a click (a button, a link, a name on the board).
+ */
+export type PointerKind = 'crosshair' | 'arrow' | 'hand';
+/** What takes a click, for the hand. */
+export const CLICKABLE = 'button, a[href], [role="button"], input, select, textarea, label, summary, .chat-name';
+type Hit = { closest(selector: string): unknown } | null;
+
+/** The look for the element under the cursor (`hit`), `game` being the game canvas, where the crosshair aims. */
+export function pointerFor(hit: Hit, game: unknown): PointerKind {
+  if (!hit || hit === game) return 'crosshair';
+  return hit.closest(CLICKABLE) ? 'hand' : 'arrow';
+}
+
+type PathCtx = {
+  beginPath(): void; moveTo(x: number, y: number): void; lineTo(x: number, y: number): void; closePath(): void;
+  roundRect(x: number, y: number, w: number, h: number, r: number): void; fill(): void; stroke(): void;
+  fillStyle: unknown; strokeStyle: unknown; lineWidth: number; lineJoin: unknown;
+};
+
+/** A plain OS-style cursor in CSS px, tip (or fingertip) at (x, y): white with a dark outline, so it reads on any floor or panel. */
+export function drawPointer(ctx: PathCtx, kind: 'arrow' | 'hand', x: number, y: number) {
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#111317';
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  if (kind === 'arrow') {
+    const pts = [[0, 0], [0, 17], [4.2, 13.2], [7.2, 20], [10, 18.8], [7.1, 12.2], [12.6, 12.2]] as const;
+    ctx.moveTo(x, y);
+    for (const [px, py] of pts.slice(1)) ctx.lineTo(x + px, y + py);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    return;
+  }
+  // A pointing hand: the index finger up from a rounded palm, the thumb out to the left.
+  const ox = x - 5.5, oy = y;
+  for (const [rx, ry, rw, rh, r] of [[ox + 4, oy + 9, 11.5, 11, 3.5], [ox, oy + 10.5, 6, 4.2, 2.1], [ox + 4, oy, 4, 13, 2]] as const) {
+    ctx.beginPath();
+    ctx.roundRect(rx, ry, rw, rh, r);
+    ctx.fill();
+    ctx.stroke();
+  }
+  // Fill over the seams where the finger and thumb meet the palm, so it reads as one hand.
+  ctx.beginPath();
+  ctx.roundRect(ox + 4.8, oy + 9.8, 9.9, 3.5, 1);
+  ctx.roundRect(ox + 3.2, oy + 11.2, 2.4, 2.8, 1);
+  ctx.fill();
+}
+
 type Ctx = { setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void; clearRect(x: number, y: number, w: number, h: number): void };
 export type LayerCanvas = { width: number; height: number; style: { width: string; height: string; transform: string; display: string } };
 type Root = { classList: { toggle(name: string, on?: boolean): unknown } };
@@ -110,6 +162,12 @@ export function createCursorLayer<C extends Ctx>(canvas: LayerCanvas, ctx: C, ro
     local(p: Point): Point {
       dirty = true;
       return { x: p.x - box.x, y: p.y - box.y };
+    },
+    /** The context set for CSS px, to draw a plain cursor (`drawPointer`) at the aim point in place of the crosshair. */
+    css(): C {
+      dirty = true;
+      ctx.setTransform(dpr, 0, 0, dpr, -box.x * dpr, -box.y * dpr);
+      return ctx;
     },
     probe: () => ({ shown: shown === true, x: box.x + box.css / 2, y: box.y + box.css / 2, size: box.css, dpr, z: CURSOR_LAYER_Z }),
   };

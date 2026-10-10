@@ -148,3 +148,20 @@ test('a HUD scale above 1 grows the layer once, not every frame', () => {
   layer.frame({ x: 500, y: 500 }, true, true);
   assert.equal(canvas.width, grown);
 });
+
+test('the cursor is the crosshair over the game, an arrow over the UI, and a hand over what takes a click', async () => {
+  const { pointerFor, drawPointer } = await import('../src/client/cursorlayer.ts');
+  const game = { closest: () => null };
+  const panel = { closest: () => null };
+  const button = { closest: (sel: string) => (sel.includes('button') ? {} : null) };
+  assert.equal(pointerFor(game, game), 'crosshair');
+  assert.equal(pointerFor(null, game), 'crosshair', 'off the page');
+  assert.equal(pointerFor(panel, game), 'arrow');
+  assert.equal(pointerFor(button, game), 'hand');
+  for (const kind of ['arrow', 'hand'] as const) {
+    let filled = 0;
+    const ctx = { beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, roundRect() {}, fill() { filled++; }, stroke() {}, fillStyle: '', strokeStyle: '', lineWidth: 0, lineJoin: '' };
+    drawPointer(ctx, kind, 10, 10);
+    assert.ok(filled > 0, `${kind} is drawn`);
+  }
+});
