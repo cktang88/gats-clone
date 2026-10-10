@@ -224,7 +224,8 @@ const STEPS: Record<string, () => Promise<void>> = {
     await openMenu();
     expect('Zombies is picked from the dropdown and Next goes on', await pickZombies());
     await sleep(300);
-    await clickEl('#loadout-menu .weapon:nth-child(6)');
+    // The LMG by default; ZOM_WEAPON=1 picks the pistol (WEAPON_IDS order), for the nightbuild step.
+    await clickEl(`#loadout-menu .weapon:nth-child(${process.env.ZOM_WEAPON ?? 6})`);
     await clickEl('#play');
     expect('Start a squad joins a zombies room', await until(() => frames.welcome?.mode === 'ZOM', 8000), `mode ${frames.welcome?.mode}`);
     squad = new URLSearchParams(await js(`location.search`)).get('squad') ?? '';
@@ -579,6 +580,52 @@ const STEPS: Record<string, () => Promise<void>> = {
     expect('dawn forecasts the coming night', await until(async () => (await zdev())?.callouts.some((c) => c === `Tonight · ${forecast(2, squadShare(frames.snap!.players))}`) ?? false, 6000));
     await sleep(300);
     await shot('zom-dawn');
+  },
+  /**
+   * Needs ZOM_WEAPON=1 on the squad step: a pistol holder keeps build mode through nightfall and builds, upgrades and takes down by night
+   * (`ZombieRole.nightBuild`). Brings the night with N rather than waiting out the day.
+   */
+  async nightbuild() {
+    expect('the driven player holds a pistol', me()?.gun === 'pistol', me()?.gun);
+    await until(() => run()?.phase === 'day' && me()?.alive, 60_000);
+    if (run()?.phase === 'day') await tap('KeyN', 'n');
+    expect('night falls', await until(() => run()?.phase === 'night', 60_000));
+    await until(() => me()?.alive, 10_000);
+    await mouse('mouseMoved', VIEW.w / 2 + 200, VIEW.h / 2);
+    await sleep(800);
+    await shot('zom-nightbuild-hint');
+    if ((await zdev())?.building !== true) await tap('KeyB', 'b');
+    expect('B turns build mode on by night with a pistol', await until(async () => (await zdev())?.building === true));
+    const cell = await buildableCell();
+    if (!expect('the ghost turns green over a buildable cell by night', cell !== null, (await zdev())?.ghost?.label)) return;
+    await shot('zom-nightbuild-ghost');
+    const scrap = run()!.scrap, earned = frames.scrapEarned;
+    const at = await toScreen(cellCenter(cell!.cx, cell!.cy).x, cellCenter(cell!.cx, cell!.cy).y);
+    await click(at!.x, at!.y);
+    expect('a left click puts the wall up on the server by night', await until(() => hasWall(frames.snap?.buildings, cell!.cx, cell!.cy)), `cell ${cell!.cx},${cell!.cy} phase ${run()?.phase}`);
+    await sleep(200);
+    // Kills meanwhile pay into the bank, so the spend is counted net of them.
+    const spent = scrap + frames.scrapEarned - earned - run()!.scrap;
+    expect('the night wall cost its usual scrap', spent === BUILDINGS.wall.cost, `${spent} spent, ${scrap} -> ${run()!.scrap}`);
+    await sleep(300);
+    await shot('zom-nightbuild-wall');
+    const lv = () => frames.snap?.buildings?.find((b) => b.cx === cell!.cx && b.cy === cell!.cy)?.lv ?? 1;
+    const lv0 = lv();
+    await aimAtWorld(cellCenter(cell!.cx, cell!.cy).x, cellCenter(cell!.cx, cell!.cy).y);
+    await until(async () => (await zdev())?.ghost?.refusal === 'taken');
+    await tap('KeyU', 'u');
+    expect('U upgrades the wall by night', await until(() => lv() > lv0), `level ${lv0} -> ${lv()}`);
+    await sleep(300);
+    await shot('zom-nightbuild-upgraded');
+    // Standing still by night, the driver may be bitten down meanwhile, and a downed player builds nothing: wait to be back up.
+    if (!me()?.alive) { log('note the driver went down; waiting to be back up before taking the wall down'); await until(() => me()?.alive && run()?.phase === 'night', 45_000); }
+    const back = await toScreen(cellCenter(cell!.cx, cell!.cy).x, cellCenter(cell!.cx, cell!.cy).y);
+    if ((await zdev())?.building !== true) await tap('KeyB', 'b');
+    await mouse('mouseMoved', back!.x, back!.y);
+    await until(async () => (await zdev())?.ghost?.refusal === 'taken');
+    await click(back!.x, back!.y, 'right');
+    expect('a right click takes the wall down by night', await until(() => !hasWall(frames.snap?.buildings, cell!.cx, cell!.cy)), `phase ${run()?.phase}`);
+    expect('still night throughout', run()?.phase === 'night');
   },
   async ready() {
     expect('by day before readying up', await until(() => run()?.phase === 'day' && me()?.alive, 60_000));

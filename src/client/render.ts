@@ -47,7 +47,7 @@ import { leavesFromViews } from '../shared/sim/doors.ts';
 import './themes/index.ts';
 import { drawAmbientGround, drawAmbientSky } from './ambientfeed.ts';
 import { mapOf, themeOf } from './themes/registry.ts';
-import { upgradeTarget, type Ghost } from './zombies.ts';
+import { canBuildNow, upgradeTarget, type Ghost } from './zombies.ts';
 import { turretRangesOn } from './settings.ts';
 import { TRACER } from './rounds.ts';
 import { heftOf } from './shake.ts';
@@ -205,7 +205,8 @@ export function drawWorld(ctx: CanvasRenderingContext2D, f: Frame) {
   drawRadioOverlay(ctx, now, reducedMotion());
   // Turret ranges and what the siege's guns light (muzzle flashes, lamps, gauges) stand over the night, so they read in the dark.
   if (snap.run && snap.buildings) {
-    const day = snap.run.phase === 'day', all = snap.buildings;
+    // `day` here is whether you may build now: by day, or by night with a pistol (the next level's ring, the cursor's and U's target).
+    const day = canBuildNow(snap), all = snap.buildings;
     drawSiegeLights(ctx, {
       buildings: all.filter((b) => standsUp(b) && inView(view, b.cx * ZOM.cell, b.cy * ZOM.cell, ZOM.cell, ZOM.cell)), all, aims: s.turretAims, core: snap.run.core, day, ghost: f.ghost ?? null,
       cursor: day && !f.ghost ? f.cursor ?? null : null, upgrade: day && !f.ghost ? upgradeTarget(snap, s.lastSelf)?.b ?? null : null, squadRings: dark > 0.5 && turretRangesOn(),

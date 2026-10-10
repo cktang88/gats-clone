@@ -5,7 +5,7 @@ import { MAPS } from '../src/shared/maps.ts';
 import { parseClientMsg } from '../src/shared/protocol.ts';
 import { build, demolish } from '../src/shared/sim/run.ts';
 import { circleHitsRect } from '../src/shared/sim/movement.ts';
-import { createWorld, newId, solidRects, spawnPoint, type World } from '../src/shared/sim/world.ts';
+import { createWorld, newId, solidRects, spawnPoint, type Player, type World } from '../src/shared/sim/world.ts';
 import { press, run, spawnAt } from './helpers.ts';
 import { repairScrapPerHp } from '../src/shared/sim/build.ts';
 
@@ -31,8 +31,9 @@ test('a wall goes up on a clear cell by day for its cost, counts toward the buil
   assert.ok(p.x >= (CELL.cx + 1) * ZOM.cell + 24 - 0.01, `walked into the wall to x ${p.x.toFixed(1)}`);
 });
 
-const refusals: [string, (w: World) => { cx: number; cy: number; by?: { x: number; y: number } }][] = [
-  ['notDay', (w) => { w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity }; return CELL; }],
+const refusals: [string, (w: World, p: Player) => { cx: number; cy: number; by?: { x: number; y: number } }][] = [
+  // Only a pistol-class gun builds by night (`ZombieRole.nightBuild`), so the builder holds an SMG.
+  ['notDay', (w, p) => { p.gun = 'smg'; w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity }; return CELL; }],
   ['farFromCore', () => ({ cx: 17, cy: 30, by: { x: 17.5 * ZOM.cell + 60, y: 1525 } })],
   ['outOfReach', () => ({ cx: CELL.cx - 5, cy: CELL.cy })],
   ['cover', (w) => { w.walls.push({ x: CELL.cx * ZOM.cell + 10, y: CELL.cy * ZOM.cell, w: 24, h: 140, built: true, expiresAt: Infinity }); return CELL; }],
@@ -51,7 +52,7 @@ const refusals: [string, (w: World) => { cx: number; cy: number; by?: { x: numbe
 for (const [reason, arrange] of refusals) {
   test(`a wall is refused with ${reason}, and nothing is spent`, () => {
     const { w, p } = dayWorld();
-    const { cx, cy, by } = arrange(w);
+    const { cx, cy, by } = arrange(w, p);
     if (by) { p.x = by.x; p.y = by.y; }
     const scrap = w.run!.scrap, walls = w.buildings.length;
     assert.equal(build(w, p.id, 'wall', cx, cy), reason);
@@ -59,9 +60,10 @@ for (const [reason, arrange] of refusals) {
   });
 }
 
-test('a wall comes down by day for half its cost back, but not at night', () => {
+test('a wall comes down by day for half its cost back, but not at night without a pistol', () => {
   const { w, p } = dayWorld();
   build(w, p.id, 'wall', CELL.cx, CELL.cy);
+  p.gun = 'smg';
   const scrap = w.run!.scrap;
   w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity };
   assert.equal(demolish(w, p.id, CELL.cx, CELL.cy), false);

@@ -3,7 +3,7 @@ import { MAPS } from '../maps.ts';
 import { biteBuilding, distToRect, hurtCore, tickHorde } from './horde.ts';
 import { explode } from './combat.ts';
 import { tickTurrets } from './turrets.ts';
-import { buildingView, buildRefusal, cellRect, linesOf, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
+import { buildingView, buildRefusal, buildsNow, cellRect, linesOf, costOf, levelOf, maxHpOf, refundFor, repairScrapPerHp, serviceTarget, turretDef, upgradeCost, upgradeRefusal, wallTier, type BuildRefusal, type BuildSite, type UpgradeRefusal } from './build.ts';
 import { armorWatch, tickArmor, tickTraps, tickUtilities, trapWatch } from './utility.ts';
 import { circleBlocked, clamp, dist2, type Rect } from './movement.ts';
 import { addScore, freshLife, resetProgress } from './stats.ts';
@@ -80,7 +80,7 @@ function siteFor(w: World, run: Run, p: Player, core: Rect): BuildSite {
     ...[...w.players.values()].filter((o) => o.life.k !== 'dead').map((o) => ({ x: o.x, y: o.y, r: WORLD.playerRadius })),
     ...w.zombies.map((z) => ({ x: z.x, y: z.y, r: ZOMBIES[z.kind].radius })),
   ];
-  return { day: run.phase.k === 'day', builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, buildings: [...w.buildings, ...w.floor].map(buildingView), scrap: run.scrap };
+  return { canBuild: buildsNow(run.phase.k, p.gun), builder: p.life.k === 'alive' ? p : null, core, cover: coverRects(w), bodies, buildings: [...w.buildings, ...w.floor].map(buildingView), scrap: run.scrap };
 }
 
 /** Puts `kind` up on a cell for its price; a wall goes up at tier `lv` (1 to 3), anything else at its first level. */
@@ -104,7 +104,7 @@ export function build(w: World, id: number, kind: BuildingKind, cx: number, cy: 
 }
 
 /**
- * A line dragged out in build mode: each cell in order from its start goes up by the single build's rules (day, reach, a free cell, the scrap),
+ * A line dragged out in build mode: each cell in order from its start goes up by the single build's rules (the hour, reach, a free cell, the scrap),
  * so the line stands as far as the scrap lasts and a cell that cannot take it is passed over. Answers each cell's refusal, null for those built.
  */
 export function buildLine(w: World, id: number, kind: BuildingKind, cells: readonly (readonly [number, number])[], lv = 1): (BuildRefusal | null)[] {
@@ -115,7 +115,7 @@ export function buildLine(w: World, id: number, kind: BuildingKind, cells: reado
 const standingAt = (w: World, cx: number, cy: number) => w.buildings.find((b) => b.cx === cx && b.cy === cy) ?? w.floor.find((b) => b.cx === cx && b.cy === cy);
 
 /**
- * Steps the wall, turret or utility on a cell up a level for the price of the step, by day, within reach. Its health and load keep their share, so a worn building stays worn.
+ * Steps the wall, turret or utility on a cell up a level for the price of the step, by day (or by night with a gun that builds then), within reach. Its health and load keep their share, so a worn building stays worn.
  * A turret's builder keeps the credit for its kills.
  */
 export function upgrade(w: World, id: number, cx: number, cy: number): UpgradeRefusal | null {
@@ -141,7 +141,7 @@ export function demolish(w: World, id: number, cx: number, cy: number): boolean 
   const p = w.players.get(id);
   const run = w.run;
   const building = standingAt(w, cx, cy);
-  if (!p || !run || !building || run.phase.k !== 'day' || p.life.k !== 'alive') return false;
+  if (!p || !run || !building || !buildsNow(run.phase.k, p.gun) || p.life.k !== 'alive') return false;
   const at = cellCenter(cx, cy);
   if (dist2(at.x, at.y, p.x, p.y) > ZOM.reachPx ** 2) return false;
   if (building.kind === 'spikes') w.floor = w.floor.filter((b) => b !== building);
