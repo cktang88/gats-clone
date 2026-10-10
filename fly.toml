@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for tinwar on 2026-10-09T23:59:05Z
+# fly.toml app configuration file generated for tinwar on 2026-10-10T00:12:33Z
 #
 # See https://docs.fly.io/reference/configuration for information about how to use this file.
 #
@@ -6,7 +6,7 @@
 app = 'tinwar'
 primary_region = 'iad'
 kill_signal = 'SIGTERM'
-kill_timeout = '10s'
+kill_timeout = '5m'
 
 [build]
 
@@ -23,7 +23,7 @@ kill_timeout = '10s'
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'off'
+  auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 1
   checks = [{ grace_period = '10s', interval = '15s', method = 'GET', path = '/healthz', timeout = '2s' }]
