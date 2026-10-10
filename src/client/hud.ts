@@ -1843,6 +1843,13 @@ function drawSlot(ctx: CanvasRenderingContext2D, b: SlotBox, slot: LoadoutSlot, 
       ctx.fill();
       ctx.stroke();
     }
+    // Zombies: the gun's scrap bounty as a small gold chip in the top-right corner ("+30%").
+    if (slot.bounty) {
+      setFont(ctx, 800, TYPE.micro);
+      const tw = ctx.measureText(slot.bounty).width + 8, bx = b.x + shake + b.w - tw - 4;
+      cel(ctx, bx, b.y + 3, tw, 14, '#2f343d', 4, 1.5);
+      text(ctx, slot.bounty, bx + tw / 2, b.y + 10.5, TYPE.micro, slot.bounty.startsWith('+') ? PALETTE.gold : PANEL_INK, 'center', 800);
+    }
   } else if (slot.perk) {
     strokeIcon(ctx, PERK_ICONS[slot.perk], cx, iconCy, 24, ready ? CEL.ink : cooling ? 'rgba(236, 230, 214, 0.45)' : PANEL_INK, 2.6);
   }
@@ -1949,7 +1956,7 @@ function drawLoadout(hud: Hud, x: number, y: number, compact: boolean): StripEnd
     top = y + r.h + (compact ? 9 : 11);
     beside.push({ x: r.x + r.w + 10, y: y + RANK.h / 2 });
   }
-  const slots = loadoutSlots(me.gun, self.perks ?? {}, self.ability, touchScreen ? '' : 'Space');
+  const slots = loadoutSlots(me.gun, self.perks ?? {}, self.ability, touchScreen ? '' : 'Space', !!snap.run);
   if (!slots.length) { slotsSeen.clear(); slotsLife = me.id; return { bottom: loadoutDrawn.rank ? top - 6 : y, beside: beside.length ? beside : [{ x, y: y + RANK.h / 2 }] }; }
   const boxes = slotBoxes(slots, x, top, compact);
   const seen = seenSlots(me, slots, boxes, now, dt);

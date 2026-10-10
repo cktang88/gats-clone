@@ -4,6 +4,7 @@ import { clamp, decayKnock, dist2, rectsOverlap, segmentBlocked, slide, type Rec
 import { aiOf, BOID, buildGrid, LURE, personality, steer, type ZAi } from './boids.ts';
 import { MAPS } from '../maps.ts';
 import { cellRect } from './build.ts';
+import { paceOf } from './zomroles.ts';
 import { coreRect, coverRects, solidRects, type Building, type Player, type Run, type World, type Zombie } from './world.ts';
 
 const UNREACHABLE = 0xffff;
@@ -237,7 +238,8 @@ export function tickHorde(w: World, run: Run, dtMs: number) {
       if (flow[n]! >= UNREACHABLE || walled(n)) avoid.push(cellRect(nx, ny));
     }
     const s = steer(g, i, w.now, sx, sy, avoid);
-    const top = def.speed * me.speed * mul.speed;
+    // A hit's hold (an LMG's suppression, a shotgun's stagger) takes off its share of the pace.
+    const top = def.speed * me.speed * mul.speed * paceOf(z, w.now);
     // A zombie that has not moved yet takes up its heading at once, so a fresh one walks in at full pace.
     const k = ai.hx === 0 && ai.hy === 0 ? 1 : Math.min(1, dt * BOID.turn);
     ai.hx += (s.wx * top - ai.hx) * k;

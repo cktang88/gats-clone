@@ -234,8 +234,11 @@ export type GameEvent =
   /** `n` is the shooter's shot number (`Player.fired`), which picks where in the spread each pellet flies (`spreadPick`). */
   | { e: 'shot'; x: number; y: number; angle: number; silenced: boolean; owner: number; gun: GunId; n?: number }
   | { e: 'slash'; x: number; y: number; angle: number; owner: number }
-  /** A zombie died; `by` is the squad player whose own shot, blade or blast killed it, null for a turret's kill. */
-  | { e: 'zkill'; id: number; kind: ZombieKind; x: number; y: number; by: number | null }
+  /**
+   * A zombie died; `by` is the squad player whose own shot, blade or blast killed it, null for a turret's kill. `scrap` is what the kill paid the squad's bank,
+   * a player's own kill times their gun's bounty (`zombieBounty`); absent when it paid nothing (burnt at first light).
+   */
+  | { e: 'zkill'; id: number; kind: ZombieKind; x: number; y: number; by: number | null; scrap?: number }
   /** A turret at cell center (`x`, `y`) fired toward `angle`, to 0.01 rad. Its rounds stay off `bullets`: the client draws each from this. */
   /** `reach` is how far a lobbed round flies before it bursts. */
   | { e: 'turret'; kind: TurretKind; x: number; y: number; angle: number; reach?: number }

@@ -438,6 +438,9 @@ a.wordmark { text-decoration: none; }
 .perk.evolve canvas { width: 108px; height: 34px; }
 .perk.evolve b { font-size: 15px; }
 .perk.evolve small { font-size: 11px; line-height: 1.25; color: var(--muted); text-align: center; }
+.perk.evolve small.zom-perk { color: var(--accent); font-weight: 700; }
+.weapon small.zom-perk { white-space: normal; color: var(--accent); }
+.weapon small.zom-perk[hidden] { display: none; }
 .perk.evolve .traits { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; margin-top: 2px; }
 .perk.evolve .trait { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 2px; border-radius: 9px; background: rgba(255, 255, 255, 0.08); color: var(--ink); }
 .perk.evolve .trait i { font: 600 9px/1 var(--display); font-style: normal; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; }

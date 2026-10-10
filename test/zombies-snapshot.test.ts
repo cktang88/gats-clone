@@ -36,7 +36,7 @@ test('the run view times the night by its wave and reports the run once the core
   assert.equal(night.phaseEndsAt, null);
   const share = ZOM.hordeShare({ humans: 0, bots: 2 });
   assert.equal(night.waveLeft, Object.entries(NIGHTS[0]!.horde).reduce((n, [k, listed]) => n + hordeCount(k as ZombieKind, listed, share), 0));
-  w.run!.stats.set(p.id, { name: p.name, kills: 4, revives: 1, built: 2 });
+  w.run!.stats.set(p.id, { name: p.name, kills: 4, revives: 1, built: 2, scrap: 12, dealt: 300 });
   const none = { walker: 0, brute: 0, runner: 0, plated: 0, bloater: 0, colossus: 0 };
   w.run!.turretKills = { sentry: { ...none, walker: 7, brute: 1 }, cannon: { ...none, brute: 2 }, scatter: { ...none, runner: 3 }, mortar: none, tesla: none };
   w.run!.bastionKills = 5;

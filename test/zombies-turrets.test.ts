@@ -166,7 +166,7 @@ test('a turret\'s kill pays the squad its scrap and the builder its score, and c
   const scrap = w.run!.scrap;
   let zkill = null;
   for (let ms = 0; ms < 1000 && !zkill; ms += TICK_MS) { step(w, TICK_MS); zkill = w.events.find((e) => e.e === 'zkill') ?? null; }
-  assert.deepEqual(zkill && { ...zkill, x: 0, y: 0, id: 0 }, { e: 'zkill', id: 0, kind: 'brute', x: 0, y: 0, by: null });
+  assert.deepEqual(zkill && { ...zkill, x: 0, y: 0, id: 0 }, { e: 'zkill', id: 0, kind: 'brute', x: 0, y: 0, by: null, scrap: ZOMBIES.brute.scrap });
   assert.equal(w.run!.scrap - scrap, ZOMBIES.brute.scrap);
   assert.deepEqual([builder.score, builder.kills, w.run!.stats.get(builder.id)?.kills ?? 0], [Math.round(ZOMBIES.brute.score * ZOM.levelScoreMul), 0, 0]);
   assert.deepEqual(w.run!.turretKills.cannon.brute, 1);
@@ -197,7 +197,8 @@ test('zombies bite a turret down like a wall', () => {
 
 test('holding use by a turret short of ammo reloads it for scrap up to a full load, mending a worn one first', () => {
   const w = nightWorld();
-  const p = spawnAt(w, TX, TY + 100);
+  // An assault rifle reloads at the plain rate; a sidearm would reload faster (`ZombieRole.mend`).
+  const p = spawnAt(w, TX, TY + 100, { loadout: { weapon: 'assault' } });
   const t = addTurret(w, 'sentry', p.id, { ammo: 0, hp: BUILDINGS.sentry.hp - 200 });
   w.run!.scrap = 1000;
   press(w, p, { use: true });

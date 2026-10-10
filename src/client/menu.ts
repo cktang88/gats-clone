@@ -1,7 +1,7 @@
 import { ARMORS, ARMOR_IDS, COLORS, COLOR_IDS, GUNS, WEAPON_IDS, type ModeId, type WeaponId } from '../shared/defs.ts';
 import { HANDLING } from '../shared/handling.ts';
 import type { Loadout } from '../shared/protocol.ts';
-import { CLASS_ROLES } from '../shared/roles.ts';
+import { CLASS_ROLES, zombieGunLine } from '../shared/roles.ts';
 import { authenticate, dropGuestClaim, fetchOwnEmail, fetchStats, loadAccount, requestReset, saveOwnEmail, loadGuestClaims, loadName, pickGuestClaim, saveAccount, type Account, type ServerInfo } from './api.ts';
 import { CARRY_LINE } from './enlist.ts';
 import { EMAIL_MAX, emailError } from '../shared/email.ts';
@@ -42,7 +42,11 @@ function gunStats(id: WeaponId): HTMLElement {
 }
 
 /** `gear` is the menu's gear-up screen: bigger gun art, paint pots for colours, and `peek` hears which gun the pointer is on. */
-export type PickerOpts = { gear?: boolean; peek?: (gun: WeaponId | null) => void; /** Where the colour pots go, when they sit apart from the guns and armor. */ colorRoot?: HTMLElement };
+export type PickerOpts = {
+  gear?: boolean; peek?: (gun: WeaponId | null) => void; /** Where the colour pots go, when they sit apart from the guns and armor. */ colorRoot?: HTMLElement;
+  /** Gearing up for Zombies: each gun's tile adds its scrap bounty and its job against the horde (`zombieGunLine`). */
+  zombies?: () => boolean;
+};
 
 export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (l: Loadout) => void, skin: () => string = () => '', opts: PickerOpts = {}): LoadoutPicker {
   let paintedSkin = skin();
@@ -51,7 +55,8 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
     const w = GUNS[id];
     const art = el('canvas', { className: 'gun-art' });
     const b = el('button', { type: 'button', className: 'tile weapon', title: `${w.name}: ${CLASS_ROLES[id]}` },
-      art, el('b', {}, w.name), el('small', {}, `${w.damage}${w.pellets > 1 ? `×${w.pellets}` : ''} dmg · ${w.mag} mag`), gunStats(id));
+      art, el('b', {}, w.name), el('small', {}, `${w.damage}${w.pellets > 1 ? `×${w.pellets}` : ''} dmg · ${w.mag} mag`), gunStats(id),
+      el('small', { className: 'zom-perk', hidden: true }, zombieGunLine(id)));
     b.onclick = () => set({ ...get(), weapon: id });
     if (opts.peek) {
       b.addEventListener('pointerenter', (e) => { if (e.pointerType !== 'touch') opts.peek!(id); });
@@ -90,7 +95,13 @@ export function mountLoadoutPicker(root: HTMLElement, get: () => Loadout, set: (
   opts.colorRoot?.replaceChildren(...colors);
   const refresh = () => {
     const l = get();
-    for (const [id, b] of weaponButtons) b.ariaPressed = String(id === l.weapon);
+    const zombies = opts.zombies?.() ?? false;
+    for (const [id, b] of weaponButtons) {
+      b.ariaPressed = String(id === l.weapon);
+      const zom = b.querySelector<HTMLElement>('.zom-perk');
+      if (zom) zom.hidden = !zombies;
+      b.title = zombies ? `${GUNS[id].name}: ${CLASS_ROLES[id]}. Zombies: ${zombieGunLine(id)}` : `${GUNS[id].name}: ${CLASS_ROLES[id]}`;
+    }
     if (skin() !== paintedSkin) {
       // The gun cards wear the skin you have equipped.
       paintedSkin = skin();

@@ -150,6 +150,8 @@ let squadBusy = false;
 let rangeBusy = false;
 /** The mode picked on the first menu step, and whether one has been picked (the cards only show a pick once you made it). */
 let mission: SceneId = 'FFA';
+/** The loadout pickers, once mounted; each shows Zombies' bounties and perks while the mission is Zombies. */
+let loadoutPickers: readonly { refresh(): void }[] = [];
 let chosen = false;
 let revealSquad = false;
 let view = { w: 0, h: 0, dpr: 1 };
@@ -1133,6 +1135,7 @@ function chooseZombies() {
 
 /** The gear step's header: which fight you are gearing up for. */
 function refreshMission() {
+  for (const p of loadoutPickers) p.refresh();
   const sv = servers?.find((x) => x.id === selectedRoom);
   flow.setMission({ mode: mission, detail: mission === 'ZOM' ? (squad ? `Squad ${squad}` : 'New squad on Deploy') : sv ? `${sv.players} ${sv.players === 1 ? 'player' : 'players'}` : undefined });
 }
@@ -1299,9 +1302,10 @@ const syncAcct = () => {
   });
 };
 const pickers = [
-  mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout, skinNow, { gear: true, peek: (g) => gearStage.peek(g), colorRoot: $('gear-colors') }),
-  mountLoadoutPicker($('loadout-death'), () => loadout, setLoadout, skinNow),
+  mountLoadoutPicker($('loadout-menu'), () => loadout, setLoadout, skinNow, { gear: true, peek: (g) => gearStage.peek(g), colorRoot: $('gear-colors'), zombies: () => mission === 'ZOM' }),
+  mountLoadoutPicker($('loadout-death'), () => loadout, setLoadout, skinNow, { zombies: () => mission === 'ZOM' }),
 ];
+loadoutPickers = pickers;
 nameInput.value = loadName() || account.current()?.name || '';
 /** The menu's link to your own service record follows the name you will play as. */
 const myProfile = $<HTMLAnchorElement>('my-profile');

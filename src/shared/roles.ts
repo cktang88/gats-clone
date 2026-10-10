@@ -1,4 +1,4 @@
-import type { GunId, WeaponId } from './defs.ts';
+import { zombieBounty, zombieRole, type GunId, type WeaponId } from './defs.ts';
 
 /**
  * What each gun is for. A class has one job in the fight, and the two evolutions at every step are sidegrades that change HOW you play it,
@@ -95,3 +95,12 @@ export const GUN_ROLES: Record<GunId, Role> = {
   twinMg: { role: 'Paired barrels: double rounds, double pinning', traits: ['spray', 'pin', 'deep'] },
 };
 
+
+/** Zombies only: a gun's scrap bounty as a player reads it ("+30% scrap", "-15% scrap"), or null when its kills pay the plain price. */
+export function bountyLabel(gun: GunId): string | null {
+  const pct = Math.round((zombieBounty(gun) - 1) * 100);
+  return pct === 0 ? null : `${pct > 0 ? '+' : '−'}${Math.abs(pct)}% scrap`;
+}
+
+/** Zombies only: the one line the loadout step and the HUD show for a gun, its bounty and then its job against the horde. */
+export const zombieGunLine = (gun: GunId): string => [bountyLabel(gun), zombieRole(gun).perk].filter(Boolean).join(' · ');

@@ -98,7 +98,7 @@ test('What\'s new: 10 to 20 plain lines grouped by day, newest first, rendered w
   const html = changelogHtml();
   for (const line of lines) assert.ok(html.includes(line.replace(/&/g, '&amp;').replace(/'/g, '&#39;')), line);
   assert.equal((html.match(/<li>/g) ?? []).length, lines.length);
-  assert.ok(html.indexOf('Oct 9') < html.indexOf('Oct 6'));
+  assert.ok(html.indexOf(dayLabel(dates[0]!)) < html.indexOf(dayLabel(dates.at(-1)!)), 'the newest day renders above the oldest');
   assert.equal(dayLabel('2026-10-09'), 'Oct 9');
   assert.equal(changelogHtml([{ date: '2026-01-02', items: ['<b>&'] }]).includes('&lt;b&gt;&amp;'), true, 'entries are escaped');
   assert.match(read('README.md'), /src\/client\/changelog\.ts/, 'the README tells maintainers to keep it up to date');

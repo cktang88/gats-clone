@@ -130,6 +130,8 @@ export type Bullet = {
   lobbed: boolean;
   /** Players it can still pass through, and the ones it already has. */
   penetrate: number; passed: number[];
+  /** Zombies only: the zombies it may still pass through before `penetrate` counts (`ZombieRole.pierce`), set at its first zombie. */
+  zpierce?: number;
   /** The tick a player's round was fired on, which groups a shotgun's pellets into one blast. */
   volley?: number;
   /** Players this round already suppressed in passing, so each feels it once. */
@@ -188,7 +190,7 @@ export type Match = { k: 'playing' } | { k: 'over'; winner: RoundWinner; restart
 export type LifeRecord = { id: number; name: string; kills: number; score: number; died: boolean };
 
 /** `vx`, `vy` is how fast it moved last tick, in px a second. */
-export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number; vx: number; vy: number; /** A shove from a hit, in px/s (see `KNOCK`); brutes and the colossus take none. */ knock?: Knock | null; /** The pack it walked in with, and its steering and target state (see `boids.ts`); neither goes on the wire. */ pack?: number; ai?: ZAi };
+export type Zombie = { id: number; kind: ZombieKind; x: number; y: number; hp: number; attackAt: number; vx: number; vy: number; /** A shove from a hit, in px/s (see `KNOCK`); brutes and the colossus take none. */ knock?: Knock | null; /** Zombies only: a player's hit holding it to `mul` of its pace until `until` (see `ZombieRole.slow`). */ slow?: { mul: number; until: number }; /** The pack it walked in with, and its steering and target state (see `boids.ts`); neither goes on the wire. */ pack?: number; ai?: ZAi };
 
 /** `lv` is the upgrade level, 1 to `MAX_LEVEL`; a building without one is level 1 (a wall's tier, a turret's or utility's level). */
 type Cell = { id: number; cx: number; cy: number; hp: number; lv?: number };
@@ -207,7 +209,8 @@ type RunPhase =
   | { k: 'night'; toSpawn: HordeUnit[]; nextSpawnAt: number; dawnAt: number }
   | { k: 'over'; night: number; won: boolean; restartAt: number };
 
-export type RunStats = { name: string; kills: number; revives: number; built: number };
+/** `scrap` is what this player's own kills paid the bank, bounty and all; `dealt` the harm their rounds, blasts and abilities did the horde. */
+export type RunStats = { name: string; kills: number; revives: number; built: number; scrap: number; dealt: number };
 
 /** The flow field: each grid cell's cost to reach the core, cached against the wall and building layouts it was built from. */
 type Flow = { wallsVersion: number; buildingsVersion: number; cost: Uint16Array };

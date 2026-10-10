@@ -247,7 +247,7 @@ function runView(w: World, run: Run): RunView {
     ready: [...run.ready],
     report: phase.k === 'over'
       ? {
-        night: phase.night, won: phase.won, survivors: run.survivors, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map((s) => ({ ...s })),
+        night: phase.night, won: phase.won, survivors: run.survivors, durationMs: phase.restartAt - ZOM.restartMs - run.startedAt, players: [...run.stats.values()].map(({ name, kills, revives, built }) => ({ name, kills, revives, built })),
         turretKills: byTurret((t) => ZOMBIE_KINDS.reduce((n, z) => n + run.turretKills[t][z], 0)), bastionKills: run.bastionKills,
       }
       : null,

@@ -230,6 +230,9 @@
 #menu .loadout .weapon b { display: block; padding: 9px 12px 0; font: italic 900 21px/1 var(--display); letter-spacing: 0.04em; color: var(--m-text); text-shadow: 2px 2px 0 var(--m-ink); }
 #menu .loadout .weapon[aria-pressed="true"] b { color: var(--m-text); }
 #menu .loadout .weapon small { display: block; padding: 4px 12px 0; color: var(--m-sub); font: 600 14px/1.1 var(--text); white-space: nowrap; }
+/* Gearing up for Zombies: the gun's scrap bounty and its job against the horde, wrapped under its numbers. */
+#menu .loadout .weapon small.zom-perk { white-space: normal; padding: 6px 12px 0; color: var(--m-accent); font: 700 13px/1.2 var(--text); }
+#menu .loadout .weapon small.zom-perk[hidden] { display: none; }
 #menu .loadout .gun-stats { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px 8px; width: auto; margin: 9px 12px 11px; align-items: center; }
 #menu .loadout .gun-stats span { font: 800 12px/1 var(--display); letter-spacing: 0.12em; color: var(--m-sub); }
 #menu .loadout .gun-stats i {

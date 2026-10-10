@@ -1,4 +1,5 @@
 import { GUNS, LEVELS, PERK_INFO, type AbilityId, type GunId, type PendingPick, type PerkId, type Tier } from '../shared/defs.ts';
+import { bountyLabel, zombieGunLine } from '../shared/roles.ts';
 
 /**
  * The loadout strip: what you have picked this life, one slot each, as plain data so hud.ts draws it and the test reads the same
@@ -18,6 +19,8 @@ export type LoadoutSlot = {
   desc: string;
   gun?: GunId;
   perk?: PerkId;
+  /** Zombies only: the gun's scrap bounty as a short chip on its tile ("+30%"), when it has one. */
+  bounty?: string;
 };
 
 /** Short names for the items whose full name will not fit under a 64 px tile at 14 px. */
@@ -32,12 +35,20 @@ export const shortLabel = (id: PerkId): string => SHORT[id] ?? PERK_INFO[id].nam
 const perkSlot = (kind: SlotKind, perk: PerkId, kindLabel: string): LoadoutSlot =>
   ({ kind, key: `${kind}:${perk}`, name: PERK_INFO[perk].name, label: shortLabel(perk), kindLabel, desc: PERK_INFO[perk].desc, perk });
 
-/** The slots for a life, in strip order: gun, attachment, perk, ability. Empty until the first pick. */
-export function loadoutSlots(gun: GunId, perks: Partial<Record<Tier, PerkId>>, ability: AbilityId | null, abilityKey = 'Space'): LoadoutSlot[] {
+/**
+ * The slots for a life, in strip order: gun, attachment, perk, ability. Empty until the first pick, except in Zombies, where the gun's tile is there from
+ * the start with its scrap bounty as a chip and its job against the horde in its card (`zombies`).
+ */
+export function loadoutSlots(gun: GunId, perks: Partial<Record<Tier, PerkId>>, ability: AbilityId | null, abilityKey = 'Space', zombies = false): LoadoutSlot[] {
   const slots: LoadoutSlot[] = [];
   const def = GUNS[gun];
-  if (def.stage > 0) {
-    slots.push({ kind: 'gun', key: `gun:${gun}`, name: def.name, label: def.name, kindLabel: `Gun · evolution ${def.stage} of 2${def.stage === 2 ? ' · hunted' : ''}`, desc: def.desc, gun });
+  if (def.stage > 0 || zombies) {
+    const kindLabel = def.stage > 0 ? `Gun · evolution ${def.stage} of 2${def.stage === 2 && !zombies ? ' · hunted' : ''}` : 'Gun';
+    const bounty = zombies ? bountyLabel(gun)?.replace(' scrap', '') : undefined;
+    slots.push({
+      kind: 'gun', key: `gun:${gun}`, name: def.name, label: def.name, kindLabel, desc: zombies ? `${def.desc}. Zombies: ${zombieGunLine(gun)}.` : def.desc, gun,
+      ...(bounty && { bounty }),
+    });
   }
   if (perks[1]) slots.push(perkSlot('attachment', perks[1], 'Attachment'));
   if (perks[2]) slots.push(perkSlot('perk', perks[2], 'Perk'));
