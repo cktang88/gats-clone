@@ -1075,7 +1075,11 @@ export const ROYALE = {
  * tier and resupplies them in full. Everyone starts a life with no armor, so caches are where it comes from.
  */
 export const LOOT = {
-  count: 64, spacing: 260, openPx: 56, openMs: 5000, size: 30,
+  count: 48, spacing: 300, openPx: 56, openMs: 5000, size: 30,
+  /** The share of caches that are weapon cases: opening one leaves a gun of the case's tier on the floor (Common a class gun, Rare a first evolution, Epic a final one). */
+  weaponShare: 0.3,
+  /** How close to stand to a gun on the floor to take it with E, and the least time between two takes; at most `maxGuns` lie about at once. */
+  takePx: 46, takeCooldownMs: 600, maxGuns: 40,
   tiers: [
     { name: 'Common', weight: 0.64, score: 90, heal: 0, armorUp: 0, pick: false },
     { name: 'Rare', weight: 0.29, score: 220, heal: 45, armorUp: 1, pick: false },

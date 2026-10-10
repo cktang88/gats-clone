@@ -1,10 +1,10 @@
-import { ARMOR_IDS, ARMORS, LEVELS, LOOT, RING, ROYALE, TOWER, WORLD, type LootTier } from '../defs.ts';
+import { ARMOR_IDS, ARMORS, GUN_IDS, GUNS, LEVELS, LOOT, RING, ROYALE, TOWER, WORLD, type GunId, type LootTier } from '../defs.ts';
 import { MAPS } from '../maps.ts';
 import { ringAt, type Circle, type RingView, type RoundWinner, type RoyaleResult } from '../protocol.ts';
 import { die, kill } from './combat.ts';
 import { DOT_SHARE, dotPulses } from './dot.ts';
 import { circleBlocked, dist2, rectsOverlap } from './movement.ts';
-import { abilityOf, addScore, effectiveStats, freshLife, levelForScore, resetProgress } from './stats.ts';
+import { abilityOf, addScore, effectiveStats, freshLife, levelForScore, reopenUselessAttachment, resetProgress } from './stats.ts';
 import { crackSupply } from './airdrop.ts';
 import { coverRects, crateRect, freshFeats, newId, rand, solidRects, type Cache, type Player, type Pose, type Ring, type Royale, type RoyaleStats, type Tower, type World } from './world.ts';
 
@@ -76,7 +76,13 @@ export function newRoyale(w: World): Royale {
   const size = MAPS[w.map].size;
   const circle = { x: size / 2, y: size / 2, r: Math.hypot(size, size) / 2 + WORLD.playerRadius * 4 };
   const next = nextCircle(w, circle, RING[0]!.radius);
-  const caches: Cache[] = spreadSpots(w, LOOT.count, LOOT.spacing, 200, LOOT.size).map((at) => ({ id: newId(w), ...at, tier: lootTier(w), open: false }));
+  const caches: Cache[] = spreadSpots(w, LOOT.count, LOOT.spacing, 200, LOOT.size).map((at) => {
+    const tier = lootTier(w);
+    // A weapon case holds a gun of its tier's stage: a class gun, a first evolution, or (rarest) a final one.
+    const guns = GUN_IDS.filter((g) => GUNS[g].stage === tier);
+    const gun = rand(w) < LOOT.weaponShare ? guns[Math.floor(rand(w) * guns.length)] : undefined;
+    return { id: newId(w), ...at, tier, open: false, ...(gun && { gun }) };
+  });
   // Towers stand far apart, each picked the farthest it can be from the ones already placed, so every part of the map has one in reach.
   const candidates = spreadSpots(w, 30, 500, 600, TOWER.radius * 0.6);
   const towers: Tower[] = [];
@@ -90,7 +96,7 @@ export function newRoyale(w: World): Royale {
     startedAt: w.now,
     ring: { k: 'waiting', phase: 0, circle, next, shrinkAt: w.now + RING[0]!.waitMs },
     // A new match on a new map (the map changes after the round has started) takes in everyone standing.
-    entrants: [...w.players.values()].filter((p) => p.life.k === 'alive').map((p) => p.id), out: [], caches, towers, redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(),
+    entrants: [...w.players.values()].filter((p) => p.life.k === 'alive').map((p) => p.id), out: [], caches, towers, guns: [], tookAt: new Map(), redeployAt: new Map(), drops: [], stats: new Map(), killers: new Map(), watching: new Map(),
   };
   scheduleDrop(w, r, next);
   return r;
@@ -107,7 +113,15 @@ function stripArmor(p: Player) {
   if (p.loadout.armor !== 'none') p.loadout = { ...p.loadout, armor: 'none' };
 }
 
+/** Leaves `gun` on the floor at (x, y); the oldest gun lying about goes once there are more than `LOOT.maxGuns`. */
+function dropGun(w: World, r: Royale, gun: GunId, x: number, y: number) {
+  r.guns.push({ id: newId(w), x, y, gun });
+  if (r.guns.length > LOOT.maxGuns) r.guns.shift();
+}
+
 function perish(w: World, r: Royale, p: Player, by: Player | null) {
+  // The dead drop any gun better than a class gun, so a kill can take it.
+  if (p.life.k !== 'dead' && GUNS[p.gun].stage > 0) dropGun(w, r, p.gun, p.x, p.y);
   die(w, p, Infinity);
   if (by && by.id !== p.id) r.killers.set(p.id, by.id);
   if (redeploysOpen(r)) r.redeployAt.set(p.id, w.now + ROYALE.redeployMs(p.deaths));
@@ -249,6 +263,12 @@ function openCache(w: World, r: Royale, c: Cache, p: Player) {
   if (life.k !== 'alive') return;
   c.open = true;
   statsFor(r, p).loot++;
+  // A weapon case leaves its gun on the floor for whoever takes it with E.
+  if (c.gun) {
+    dropGun(w, r, c.gun, c.x, c.y);
+    w.events.push({ e: 'loot', x: c.x, y: c.y, tier: c.tier, by: p.id, gun: c.gun });
+    return;
+  }
   const tier = LOOT.tiers[c.tier]!;
   let armorTo: (typeof ARMOR_IDS)[number] | undefined;
   const at = ARMOR_IDS.indexOf(p.loadout.armor);
@@ -300,6 +320,32 @@ function tickLoot(w: World, r: Royale) {
 }
 
 /**
+ * A living player pressing E (use) within `LOOT.takePx` of a gun on the floor takes the nearest one, with a full magazine of it, and
+ * leaves the gun they had in its place; one take per `takeCooldownMs`, so holding E does not swap back and forth. An attachment the new
+ * gun cannot use comes off, and the next evolve pick follows the new gun.
+ */
+function tickGuns(w: World, r: Royale) {
+  if (!r.guns.length) return;
+  const reach = (LOOT.takePx + WORLD.playerRadius) ** 2;
+  for (const p of w.players.values()) {
+    const life = p.life;
+    if (life.k !== 'alive' || !p.input.use || w.now - (r.tookAt.get(p.id) ?? -Infinity) < LOOT.takeCooldownMs) continue;
+    const near = r.guns.filter((g) => dist2(g.x, g.y, p.x, p.y) <= reach);
+    if (!near.length) continue;
+    const g = near.reduce((a, b) => (dist2(b.x, b.y, p.x, p.y) < dist2(a.x, a.y, p.x, p.y) ? b : a));
+    const left = p.gun;
+    r.guns = r.guns.filter((o) => o !== g);
+    r.guns.push({ id: newId(w), x: g.x, y: g.y, gun: left });
+    p.gun = g.gun;
+    reopenUselessAttachment(p);
+    life.ammo = effectiveStats(p).mag;
+    life.reloadUntil = null;
+    r.tookAt.set(p.id, w.now);
+    w.events.push({ e: 'took', id: p.id, gun: g.gun, left, x: g.x, y: g.y });
+  }
+}
+
+/**
  * A ready tower is taken by one living player standing within `TOWER.radius` of it alone for `holdMs` (a second player inside, or
  * the holder stepping out, starts it over): every other living player within `revealPx` then shows on the holder's minimap for `revealMs`.
  */
@@ -331,6 +377,7 @@ export function tickRoyale(w: World, dtMs: number) {
   landDrops(w, r);
   burnOutside(w, r, dtMs);
   tickLoot(w, r);
+  tickGuns(w, r);
   tickTowers(w, r);
   redeploy(w, r);
   eliminate(w, r);

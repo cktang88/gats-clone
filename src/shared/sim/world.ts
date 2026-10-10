@@ -249,7 +249,9 @@ export type Drop = { x: number; y: number; landsAt: number };
 export type RoyaleStats = { name: string; kills: number; loot: number };
 
 /** A loot cache (see `LOOT`): where it stands, its tier, whether it has been opened, and who has stood at it since when (null for nobody). */
-export type Cache = { id: number; x: number; y: number; tier: LootTier; open: boolean; by?: number | null; since?: number };
+export type Cache = { id: number; x: number; y: number; tier: LootTier; open: boolean; by?: number | null; since?: number; gun?: GunId };
+/** A gun lying on the floor of a Last Standing map: from a weapon case, swapped out, or dropped by the dead. */
+export type FloorGun = { id: number; x: number; y: number; gun: GunId };
 /** A recon tower (see `TOWER`): when it is ready again, and who has been holding it since when (null while nobody alone holds it). */
 export type Tower = { x: number; y: number; readyAt: number; holder: number | null; since: number };
 
@@ -266,6 +268,9 @@ export type Royale = {
   out: number[];
   caches: Cache[];
   towers: Tower[];
+  guns: FloorGun[];
+  /** When each player last took a gun off the floor, so one press of E takes one gun. */
+  tookAt: Map<number, number>;
   redeployAt: Map<number, number>;
   drops: Drop[];
   stats: Map<number, RoyaleStats>;

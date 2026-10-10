@@ -581,6 +581,8 @@ export function soundsFor(prev: Snapshot | null, next: Snapshot): SoundCue[] {
       case 'loot': cues.push({ id: `loot:${ev.tier}`, x: ev.x, y: ev.y, self: ev.by === next.self.id, gain: 1 }); break;
       // A recon tower taken: the radar's sonar ping from the mast, at your ear when you took it.
       case 'tower': cues.push({ id: 'radar', x: ev.x, y: ev.y, self: ev.by === next.self.id, gain: 1, r: 0 }); break;
+      // A gun taken off the floor: racked into the hands.
+      case 'took': cues.push({ id: 'foley:rack:assault', x: ev.x, y: ev.y, self: ev.id === next.self.id, gain: 1.2 }); break;
       case 'prop': cues.push(propCue(ev, me)); break;
       // An armor pack taken chimes like a cabinet's pack, at your ear when it was yours.
       case 'pack': cues.push({ id: 'prop:pickup', x: ev.x, y: ev.y, self: me !== undefined && Math.hypot(me.x - ev.x, me.y - ev.y) < 60, gain: 1 }); break;

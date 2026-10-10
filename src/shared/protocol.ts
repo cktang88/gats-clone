@@ -252,8 +252,10 @@ export type GameEvent =
   /** A Last Squad squad has nobody left standing; `place` is where it finished. */
   /** Player `id` (named `name`) is out of a Last Standing match for good, in `place`. */
   | { e: 'wiped'; id: number; name: string; place: number }
-  /** Player `by` opened a loot cache of `tier` at (x, y). */
-  | { e: 'loot'; x: number; y: number; tier: LootTier; by: number }
+  /** Player `by` opened a loot cache of `tier` at (x, y); `gun` is what a weapon case left on the floor. */
+  | { e: 'loot'; x: number; y: number; tier: LootTier; by: number; gun?: GunId }
+  /** Player `id` took `gun` off the floor at (x, y), leaving `left` (the gun they had) in its place. */
+  | { e: 'took'; id: number; gun: GunId; left: GunId; x: number; y: number }
   /** Player `by` took the recon tower at (x, y), marking `n` players within `r` on their minimap. */
   | { e: 'tower'; x: number; y: number; r: number; by: number; n: number }
   /** A supply plane is `inbound` for (`x`, `y`); its crate `landed`; or `by` cracked it open and took a golden gun (`gold`) or a resupply. */
@@ -288,8 +290,10 @@ export const ringAt = (ring: RingView, now: number): Circle => {
 };
 /** Where a Last Standing match ended for you: `place` of `of` players, your kills and the caches you opened. */
 export type RoyaleResult = { place: number; of: number; kills: number; loot: number };
-/** A loot cache: `[id, x, y, tier, opened]`, opened 1 once someone has; `opening` (0..1) how far whoever stands at it is through opening it. */
-export type CacheView = [id: number, x: number, y: number, tier: LootTier, opened: 0 | 1, opening?: number];
+/** A loot cache: `[id, x, y, tier, opened, opening, weapon]`: opened 1 once someone has; `opening` (0..1) how far whoever stands at it is through opening it; `weapon` 1 for a weapon case. */
+export type CacheView = [id: number, x: number, y: number, tier: LootTier, opened: 0 | 1, opening: number, weapon: 0 | 1];
+/** A gun lying on the floor: `[id, x, y, gun]`. */
+export type FloorGunView = [id: number, x: number, y: number, gun: GunId];
 /** A recon tower: ready again at server time `readyAt` (0 when ready), and how far (0..1) its holder is through taking it (absent when nobody is). */
 export type TowerView = { x: number; y: number; readyAt: number; progress?: number; holder?: number };
 /**
@@ -302,7 +306,7 @@ export type RoyaleView = {
   round: number;
   ring: RingView; redeploys: boolean; alive: number; total: number; redeployAt: number | null;
   drops: { x: number; y: number; landsAt: number }[]; watch: number | null; result: RoyaleResult | null;
-  caches: CacheView[]; towers: TowerView[];
+  caches: CacheView[]; towers: TowerView[]; guns: FloorGunView[];
 };
 
 /** `pingAge` is null for a live mark, and for a hunted enemy the ms since the ping that froze it in place. */

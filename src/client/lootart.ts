@@ -1,5 +1,7 @@
 import { LOOT, TOWER, type LootTier } from '../shared/defs.ts';
-import type { CacheView, Snapshot, TowerView } from '../shared/protocol.ts';
+import type { CacheView, FloorGunView, Snapshot, TowerView } from '../shared/protocol.ts';
+import { GUNS, WORLD } from '../shared/defs.ts';
+import { drawDroppedGun } from './gunart.ts';
 import { setLight } from './lighting.ts';
 import { INK, shade, tint } from './palette.ts';
 import { LIGHT } from './tilt.ts';
@@ -14,6 +16,7 @@ import { LIGHT } from './tilt.ts';
  */
 
 const TAU = Math.PI * 2;
+
 type View = { x0: number; y0: number; x1: number; y1: number };
 const visible = (v: View, x: number, y: number, pad: number) => x > v.x0 - pad && x < v.x1 + pad && y > v.y0 - pad && y < v.y1 + pad;
 const REDUCED = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -71,9 +74,10 @@ function glint(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
  * One cache at (x, y), `LOOT.size` across: a contact shadow, the box's front face hanging below its top, and either the closed lid in the
  * tier's paint with its straps and latch, or (opened) the lid thrown back over an empty hold.
  */
-export function drawCache(ctx: CanvasRenderingContext2D, x: number, y: number, tier: LootTier, opened: boolean, now = 0, id = 0) {
+export function drawCache(ctx: CanvasRenderingContext2D, x: number, y: number, tier: LootTier, opened: boolean, now = 0, id = 0, weapon = false) {
   const look = LOOT_LOOK[tier];
-  const S = LOOT.size, h = S / 2, d = S * 0.78 / 2, face = 10;
+  // A weapon case is long and low, so it reads as a gun case from across the screen.
+  const S = weapon ? LOOT.size * 1.9 : LOOT.size, h = S / 2, d = (weapon ? LOOT.size * 0.5 : LOOT.size * 0.78) / 2, face = weapon ? 8 : 10;
   const lid = look.lid;
   ctx.save();
   ctx.lineJoin = 'round';
@@ -124,7 +128,14 @@ export function drawCache(ctx: CanvasRenderingContext2D, x: number, y: number, t
     ctx.fillRect(x - 3.5, front - 2, 7, 8);
     ctx.lineWidth = 1.4;
     ctx.strokeRect(x - 3.5, front - 2, 7, 8);
-    if (tier === 2) {
+    if (weapon) {
+      // A rifle stencilled along the lid.
+      ctx.fillStyle = tint(lid, 0.7);
+      const gy = top + d - 2.5;
+      ctx.fillRect(x - h * 0.7, gy - 1.6, h * 1.25, 3.2);
+      ctx.fillRect(x - h * 0.78, gy - 3, h * 0.32, 6);
+      ctx.fillRect(x - h * 0.15, gy + 1, 3.5, 5);
+    } else if (tier === 2) {
       // A stencilled star on the lid of an epic one.
       ctx.fillStyle = tint(lid, 0.75);
       glint(ctx, x, top + d - 4.5, 5);
@@ -180,7 +191,7 @@ function drawSparkles(ctx: CanvasRenderingContext2D, x: number, y: number, id: n
 
 /** Every cache in view, unopened ones and the looted ones left behind. An epic one also throws a faint shaft of its light up the screen. */
 export function drawCaches(ctx: CanvasRenderingContext2D, caches: readonly CacheView[], now: number, view: View) {
-  for (const [id, x, y, tier, opened] of caches) {
+  for (const [id, x, y, tier, opened, , weapon] of caches) {
     if (!visible(view, x, y, LOOT.size * 2)) continue;
     if (tier === 2 && !opened) {
       const b = breath(now, id), top = y - 150;
@@ -196,7 +207,7 @@ export function drawCaches(ctx: CanvasRenderingContext2D, caches: readonly Cache
       ctx.closePath();
       ctx.fill();
     }
-    drawCache(ctx, x, y, tier, !!opened, now, id);
+    drawCache(ctx, x, y, tier, !!opened, now, id, !!weapon);
   }
 }
 
@@ -376,7 +387,7 @@ export const towersNeedClock = (towers: readonly TowerView[] | undefined) => !!t
  */
 export function drawCacheOverlay(ctx: CanvasRenderingContext2D, caches: readonly CacheView[], view: View) {
   for (const [, x, y, tier, opened, opening] of caches) {
-    if (opened || opening === undefined || !visible(view, x, y, LOOT.size * 3)) continue;
+    if (opened || !opening || !visible(view, x, y, LOOT.size * 3)) continue;
     const p = Math.max(0, Math.min(1, opening)), r = LOOT.size * 1.25;
     const color = LOOT_LOOK[tier].glow;
     ctx.save();
@@ -393,6 +404,37 @@ export function drawCacheOverlay(ctx: CanvasRenderingContext2D, caches: readonly
     ctx.stroke();
     ctx.restore();
     plate(ctx, `OPENING ${Math.max(1, Math.ceil(((1 - p) * LOOT.openMs) / 1000))}s`, x, y - r - 20, color);
+  }
+}
+
+/** A floor gun's stage colour: a class gun bone, a first evolution rare blue, a final one epic purple. */
+const GUN_STAGE_LOOK = [LOOT_LOOK[0].glow, LOOT_LOOK[1].glow, LOOT_LOOK[2].glow] as const;
+
+/**
+ * Guns lying on the floor (from weapon cases, swapped out, or dropped by the dead): each on a soft pool of its stage's colour, turning
+ * slowly; within `nameAt` of you its name shows on a plate, and within reach to take it, `[E] TAKE`.
+ */
+export function drawFloorGuns(ctx: CanvasRenderingContext2D, guns: readonly FloorGunView[], me: { x: number; y: number } | null, now: number, view: View) {
+  const reach = LOOT.takePx + WORLD.playerRadius, nameAt = 240;
+  for (const [id, x, y, gun] of guns) {
+    if (!visible(view, x, y, 80)) continue;
+    const stage = GUNS[gun].stage, color = GUN_STAGE_LOOK[stage];
+    ctx.save();
+    const g = ctx.createRadialGradient(x, y, 2, x, y, 34);
+    g.addColorStop(0, rgba(color, stage === 0 ? 0.22 : 0.4 + 0.15 * breath(now, id)));
+    g.addColorStop(1, rgba(color, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, 34, 0, TAU);
+    ctx.fill();
+    ctx.translate(x, y);
+    ctx.rotate(-0.35 + (REDUCED ? 0 : 0.12 * Math.sin(now / 900 + id)));
+    drawDroppedGun(ctx, gun, 0, 0);
+    ctx.restore();
+    if (!me) continue;
+    const d = Math.hypot(me.x - x, me.y - y);
+    if (d > nameAt) continue;
+    plate(ctx, d <= reach ? `[E] TAKE ${GUNS[gun].name.toUpperCase()}` : GUNS[gun].name, x, y - 30, color, d <= reach ? 1 : 0.8);
   }
 }
 

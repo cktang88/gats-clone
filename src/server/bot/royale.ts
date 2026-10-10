@@ -1,4 +1,4 @@
-import { LOOT, TOWER } from '../../shared/defs.ts';
+import { GUNS, LOOT, TOWER, WORLD } from '../../shared/defs.ts';
 import { ringAt, type CacheView, type Circle, type PlayerView, type RingView, type RoyaleView, type Snapshot, type TowerView } from '../../shared/protocol.ts';
 import type { BotDecision, BotMemory } from '../bots.ts';
 import { skillKnobs, TICK_MS } from './aim.ts';
@@ -92,11 +92,24 @@ function towerPost(t: TowerView, me: PlayerView, circle: Circle, arena: BotArena
   return { spot, facing: { x: t.x + Math.cos(out) * 600, y: t.y + Math.sin(out) * 600 } };
 }
 
-type Errand = { k: 'drop' | 'loot' | 'roam'; at: Point } | { k: 'tower'; at: Point; facing: Point };
+type Errand = { k: 'drop' | 'loot' | 'gun' | 'roam'; at: Point } | { k: 'tower'; at: Point; facing: Point };
+
+/** How far a bot walks for a better gun lying on the floor. */
+const GUN_REACH_PX = 900;
+/** A gun on the floor at a higher stage than the one in hand, inside the circle and in reach: the nearest such. */
+export function betterGun(royale: RoyaleView, me: PlayerView, circle: Circle, reach = GUN_REACH_PX): Point | null {
+  const mine = GUNS[me.gun].stage;
+  const ups = (royale.guns ?? []).filter((g) => GUNS[g[3]].stage > mine && inside({ x: g[1], y: g[2] }, circle, EDGE_PX) && dist(me, { x: g[1], y: g[2] }) < reach);
+  if (!ups.length) return null;
+  const g = ups.reduce((a, b) => (dist(me, { x: b[1], y: b[2] }) < dist(me, { x: a[1], y: a[2] }) ? b : a));
+  return { x: g[1], y: g[2] };
+}
 
 function errandFor(snap: Snapshot, royale: RoyaleView, me: PlayerView, circle: Circle, arena: BotArena, now: number): Errand {
   const drop = royale.drops.find((d) => inside(d, circle, 0) && dist(d, me) < DROP_REACH_PX && goesForDrop(me.id, royale.ring.phase, d));
   if (drop) return { k: 'drop', at: { x: drop.x, y: drop.y } };
+  const gun = betterGun(royale, me, circle);
+  if (gun) return { k: 'gun', at: gun };
   const tower = towerTarget(royale, me, circle, now);
   if (tower) { const post = towerPost(tower, me, circle, arena); return { k: 'tower', at: post.spot, facing: post.facing }; }
   const cache = lootTarget(snap, royale, me, circle);
@@ -153,5 +166,7 @@ export function royaleThink(snap: Snapshot, royale: RoyaleView, me: PlayerView, 
     intent = (planned.k === 'reloadInCover' || planned.k === 'retreatAndHeal') && !strays(planned, circle, me) ? planned : errandIntent();
   }
   const { input, motor } = act(intent, view, ctx, mem.motor, snap);
-  return { input, mem: { ...mem, intent, awareness, motor } };
+  // Standing over a better gun than the one in hand, it takes it (E), fight or no fight.
+  const take = betterGun(royale, me, current, LOOT.takePx + WORLD.playerRadius - 4) !== null;
+  return { input: take ? { ...input, use: true } : input, mem: { ...mem, intent, awareness, motor } };
 }

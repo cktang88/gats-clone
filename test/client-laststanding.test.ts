@@ -18,7 +18,7 @@ const player = (id: number, over: Partial<PlayerView> = {}): PlayerView => ({
 
 const royale = (o: Partial<RoyaleView> = {}): RoyaleView => ({
   round: 0, ring: { phase: 0, from: { x: 0, y: 0, r: 2000 }, to: { x: 0, y: 0, r: 1500 }, shrinkAt: 60_000, closeAt: 90_000 } as RoyaleView['ring'],
-  redeploys: true, alive: 12, total: 18, redeployAt: null, drops: [], watch: null, result: null, caches: [], towers: [], ...o,
+  redeploys: true, alive: 12, total: 18, redeployAt: null, drops: [], watch: null, result: null, caches: [], towers: [], guns: [], ...o,
 });
 
 const snap = (o: { events?: GameEvent[]; royale?: RoyaleView; self?: Partial<SelfView> } = {}): Snapshot => ({
@@ -103,7 +103,7 @@ function recorder() {
 }
 
 test('the minimap shows unopened Rare and Epic caches only, and towers bright when ready and grey while resting', () => {
-  const caches: CacheView[] = [[1, 10, 10, 0, 0], [2, 20, 20, 1, 0], [3, 30, 30, 2, 0], [4, 40, 40, 2, 1]];
+  const caches: CacheView[] = [[1, 10, 10, 0, 0, 0, 0], [2, 20, 20, 1, 0, 0, 0], [3, 30, 30, 2, 0, 0, 1], [4, 40, 40, 2, 1, 0, 0]];
   const { ctx, rects } = recorder();
   drawCachesMap(ctx, caches, 0, 0, 0.1);
   // An ink backing and a tier colour for each shown cache: the rare (blue) and the unopened epic (purple).

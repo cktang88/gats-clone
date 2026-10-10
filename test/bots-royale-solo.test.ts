@@ -86,3 +86,13 @@ test('a bot outside the safe circle walks back into it rather than looting outsi
   assert.ok(back < 20_000, 'back inside within 20 s');
   assert.ok(!w.royale!.caches[0]!.open, 'it left the epic cache outside the circle alone');
 });
+
+test('a bot walks to a better gun lying on the floor and takes it, leaving its own', () => {
+  const w = soloWorld();
+  const bot = spawnAt(w, 1200, 1200, { kind: 'bot', loadout: { weapon: 'pistol' } });
+  w.royale!.guns = [{ id: 900_010, x: 1600, y: 1300, gun: 'handCannon' }];
+  const mems = new Map([[bot.id, newBotMemory(() => 0.5)]]);
+  const took = drive(w, mems, 15_000, () => bot.gun === 'handCannon');
+  assert.ok(Number.isFinite(took), `took the gun (has ${bot.gun})`);
+  assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['pistol'], 'its old gun lies where it stood');
+});

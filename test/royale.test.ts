@@ -262,3 +262,45 @@ test('a joiner takes a bot\'s place while redeploys are open; after that they wa
   assert.ok(w.royale!.entrants.includes(cat.p.id));
   assert.equal(w.players.size, 18);
 });
+
+test('a weapon case leaves a gun of its tier on the floor; E takes it and leaves yours in its place', () => {
+  const w = brWorld();
+  const p = solo(w, 1000, 1000, { loadout: { weapon: 'pistol' } });
+  const r = w.royale!;
+  r.caches = [{ id: 911, x: 1000 + LOOT.openPx, y: 1000, tier: 1, open: false, gun: 'handCannon' }];
+  const events = collect(w, LOOT.openMs + TICK_MS * 2);
+  assert.ok(events.some((e) => e.e === 'loot' && e.gun === 'handCannon'));
+  assert.deepEqual(r.guns.map((g) => g.gun), ['handCannon'], 'the gun lies on the floor');
+  assert.equal(p.gun, 'pistol', 'nothing is taken without E');
+  assert.deepEqual(snapshotFor(w, p.id).royale!.caches[0]!.slice(4), [1, 0, 1], 'an opened weapon case');
+  p.input = { ...p.input, use: true };
+  const took = collect(w, TICK_MS * 2);
+  assert.equal(p.gun, 'handCannon');
+  assert.ok(p.life.k === 'alive' && p.life.ammo === 6, 'with a full magazine of it');
+  assert.deepEqual(r.guns.map((g) => g.gun), ['pistol'], 'the pistol lies where the hand cannon was');
+  assert.ok(took.some((e) => e.e === 'took' && e.gun === 'handCannon' && e.left === 'pistol'));
+  run(w, 200);
+  assert.equal(p.gun, 'handCannon', 'holding E does not swap back');
+});
+
+test('weapon cases hold guns of their tier: a class gun, a first evolution, a final one', async () => {
+  const { GUNS } = await import('../src/shared/defs.ts');
+  for (let seed = 1; seed < 6; seed++) {
+    const w = emptyWorld('BR');
+    w.rng = seed;
+    for (const c of newRoyale(w).caches) if (c.gun) assert.equal(GUNS[c.gun].stage, c.tier, `${c.gun} in a tier ${c.tier} case`);
+  }
+  assert.equal(LOOT.count, 48);
+});
+
+test('the dead drop an evolved gun for whoever kills them; a class gun stays with the body', () => {
+  const w = brWorld();
+  const shooter = solo(w, 1000, 1000);
+  const victim = solo(w, 1200, 1000);
+  victim.gun = 'handCannon';
+  shootUntilDead(w, shooter, victim);
+  assert.deepEqual(w.royale!.guns.map((g) => g.gun), ['handCannon']);
+  const plain = solo(w, 1200, 1300);
+  shootUntilDead(w, shooter, plain, Math.atan2(300, 200));
+  assert.equal(w.royale!.guns.length, 1, 'no class gun is dropped');
+});

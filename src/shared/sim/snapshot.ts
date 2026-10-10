@@ -1,6 +1,6 @@
 import { ARMORS, BARREL, byTurret, PROP_FX, PROP_KINDS, LOOT, ROYALE, STREAK, TOWER, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES } from '../defs.ts';
 import type {
-  AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, CacheView, MatchView, MinimapMark, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
+  AirdropView, BarrelView, PropView, BulletView, CrateView, GameEvent, LeaderRow, CacheView, FloorGunView, MatchView, MinimapMark, PlayerView, RoyaleView, RunView, SelfView, Snapshot, ThrownKind, ThrownView, WallView, ZombieView, ZoneView,
 } from '../protocol.ts';
 import { rankRows, DEFAULT_VIEW_ASPECT, VIEW_PRELOAD_MARGIN, viewExtents } from '../protocol.ts';
 import { lookReach, lookSides, NO_LOOK, type LookSides } from '../lookahead.ts';
@@ -226,7 +226,11 @@ function royaleView(w: World, r: Royale, me: Player): RoyaleView {
     ],
     watch: r.watching.get(me.id) ?? null,
     result: resultFor(w, r, me),
-    caches: r.caches.map((c): CacheView => (!c.open && c.by != null ? [c.id, Math.round(c.x), Math.round(c.y), c.tier, 0, Math.round(Math.min(1, (w.now - (c.since ?? w.now)) / LOOT.openMs) * 50) / 50] : [c.id, Math.round(c.x), Math.round(c.y), c.tier, c.open ? 1 : 0])),
+    caches: r.caches.map((c): CacheView => [
+      c.id, Math.round(c.x), Math.round(c.y), c.tier, c.open ? 1 : 0,
+      !c.open && c.by != null ? Math.round(Math.min(1, (w.now - (c.since ?? w.now)) / LOOT.openMs) * 50) / 50 : 0, c.gun ? 1 : 0,
+    ]),
+    guns: r.guns.map((g): FloorGunView => [g.id, Math.round(g.x), Math.round(g.y), g.gun]),
     towers: r.towers.map((t) => ({
       x: Math.round(t.x), y: Math.round(t.y), readyAt: w.now < t.readyAt ? t.readyAt : 0,
       ...(t.holder !== null && { holder: t.holder, progress: Math.round(Math.min(1, (w.now - t.since) / TOWER.holdMs) * 20) / 20 }),
