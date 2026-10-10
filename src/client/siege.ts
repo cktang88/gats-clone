@@ -478,7 +478,7 @@ export function drawGhost(ctx: CanvasRenderingContext2D, ghost: Ghost, self: { x
     }
   } else drawGhostCell(ctx, ghost, ghost.cx, ghost.cy, color, ghost.refusal !== 'taken', core, now, pxPerUnit);
   if (!ghost.label) return;
-  const lines = ghost.detail ? [ghost.label, ghost.detail] : [ghost.label];
+  const lines = ghost.detail ? [ghost.label, ...ghost.detail.split('\n')] : [ghost.label];
   // The plate is drawn in the world, so zoomed out it grows to stay readable.
   const t = Math.min(1.8, Math.max(1, (globalThis.devicePixelRatio || 1) / ctx.getTransform().a));
   ctx.font = `800 ${14 * t}px "Barlow Condensed", system-ui, sans-serif`;

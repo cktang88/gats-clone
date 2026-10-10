@@ -139,3 +139,20 @@ test('a worn building pays back less when taken down, and mending it costs less 
     assert.ok(mend < BUILDINGS[kind].cost - refund, `${kind}: mending costs ${mend}, tearing down and building again ${BUILDINGS[kind].cost - refund}`);
   }
 });
+
+test('by day, holding E repairs a damaged turret and then reloads it, the same as by night', () => {
+  const w = createWorld('ZOM', 1, 'outpost');
+  const p = spawnAt(w, 1380, 1525);
+  w.run!.scrap = 1000;
+  assert.equal(w.run!.phase.k, 'day');
+  assert.equal(build(w, p.id, 'sentry', Math.floor(1380 / ZOM.cell), Math.floor(1525 / ZOM.cell) + 1), null);
+  const b = w.buildings.at(-1)! as typeof w.buildings[number] & { ammo: number };
+  b.hp = 100;
+  b.ammo = 0;
+  press(w, p, { use: true });
+  run(w, 3000);
+  assert.equal(w.run!.phase.k, 'day');
+  assert.ok(b.hp > 100, `repaired by day to ${b.hp}`);
+  run(w, 6000);
+  assert.ok(b.ammo > 0, `reloaded by day to ${b.ammo}`);
+});

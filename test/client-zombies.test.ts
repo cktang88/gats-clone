@@ -64,7 +64,8 @@ test('the ghost judges each kind as the server would build it, and names what it
   assert.equal(ghostAt(site, 'sentry', at(26, 30), MAPS[w.map].size).label, `Sentry · ${BUILDINGS.sentry.cost} scrap`);
   const worn = ghostAt(site, 'wall', at(26, 31), MAPS[w.map].size);
   assert.deepEqual([worn.label, worn.hover?.refund], [`Cannon · level 1/3 · health 10%`, BUILDINGS.cannon.cost / 20], 'the refund is the standing building\'s, for the tenth of it left');
-  assert.ok(worn.detail?.endsWith(`Right click: take down +${BUILDINGS.cannon.cost / 20}`), worn.detail ?? '');
+  assert.ok(worn.detail?.split('\n')[0]!.endsWith(`Right click: take down +${BUILDINGS.cannon.cost / 20}`), worn.detail ?? '');
+  assert.equal(worn.detail?.split('\n')[1], 'Next: +40% dmg · +18% rate · +10% range · +50% ammo · +40% hp');
   w.buildings[0]!.hp = BUILDINGS.cannon.hp;
   const whole = buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!;
   assert.equal(ghostAt(whole, 'wall', at(26, 31), MAPS[w.map].size).hover?.refund, BUILDINGS.cannon.cost / 2, 'half back for a whole one');
@@ -106,10 +107,11 @@ test('hovering a building in build mode names its level, health and what upgradi
   const at = (cx: number, cy: number) => ({ x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell });
   let g = ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'sentry', at(26, 30), MAPS[w.map].size);
   assert.equal(g.refusal, 'taken');
-  assert.deepEqual(g.hover, { name: 'Sandbag wall', lv: 2, top: 3, hpPct: 100, refund: WALL_TIERS[1].cost / 2, next: { name: 'Steel wall', cost: WALL_TIERS[2].cost - WALL_TIERS[1].cost } });
+  assert.deepEqual(g.hover, { name: 'Sandbag wall', lv: 2, top: 3, hpPct: 100, refund: WALL_TIERS[1].cost / 2, next: { name: 'Steel wall', cost: WALL_TIERS[2].cost - WALL_TIERS[1].cost, gains: '+140% hp · blocks 30% of bites' } });
   assert.equal(g.label, 'Sandbag wall · level 2/3 · health 100%');
   assert.equal(g.upgrade, null);
   assert.ok(g.detail?.startsWith(`U or click: upgrade to Steel wall · ${WALL_TIERS[2].cost - WALL_TIERS[1].cost} scrap`), g.detail ?? '');
+  assert.ok(g.detail?.endsWith('\nNext: +140% hp · blocks 30% of bites'), 'what the step up gives sits on its own line');
   w.run!.scrap = 5;
   g = ghostAt(buildSiteOf(snapshotFor(w, p.id), wallViews(w), p)!, 'sentry', at(26, 30), MAPS[w.map].size);
   assert.equal(g.upgrade, 'scrap');

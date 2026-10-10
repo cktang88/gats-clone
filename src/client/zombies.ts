@@ -1,4 +1,4 @@
-import { BUILDING_KINDS, BUILDINGS, hordeCount, isEndless, MAX_LEVEL, NIGHTS, nightOf, SIDES, TURRET_KINDS, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
+import { BUILDING_KINDS, BUILDINGS, hordeCount, isEndless, MAX_LEVEL, NIGHTS, nightOf, SIDES, TURRET_KINDS, UPGRADE, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, isTurretKind, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
 import { buildRefusal, cellOf, coreRectAt, costOf, levelOf, lineCells, maxLevelOf, nameOf as nameAt, planLine, refundFor, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
@@ -162,11 +162,29 @@ function refusalText(refusal: BuildRefusal, kind: BuildingKind, lv: number): str
 }
 
 /** What stands on a hovered cell: its name, level of the most it can reach, health in percent, what taking it down pays, and the step up if there is one. */
-export type HoverInfo = { name: string; lv: number; top: number; hpPct: number; refund: number; next: { name: string; cost: number } | null };
+export type HoverInfo = { name: string; lv: number; top: number; hpPct: number; refund: number; next: { name: string; cost: number; gains: string } | null };
 
 export function hoverOf(b: BuildingView): HoverInfo {
   const lv = levelOf(b), cost = upgradeCost(b.kind, lv);
-  return { name: nameAt(b.kind, lv), lv, top: maxLevelOf(b.kind), hpPct: b.hp * 10, refund: refundFor(b), next: cost === null ? null : { name: nameAt(b.kind, lv + 1), cost } };
+  return { name: nameAt(b.kind, lv), lv, top: maxLevelOf(b.kind), hpPct: b.hp * 10, refund: refundFor(b), next: cost === null ? null : { name: nameAt(b.kind, lv + 1), cost, gains: upgradeGains(b.kind, lv) } };
+}
+
+const pctUp = (from: number, to: number) => `+${Math.round((to / from - 1) * 100)}%`;
+/**
+ * What the step from `lv` to the next gives, as a player reads it: a turret's damage, fire rate, range, load and health; a depot's or post's
+ * output, reach and health; a wall's health and the share of a bite it shrugs off. Empty at the top.
+ */
+export function upgradeGains(kind: BuildingKind, lv: number): string {
+  if (lv >= maxLevelOf(kind)) return '';
+  const i = lv - 1, j = lv;
+  if (kind === 'wall') {
+    const a = WALL_TIERS[i]!, b = WALL_TIERS[j]!;
+    return [`${pctUp(a.hp, b.hp)} hp`, b.armor > a.armor ? `blocks ${Math.round(b.armor * 100)}% of bites` : ''].filter(Boolean).join(' · ');
+  }
+  const U = UPGRADE;
+  const hp = `${pctUp(U.hp[i], U.hp[j])} hp`;
+  if (isTurretKind(kind)) return [`${pctUp(U.damage[i], U.damage[j])} dmg`, `${pctUp(1 / U.fireMs[i], 1 / U.fireMs[j])} rate`, `${pctUp(U.range[i], U.range[j])} range`, `${pctUp(U.ammo[i], U.ammo[j])} ammo`, hp].join(' · ');
+  return [`${pctUp(U.aura[i], U.aura[j])} ${kind === 'depot' ? 'resupply' : 'repair'}`, `${pctUp(U.reach[i], U.reach[j])} reach`, hp].join(' · ');
 }
 
 /** The line under a hovered building's name: what U does, or why it cannot. */
@@ -224,7 +242,7 @@ export function ghostAt(site: BuildSite, kind: BuildingKind, at: Pose, worldSize
     return {
       kind, lv: level, cx, cy, refusal, hover, upgrade,
       label: `${hover.name}${hover.top > 1 ? ` · level ${hover.lv}/${hover.top}` : ''} · health ${hover.hpPct}%`,
-      detail: `${upgradeLine(hover, upgrade)} · Right click: take down +${hover.refund}`,
+      detail: `${upgradeLine(hover, upgrade)} · Right click: take down +${hover.refund}${hover.next?.gains ? `\nNext: ${hover.next.gains}` : ''}`,
     };
   }
   return { kind, lv: level, cx, cy, refusal, hover: null, upgrade: null, detail: null, label: refusal ? refusalText(refusal, kind, level) : `${nameAt(kind, level)} · ${costOf(kind, level)} scrap` };
