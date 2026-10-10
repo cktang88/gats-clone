@@ -92,6 +92,7 @@ test('an upgrade is refused at night, out of reach, with nothing there and when 
   assert.equal(upgrade(w, p.id, CELL.cx, CELL.cy), 'outOfReach');
   p.x = AT.x;
   w.run!.phase = { k: 'night', toSpawn: [{ kind: 'walker', side: 'north', n: 1 }], nextSpawnAt: Infinity, dawnAt: Infinity };
+  p.gun = 'shotgun';
   assert.equal(upgrade(w, p.id, CELL.cx, CELL.cy), 'notDay');
   assert.deepEqual([w.run!.scrap, levelOf(w.buildings[0]!)], [500, 1]);
 });

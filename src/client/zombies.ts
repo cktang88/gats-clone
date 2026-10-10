@@ -1,6 +1,6 @@
 import { BUILDING_KINDS, BUILDINGS, hordeCount, isEndless, MAX_LEVEL, NIGHTS, nightOf, SIDES, TURRET_KINDS, WALL_TIERS, WORLD, ZOM, ZOMBIE_KINDS, ZOMBIES, type BuildingKind } from '../shared/defs.ts';
 import type { BuildingView, PlayerView, RunReport, RunView, Snapshot, WallView } from '../shared/protocol.ts';
-import { buildRefusal, cellOf, coreRectAt, costOf, levelOf, lineCells, maxLevelOf, nameOf as nameAt, planLine, refundFor, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
+import { buildRefusal, buildsNow, cellOf, coreRectAt, costOf, levelOf, lineCells, maxLevelOf, nameOf as nameAt, planLine, refundFor, serviceTarget, upgradeCost, upgradeRefusal, type BuildRefusal, type BuildSite, type UpgradeRefusal } from '../shared/sim/build.ts';
 import { clock } from './derive.ts';
 
 type Pose = { x: number; y: number };
@@ -63,10 +63,25 @@ export function useHint(snap: Snapshot, at: Pose): string | null {
   return target && `Hold E to ${target.job} the ${target.on === 'core' ? 'Bastion' : nameOf(target.on)}`;
 }
 
-/** The nearest building within reach that could go up a level, with what the step costs: what U does by day outside build mode. */
+/**
+ * Whether you may build, upgrade and take down right now, by the server's rule (`buildsNow`): by day, or by night holding a gun that builds by night
+ * (the pistol class), read from your own player record, the gun the HUD shows.
+ */
+export function canBuildNow(snap: Snapshot): boolean {
+  const run = snap.run;
+  return !!run && snap.self.alive && buildsNow(run.phase, snap.players.find((p) => p.id === snap.self.id)?.gun);
+}
+
+/** True when you build only thanks to your gun: night, holding a pistol-class gun. The HUD says so. */
+export const buildsByNight = (snap: Snapshot): boolean => snap.run?.phase === 'night' && canBuildNow(snap);
+
+/** The hint for B when your gun lets you build by night. */
+export const NIGHT_BUILD_HINT = 'Pistol: build by night';
+
+/** The nearest building within reach that could go up a level, with what the step costs: what U does outside build mode whenever you may build. */
 export function upgradeTarget(snap: Snapshot, at: Pose): { b: BuildingView; to: string; cost: number } | null {
   const run = snap.run;
-  if (!run || run.phase !== 'day' || !snap.self.alive) return null;
+  if (!run || !canBuildNow(snap)) return null;
   let best: { b: BuildingView; d: number } | null = null;
   for (const b of snap.buildings ?? []) {
     if (upgradeCost(b.kind, levelOf(b)) === null) continue;
@@ -138,7 +153,7 @@ export function buildSiteOf(snap: Snapshot, walls: readonly WallView[], builder:
     ...(snap.zombies ?? []).map(([, kind, x, y]) => ({ x, y, r: ZOMBIES[ZOMBIE_KINDS[kind]].radius })),
   ];
   return {
-    day: run.phase === 'day',
+    canBuild: buildsNow(run.phase, me?.gun),
     builder: me?.alive ? builder : null,
     core: coreRectAt(run.core),
     cover: [...walls, ...snap.crates.map((c) => ({ x: c.x, y: c.y, w: c.size, h: c.size }))],

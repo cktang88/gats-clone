@@ -73,6 +73,7 @@ test('a line out past reach, at night, or of a kind that is not laid in lines bu
   {
     const { w, p } = dayWorld();
     w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
+    p.gun = 'assault';
     const scrap = w.run!.scrap;
     assert.ok(buildLine(w, p.id, 'wall', column(28, 30)).every((r) => r === 'notDay'));
     assert.deepEqual([w.buildings.length, w.run!.scrap], [0, scrap]);

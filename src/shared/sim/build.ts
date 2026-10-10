@@ -1,9 +1,16 @@
-import { BUILDINGS, MAX_LEVEL, UPGRADE, WALL_TIERS, ZOM, type BuildingKind, type TurretDef, type TurretKind, type WallTier } from '../defs.ts';
+import { BUILDINGS, MAX_LEVEL, UPGRADE, WALL_TIERS, ZOM, zombieRole, type BuildingKind, type GunId, type TurretDef, type TurretKind, type WallTier } from '../defs.ts';
 import type { BuildingView } from '../protocol.ts';
 import { circleHitsRect, dist2, rectsOverlap, type Rect } from './movement.ts';
 import type { Building, FloorItem } from './world.ts';
 
-/** Why a building cannot go up, or null once it may. */
+/**
+ * Whether a player holding `gun` may build, upgrade and take down in this phase of the run: anyone by day, and by night a gun whose role
+ * says so (the pistol class's field mechanic, `ZombieRole.nightBuild`). Its current gun, so swapping off one at night ends it.
+ */
+export const buildsNow = (phase: 'day' | 'night' | 'over', gun: GunId | null | undefined): boolean =>
+  phase === 'day' || (phase === 'night' && !!gun && zombieRole(gun).nightBuild);
+
+/** Why a building cannot go up, or null once it may: `notDay` when it is not a time the builder may build (`buildsNow`). */
 export type BuildRefusal = 'notDay' | 'farFromCore' | 'outOfReach' | 'cover' | 'core' | 'body' | 'taken' | 'scrap';
 /** Why a building cannot be upgraded, or null once it may: `none` there to upgrade, `maxed` at its top level. */
 export type UpgradeRefusal = 'notDay' | 'outOfReach' | 'none' | 'maxed' | 'scrap';
@@ -57,7 +64,8 @@ type Pose = { x: number; y: number };
 
 /** Everything the building rules look at. The server fills it from the world and the client from its snapshot, so the build preview judges a cell exactly as the server will. */
 export type BuildSite = {
-  day: boolean;
+  /** The builder may build now (`buildsNow`): by day, or by night with a gun that builds by night. */
+  canBuild: boolean;
   /** Null unless the builder is up. */
   builder: Pose | null;
   core: Rect;
@@ -73,7 +81,7 @@ export const cellOf = (x: number, y: number) => ({ cx: Math.floor(x / ZOM.cell),
 export const coreRectAt = (center: Pose): Rect => ({ x: center.x - ZOM.coreHalf, y: center.y - ZOM.coreHalf, w: ZOM.coreHalf * 2, h: ZOM.coreHalf * 2 });
 
 export function buildRefusal(site: BuildSite, kind: BuildingKind, cx: number, cy: number, lv = 1): BuildRefusal | null {
-  if (!site.day || !site.builder) return 'notDay';
+  if (!site.canBuild || !site.builder) return 'notDay';
   const at = { x: (cx + 0.5) * ZOM.cell, y: (cy + 0.5) * ZOM.cell };
   const { core } = site;
   if (dist2(at.x, at.y, core.x + core.w / 2, core.y + core.h / 2) > ZOM.buildRadius ** 2) return 'farFromCore';
@@ -117,7 +125,7 @@ export function planLine(site: BuildSite, kind: BuildingKind, cells: readonly Ce
 }
 
 export function upgradeRefusal(site: BuildSite, cx: number, cy: number): UpgradeRefusal | null {
-  if (!site.day || !site.builder) return 'notDay';
+  if (!site.canBuild || !site.builder) return 'notDay';
   const b = site.buildings.find((o) => o.cx === cx && o.cy === cy);
   if (!b) return 'none';
   if (dist2((cx + 0.5) * ZOM.cell, (cy + 0.5) * ZOM.cell, site.builder.x, site.builder.y) > ZOM.reachPx ** 2) return 'outOfReach';

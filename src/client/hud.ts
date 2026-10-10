@@ -14,7 +14,7 @@ import { CALLOUT_MS, POPUP_MS, RING_MS } from './moments.ts';
 import { glow, PALETTE, shade, TEAM_COLORS, tint, ZOMBIE_LOOK } from './palette.ts';
 import { nightAmount } from './render.ts';
 import { CORE_ALERT_MS } from './siege.ts';
-import { BUILD_CONTROLS, buildRows, downedLine, forecast, phaseLine, readyHint, squadShare, upgradeTarget, useHint, type BuildChip, type HintChip } from './zombies.ts';
+import { BUILD_CONTROLS, buildRows, buildsByNight, downedLine, forecast, phaseLine, readyHint, squadShare, upgradeTarget, useHint, NIGHT_BUILD_HINT, type BuildChip, type HintChip } from './zombies.ts';
 import { airdropLine, drawAirdropMap } from './arenafx.ts';
 import { drawRingMap, drawTracker, reviveHint, ringLine, ringPill, spectateLines, squadLabel, trackerSize } from './royale.ts';
 import { drawGunArt, skinInk } from './gunart.ts';
@@ -1271,8 +1271,11 @@ function drawSiege(hud: Hud, run: NonNullable<Snapshot['run']>, top: number, com
     const hover = s.buildGhost?.hover ?? null;
     const controls = BUILD_CONTROLS.map((c) => (c.pick && 'upgrade' in c.pick ? { ...c, what: hover ? (hover.next ? `upgrade to ${hover.next.name} ${hover.next.cost}` : 'upgrade (top level)') : 'upgrade' } : c));
     hintBar(ctx, s, controls, w / 2, row, 'BUILD');
-  } else if (run.phase === 'day') {
-    hintBar(ctx, s, [{ key: 'B', what: 'build walls, turrets and more' }, { key: 'N', what: readyHint(run, hud.snap.players, hud.snap.self.id) }], w / 2, row, null);
+  } else if (run.phase === 'day' || buildsByNight(hud.snap)) {
+    const hints = run.phase === 'day'
+      ? [{ key: 'B', what: 'build walls, turrets and more' }, { key: 'N', what: readyHint(run, hud.snap.players, hud.snap.self.id) }]
+      : [{ key: 'B', what: NIGHT_BUILD_HINT }];
+    hintBar(ctx, s, hints, w / 2, row, null);
     const up = upgradeTarget(hud.snap, s.lastSelf);
     if (up && run.scrap >= up.cost) platedLine(ctx, `U to upgrade the ${up.b.kind === 'wall' ? 'wall' : up.b.kind} to ${up.to} · ${up.cost} scrap`, w / 2, h * 0.64 + 34, TYPE.body, PALETTE.gold, 700, ACCENT);
   }

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  BUILD_CONTROLS, buildKindForKey, buildRows, hoverOf, nextTier, stepItem, upgradeLine, upgradeTarget, buildSiteOf, downedLine, forecast, ghostAt, inviteLink, outTillDawnText, phaseLine, readyHint, reportRows, reportTitle, runCallouts, squadFromSearch, turretLine, useHint, withSquad,
+  BUILD_CONTROLS, buildKindForKey, buildRows, buildsByNight, canBuildNow, hoverOf, nextTier, stepItem, upgradeLine, upgradeTarget, buildSiteOf, downedLine, forecast, ghostAt, inviteLink, outTillDawnText, phaseLine, readyHint, reportRows, reportTitle, runCallouts, squadFromSearch, turretLine, useHint, withSquad,
 } from '../src/client/zombies.ts';
 import { addMoments, NO_MOMENTS } from '../src/client/moments.ts';
 import { aimTurrets, nextCoreHitAt, type TurretAim } from '../src/client/siege.ts';
@@ -128,7 +128,9 @@ test('outside build mode U upgrades the nearest building in reach that can step 
   assert.deepEqual([near?.b.kind, near?.to], ['sentry', 'Sentry II'], 'the steel wall has nowhere to go, so the sentry beside it is the target');
   assert.equal(near?.cost, Math.round(BUILDINGS.sentry.cost * UPGRADE.costShare[0]));
   w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
-  assert.equal(upgradeTarget(snapshotFor(w, p.id), p), null, 'no building is upgraded at night');
+  assert.equal(upgradeTarget(snapshotFor(w, p.id), p)?.b.kind, 'sentry', 'a pistol upgrades by night too');
+  p.gun = 'lmg';
+  assert.equal(upgradeTarget(snapshotFor(w, p.id), p), null, 'no other gun upgrades at night');
 });
 
 test('holding E is offered to reload a turret short of ammo, to repair it first when worn, nearest first', () => {
@@ -166,7 +168,7 @@ test('the report sums the squad\'s turret kills by kind and the Bastion\'s, and 
 
 test('the build preview refuses at night, while down, and when the bank is short, as the server does', () => {
   const cases: [string, (w: World, id: number) => void][] = [
-    ['notDay', (w) => { w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity }; }],
+    ['notDay', (w, id) => { w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity }; w.players.get(id)!.gun = 'sniper'; }],
     ['notDay', (w, id) => { w.players.get(id)!.life = { k: 'downed', bleedOutAt: Infinity, reviveProgress: 0, hp: 0 }; }],
     ['scrap', (w) => { w.run!.scrap = BUILDINGS.wall.cost - 1; }],
   ];
@@ -339,4 +341,32 @@ test('holding E names the job the server does, even for a building a sliver shor
   const sentry = { id: newId(w), kind: 'sentry' as const, cx: 26, cy: 31, hp: BUILDINGS.sentry.hp, owner: p.id, ammo: BUILDINGS.sentry.turret.ammo - 0.5, nextFireAt: 0 };
   w.buildings = [sentry];
   assert.equal(useHint(snapshotFor(w, p.id), p), 'Hold E to reload the sentry');
+});
+
+test('by night a pistol holder\'s preview, U target and build gate open, and close on a swap to any other gun, by the gun the snapshot shows', () => {
+  const { w, p } = squadWorld();
+  w.run!.scrap = 1000;
+  w.run!.phase = { k: 'night', toSpawn: [], nextSpawnAt: Infinity, dawnAt: Infinity };
+  const CELL = { cx: 26, cy: 30 };
+  const size = MAPS[w.map].size;
+  const at = { x: (CELL.cx + 0.5) * ZOM.cell, y: (CELL.cy + 0.5) * ZOM.cell };
+  let snap = snapshotFor(w, p.id);
+  assert.ok(canBuildNow(snap) && buildsByNight(snap));
+  const site = buildSiteOf(snap, wallViews(w), p)!;
+  assert.equal(site.canBuild, true);
+  assert.equal(buildRefusal(site, 'wall', CELL.cx, CELL.cy), null);
+  assert.equal(ghostAt(site, 'wall', at, size).refusal, null);
+  build(w, p.id, 'wall', CELL.cx, CELL.cy);
+  assert.equal(upgradeTarget(snapshotFor(w, p.id), p)?.b.kind, 'wall', 'U upgrades by night with a pistol');
+
+  p.gun = 'shotgun';
+  snap = snapshotFor(w, p.id);
+  assert.ok(!canBuildNow(snap) && !buildsByNight(snap));
+  assert.equal(buildSiteOf(snap, wallViews(w), p)!.canBuild, false);
+  assert.equal(ghostAt(buildSiteOf(snap, wallViews(w), p)!, 'wall', { x: at.x, y: at.y + ZOM.cell }, size).label, 'Build by day', 'everyone else keeps the old text');
+  assert.equal(upgradeTarget(snap, p), null);
+
+  w.run!.phase = { k: 'day', endsAt: Infinity };
+  snap = snapshotFor(w, p.id);
+  assert.ok(canBuildNow(snap) && !buildsByNight(snap), 'by day anyone builds, and nobody needs the pistol hint');
 });

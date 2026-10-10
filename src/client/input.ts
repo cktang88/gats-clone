@@ -40,7 +40,7 @@ export const CONTROLS: readonly [string, string][] = [
   ['R', 'Reload'],
   ['Space', 'Ability'],
   ['1-9, 0', 'Pick perk or evolution'],
-  ['B', 'Zombies: build by day; 1-9 pick (1 again, Q or the wheel steps wall tiers), right click takes down'],
+  ['B', 'Zombies: build by day (a pistol by night too); 1-9 pick (1 again, Q or the wheel steps wall tiers), right click takes down'],
   ['U', 'Zombies: upgrade the wall, turret or utility under the cursor (or nearest, outside build mode)'],
   ['E', 'Beside a radio, change its station; Zombies: hold to revive, repair or reload'],
   ['Walk over', 'Pick up a health or ammo pack (automatic, and only when you need it)'],

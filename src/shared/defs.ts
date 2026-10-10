@@ -825,17 +825,18 @@ export const isBoss = (kind: ZombieKind) => ZOMBIES[kind].pack === 1;
  * - `shove`: scales the knockback its hits give a zombie (`KNOCK.zombie`).
  * - `blast`: scales its blast's harm to the horde; `blastPlated` what of that a plated zombie or the Colossus takes (their plate turns shrapnel).
  * - `mend`: how much faster than anyone else its holder repairs buildings and reloads turrets with use (a sidearm leaves the hands free); the core mends at the plain rate.
+ * - `nightBuild`: its holder may build, upgrade and take down by night as well as by day (`buildsNow` in sim/build.ts); everything else about building stays.
  * A round passes through zombies exactly as it passes through players (the gun's own `penetrate`), the same as in every other mode.
  * `perk` is the one line the loadout step and the HUD show for it.
  */
 export type ZombieRole = {
   perk: string; vs: Partial<Record<ZombieKind, number>>; plate: number; slow: { mul: number; ms: number } | null; shove: number;
-  blast: number; blastPlated: number; mend: number;
+  blast: number; blastPlated: number; mend: number; nightBuild: boolean;
 };
-const ZROLE_BASE: Omit<ZombieRole, 'perk'> = { vs: {}, plate: 1, slow: null, shove: 1, blast: 1, blastPlated: 1, mend: 1 };
+const ZROLE_BASE: Omit<ZombieRole, 'perk'> = { vs: {}, plate: 1, slow: null, shove: 1, blast: 1, blastPlated: 1, mend: 1, nightBuild: false };
 const HEAVIES = { brute: 1.3, plated: 1.3, colossus: 1.3 } as const;
 export const ZOMBIE_CLASS_ROLES: Record<WeaponId, ZombieRole> = {
-  pistol: { ...ZROLE_BASE, perk: 'Field mechanic: repairs and reloads 60% faster, x1.5 vs runners', vs: { runner: 1.5 }, mend: 1.6 },
+  pistol: { ...ZROLE_BASE, perk: 'Field mechanic: builds and upgrades by night, repairs and reloads 60% faster, x1.5 vs runners', vs: { runner: 1.5 }, mend: 1.6, nightBuild: true },
   smg: { ...ZROLE_BASE, perk: 'Runner hunter: x1.75 vs runners, repairs and reloads 30% faster', vs: { runner: 1.75 }, mend: 1.3 },
   shotgun: { ...ZROLE_BASE, perk: 'Crowd breaker: staggers and shoves packs, x1.8 vs walkers and runners', vs: { walker: 1.8, runner: 1.8 }, slow: { mul: 0.35, ms: 700 }, shove: 2 },
   assault: { ...ZROLE_BASE, perk: 'Long-range anchor: x1.8 vs bloaters, rounds ignore half of plating', plate: 0.5, vs: { bloater: 1.8 } },

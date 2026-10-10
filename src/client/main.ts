@@ -76,7 +76,7 @@ import { EFFECT_LIFE_MS, type ClientState, type Rejoin, type Session } from './s
 import { aimTurrets, nextCoreHitAt } from './siege.ts';
 import { noteWrecks, wrecks } from './wrecks.ts';
 import { addCorpse, addZombieCorpse, explosiveDeath } from './corpses.ts';
-import { buildKindForKey, buildSiteOf, ghostAt, inviteLink, lineGhostAt, nextTier, squadFromSearch, stepItem, upgradeTarget, withSquad, type BuildChip, type Ghost } from './zombies.ts';
+import { buildKindForKey, buildSiteOf, canBuildNow, ghostAt, inviteLink, lineGhostAt, nextTier, squadFromSearch, stepItem, upgradeTarget, withSquad, type BuildChip, type Ghost } from './zombies.ts';
 import { trackRootScale } from './uiscale.ts';
 import { createPauseMenu, showToast } from './pausemenu.ts';
 import { installPointerLock, lockWanted } from './pointerlock.ts';
@@ -433,7 +433,8 @@ function onSnap(s: Session, snap: Snapshot, now: number) {
   s.coreHitAt = nextCoreHitAt(prev?.run, snap.run, now, s.coreHitAt);
   aimTurrets(s.turretAims, snap, now);
   wrecks.list = noteWrecks(wrecks.list, prev, snap, now);
-  if (s.building && (snap.run?.phase !== 'day' || !snap.self.alive)) s.building = false;
+  // Build mode closes when you may no longer build: nightfall, or swapping off a gun that builds by night, or going down.
+  if (s.building && !canBuildNow(snap)) s.building = false;
   if (snap.self.pending?.level !== s.pickSentFor) s.pickSentFor = null;
 
   const dead = !snap.self.alive && !selfOf(snap)?.downed;
@@ -628,10 +629,10 @@ function pick(slot: number) {
 }
 
 function toggleBuild(s: Session) {
-  const run = newestSnap(s.snaps)?.run;
-  if (!run || state.phase !== 'playing') return;
-  if (!s.building && run.phase !== 'day') {
-    s.chat.push({ from: '', text: 'You build by day.', team: null, at: performance.now() });
+  const snap = newestSnap(s.snaps);
+  if (!snap?.run || state.phase !== 'playing') return;
+  if (!s.building && !canBuildNow(snap)) {
+    if (snap.run.phase !== 'day') s.chat.push({ from: '', text: 'You build by day.', team: null, at: performance.now() });
     return;
   }
   s.building = !s.building;
