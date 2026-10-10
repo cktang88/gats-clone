@@ -140,8 +140,8 @@ export const planeAt = (f: Pick<AirdropView, 'x' | 'y' | 'a' | 'dropAt'>, t: num
 };
 export type CrateView = { id: number; x: number; y: number; hp: number; size: number; drop?: true };
 /** A wall as it goes on the wire. A polygon part also carries `pts` (flat, convex; see `Rect`) and `pid`, its polygon's index in the map's `polys`. */
-/** `out` marks a one-way wall (the Shield ability): rounds flying along it (a positive dot with it) pass, rounds flying against it stop. */
-export type WallView = { x: number; y: number; w: number; h: number; pts?: readonly number[]; nb?: true; ns?: true; pid?: number; out?: readonly [number, number] } & ({ built: false; material: WallMaterial } | { built: true });
+/** `out` marks a one-way wall (the Shield ability): rounds flying along it (a positive dot with it) pass, rounds flying against it stop; `ends` is the server time it drops. */
+export type WallView = { x: number; y: number; w: number; h: number; pts?: readonly number[]; nb?: true; ns?: true; pid?: number; out?: readonly [number, number]; ends?: number } & ({ built: false; material: WallMaterial } | { built: true });
 
 /** Whether a round flying along (dx, dy) passes `wall`: only a one-way wall (`out`) lets one through, and only flying out. */
 export const roundPasses = (wall: { out?: readonly [number, number] }, dx: number, dy: number): boolean => !!wall.out && dx * wall.out[0] + dy * wall.out[1] > 0;

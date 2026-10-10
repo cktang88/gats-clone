@@ -284,9 +284,13 @@ test('ability respects its cooldown', () => {
   assert.equal(built(), 1, 'held key during cooldown builds nothing');
   assert.equal(w.wallsVersion, version);
   assert.ok(snapshotFor(w, a.id).self.abilityReadyIn > 0);
-  // Just past the cooldown and well before the first wall expires (so its expiry cannot stand in for a new build).
-  run(w, ABILITY_COOLDOWN_MS.engineer - 2000 + 2 * TICK_MS);
-  assert.equal(built(), 2, 'ready again after cooldown: a second wall beside the first');
+  const first = w.walls.find((x) => x.built)!;
+  // The shield drops before its cooldown ends, so one is never up all the time; then the key builds a fresh one.
+  run(w, ABILITY_COOLDOWN_MS.engineer - 2000 - 2 * TICK_MS);
+  assert.equal(built(), 0, 'the first shield is gone before the cooldown ends');
+  run(w, 4 * TICK_MS);
+  assert.equal(built(), 1, 'ready again after cooldown: a new shield');
+  assert.notEqual(w.walls.find((x) => x.built), first);
 });
 
 test('the shield (engineer) lets its owner shoot out and stops the enemy shooting back in', () => {
