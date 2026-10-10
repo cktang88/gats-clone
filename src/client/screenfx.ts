@@ -5,7 +5,15 @@ import { motionReduced, settings } from './settings.ts';
  * dropped under `prefers-reduced-motion` (the heartbeat stays as a steady, faint rim), and none of it touches input.
  */
 /** Reduced motion: the pause menu's Motion option (follow the system, always, never) over `prefers-reduced-motion`. */
-export const reducedMotion = (): boolean => motionReduced(settings().motion, typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+export const reducedMotion = (): boolean => motionReduced(settings().motion, systemReduced());
+
+/** The query is made once and its live `matches` read after (it is asked several times a frame); a swapped `matchMedia` is asked anew. */
+let reducedQuery: { of: typeof matchMedia; list: MediaQueryList } | null = null;
+function systemReduced(): boolean {
+  if (typeof matchMedia !== 'function') return false;
+  if (reducedQuery?.of !== matchMedia) reducedQuery = { of: matchMedia, list: matchMedia('(prefers-reduced-motion: reduce)') };
+  return reducedQuery.list.matches;
+}
 
 export const SCREEN = { flashMs: 150, chromaMs: 130, chromaPx: 2.5, punchMs: 240, punchZoom: 0.032, bigPunch: 0.018 } as const;
 

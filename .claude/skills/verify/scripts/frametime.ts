@@ -18,6 +18,10 @@ const BENCH_EVERY_STEPS = 2;
 const BENCH_FRAMES = 8;
 const SOFTWARE = process.env.SOFTWARE === '1';
 const SQUAD = process.env.SQUAD === '1';
+/** PROFILE=<file.cpuprofile> also records a CPU profile of the sampled seconds (open it in DevTools), and logs its top functions and GC. */
+const PROFILE = process.env.PROFILE;
+/** DPR=3 renders at that many device pixels per CSS pixel (852 393 with DPR=3 is a landscape phone's canvas). */
+const DPR = Number(process.env.DPR ?? 1);
 const BASE = existsSync(join(RUN, 'url'))
   ? readFileSync(join(RUN, 'url'), 'utf8').trim().replace(/\/$/, '')
   : `http://localhost:${readFileSync(join(RUN, 'port'), 'utf8').trim()}`;
@@ -46,6 +50,7 @@ const page = await openPage({
   },
 });
 const { cdp, js, exceptions, close } = page;
+if (DPR !== 1) await cdp('Emulation.setDeviceMetricsOverride', { width: VIEW.w, height: VIEW.h, deviceScaleFactor: DPR, mobile: false });
 await cdp('Page.navigate', { url: `${BASE}/?dev` });
 await serversListed(page);
 await js(`document.querySelectorAll('#loadout-menu .weapon')[1].click(); document.getElementById('name').value = 'Bench'`);
@@ -84,9 +89,11 @@ await fightFor(WARMUP_MS);
 await js(`skirmishDev.takeFrameCosts()`);
 const bakesBefore: number = await js(`skirmishDev.shadowBakes()`);
 await js(`window.__raf = []; (function tick(t) { window.__raf.push(t); requestAnimationFrame(tick); })(performance.now())`);
+if (PROFILE) { await cdp('Profiler.enable'); await cdp('Profiler.setSamplingInterval', { interval: 200 }); await cdp('Profiler.start'); }
 sampling = true;
 await fightFor(SECONDS * 1000);
 sampling = false;
+const profile = PROFILE ? (await cdp('Profiler.stop')).profile : null;
 const costs: number[] = await js(`skirmishDev.takeFrameCosts()`);
 const bakes = (await js(`skirmishDev.shadowBakes()`)) - bakesBefore;
 const stamps: number[] = await js(`window.__raf`);
@@ -101,12 +108,31 @@ const stats = (xs: number[]) => {
 };
 const fmt = (o: ReturnType<typeof stats>) => `n=${o.n} avg=${o.avg.toFixed(2)} p50=${o.p50.toFixed(2)} p95=${o.p95.toFixed(2)} p99=${o.p99.toFixed(2)} max=${o.max.toFixed(2)}ms`;
 const intervals = stamps.slice(1).map((t, i) => t - stamps[i]!);
-log(`frametime ${VIEW.w}x${VIEW.h} ${SECONDS}s${SOFTWARE ? ' software-canvas' : ''} at ${new Date().toISOString()}`);
+log(`frametime ${VIEW.w}x${VIEW.h}${DPR !== 1 ? ` at DPR ${DPR}` : ''} ${SECONDS}s${SOFTWARE ? ' software-canvas' : ''} at ${new Date().toISOString()}`);
 log(`busy: avg ${(busy.players / busy.snaps).toFixed(1)} players, ${(busy.bullets / busy.snaps).toFixed(1)} bullets${SQUAD ? ` and ${(busy.zombies / busy.snaps).toFixed(1)} zombies` : ''} in view per snapshot`);
 log(`frame cost  ${fmt(stats(costs))}`);
 if (SOFTWARE) log(`rastered frame cost  ${fmt(stats(rastered))}`);
 log(`raf interval ${fmt(stats(intervals))}`);
 log(`ground layer bakes while sampling: ${bakes} over ${costs.length} frames`);
+if (profile) {
+  writeFileSync(PROFILE!, JSON.stringify(profile));
+  type Node = { id: number; callFrame: { functionName: string; url: string; lineNumber: number }; children?: number[] };
+  const nodes = new Map<number, Node>((profile.nodes as Node[]).map((n) => [n.id, n]));
+  const name = (n: Node) => `${n.callFrame.functionName || '(anon)'} ${n.callFrame.url.split('/').pop()}:${n.callFrame.lineNumber + 1}`;
+  const self = new Map<string, number>();
+  let total = 0, gcMs = 0, gcRuns = 0, inGc = false;
+  (profile.samples as number[]).forEach((id, i) => {
+    const dt = (profile.timeDeltas[i] ?? 0) / 1000, n = nodes.get(id)!;
+    total += dt;
+    self.set(name(n), (self.get(name(n)) ?? 0) + dt);
+    const gc = n.callFrame.functionName === '(garbage collector)';
+    if (gc) { gcMs += dt; if (!inGc) gcRuns++; }
+    inGc = gc;
+  });
+  const busyMs = total - (self.get('(idle) :0') ?? 0) - (self.get('(program) :0') ?? 0);
+  log(`profile: ${(busyMs / SECONDS).toFixed(0)} ms of main-thread JS per second; GC ${gcMs.toFixed(0)} ms in ${gcRuns} pauses (${(gcRuns / SECONDS).toFixed(1)}/s); top self time:`);
+  for (const [k, ms] of [...self].filter(([k]) => !k.startsWith('(idle)')).sort((a, b) => b[1] - a[1]).slice(0, 25)) log(`  ${(ms / SECONDS).toFixed(2).padStart(6)} ms/s  ${k}`);
+}
 for (const e of exceptions) log(`exception: ${e}`);
 log(exceptions.length || !costs.length ? 'RESULT FAIL' : 'RESULT PASS');
 process.exit(exceptions.length || !costs.length ? 1 : 0);

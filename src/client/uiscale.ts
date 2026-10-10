@@ -10,7 +10,13 @@ import { onSettings, settings, uiFactor } from './settings.ts';
  */
 export const UI_SCALE = { fullAt: 560, min: 0.62, touchMin: 0.9, growFrom: 900, max: 2.4 } as const;
 
-const coarse = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+/** The query is made once and its live `matches` read after (it is asked every frame); a swapped `matchMedia` is asked anew. */
+let coarseQuery: { of: typeof matchMedia; list: MediaQueryList } | null = null;
+const coarse = (): boolean => {
+  if (typeof matchMedia !== 'function') return false;
+  if (coarseQuery?.of !== matchMedia) coarseQuery = { of: matchMedia, list: matchMedia('(pointer: coarse)') };
+  return coarseQuery.list.matches;
+};
 
 const autoScaleFor = (w: number, h: number, touch: boolean): number => {
   const short = Math.min(w, h);
